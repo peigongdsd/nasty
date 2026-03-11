@@ -26,6 +26,7 @@
       src = ../webui;
       npmDepsHash = ""; # Updated after adding xterm.js — get correct hash from nix build
       buildPhase = ''
+        npm run prepare
         npm run build
       '';
       installPhase = ''
