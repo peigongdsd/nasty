@@ -5,7 +5,7 @@ use axum::extract::{
     ws::{Message, WebSocket, WebSocketUpgrade},
 };
 use axum::response::IntoResponse;
-use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -157,7 +157,7 @@ async fn handle_terminal(mut socket: WebSocket, state: Arc<AppState>) {
                         }
                         // Regular input — write to PTY
                         let writer = writer.clone();
-                        let data = text.into_bytes();
+                        let data: Vec<u8> = text.bytes().collect();
                         let _ = tokio::task::spawn_blocking(move || {
                             let mut w = writer.lock().unwrap();
                             std::io::Write::write_all(&mut *w, &data)
