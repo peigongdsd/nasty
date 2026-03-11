@@ -124,6 +124,7 @@ in {
       description = "Generate NASty self-signed TLS certificate";
       wantedBy = [ "multi-user.target" ];
       before = [ "nginx.service" ];
+      requiredBy = [ "nginx.service" ];
 
       serviceConfig = {
         Type = "oneshot";
