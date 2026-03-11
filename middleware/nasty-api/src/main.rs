@@ -16,6 +16,7 @@ use tracing::info;
 
 mod auth;
 mod router;
+mod terminal;
 
 use auth::{AuthService, Session};
 use router::handle_rpc_request;
@@ -55,6 +56,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
+        .route("/ws/terminal", get(terminal::terminal_handler))
         .route("/api/login", post(login_handler))
         .route("/health", get(health))
         .with_state(state);

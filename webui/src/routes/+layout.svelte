@@ -80,6 +80,7 @@
 		{ href: '/shares/nvmeof', label: 'NVMe-oF' },
 		{ href: '/disks', label: 'Disks' },
 		{ href: '/alerts', label: 'Alerts' },
+		{ href: '/terminal', label: 'Terminal' },
 		{ href: '/users', label: 'Users' },
 	];
 </script>

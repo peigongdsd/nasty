@@ -390,6 +390,13 @@ in {
         locations."/ws" = {
           proxyPass = "http://127.0.0.1:${toString cfg.middleware.port}";
           proxyWebsocket = true;
+          priority = 500;
+        };
+
+        locations."/ws/terminal" = {
+          proxyPass = "http://127.0.0.1:${toString cfg.middleware.port}";
+          proxyWebsocket = true;
+          priority = 400;
         };
 
         # Proxy API calls to middleware
