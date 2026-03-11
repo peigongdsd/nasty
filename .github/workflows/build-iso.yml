@@ -19,7 +19,7 @@ jobs:
 
       - name: Compute npm deps hash
         run: |
-          HASH=$(nix-prefetch-npm-deps webui/package-lock.json 2>/dev/null)
+          HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)
           echo "Computed npmDepsHash: $HASH"
           sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
           echo "Updated flake.nix"
