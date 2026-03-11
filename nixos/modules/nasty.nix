@@ -367,8 +367,8 @@ in {
 
       virtualHosts."nasty" = {
         listen = [{ addr = "0.0.0.0"; port = cfg.webui.port; ssl = true; }];
-        sslCertificate = tlsCertFile;
-        sslCertificateKey = tlsKeyFile;
+        ssl.certificate = tlsCertFile;
+        ssl.certificateKey = tlsKeyFile;
 
         root = "${cfg.webui.package}/share/nasty-webui";
 
