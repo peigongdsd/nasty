@@ -384,13 +384,13 @@ in {
         # Proxy WebSocket to middleware
         locations."/ws" = {
           proxyPass = "http://127.0.0.1:${toString cfg.middleware.port}";
-          proxyWebsocket = true;
+          proxyWebsockets = true;
           priority = 500;
         };
 
         locations."/ws/terminal" = {
           proxyPass = "http://127.0.0.1:${toString cfg.middleware.port}";
-          proxyWebsocket = true;
+          proxyWebsockets = true;
           priority = 400;
         };
 
