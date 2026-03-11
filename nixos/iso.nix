@@ -130,8 +130,8 @@ in
       mount "$PART1" /mnt/boot
 
       echo "==> Copying NASty source..."
-      mkdir -p /mnt/etc
-      cp -r --no-preserve=mode /etc/nasty-src /mnt/etc/nixos
+      mkdir -p /mnt/etc/nixos
+      cp -rL --no-preserve=mode /etc/nasty-src/* /mnt/etc/nixos/
 
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
