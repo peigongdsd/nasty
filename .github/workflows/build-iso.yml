@@ -6,6 +6,8 @@ on:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
 
@@ -24,17 +26,24 @@ jobs:
           grep '^/nix/store' /tmp/build.log | tail -1 > /tmp/iso-path.txt
           cat /tmp/iso-path.txt
 
-      - name: Upload ISO
+      - name: Prepare ISO
         run: |
           ISO_DIR=$(cat /tmp/iso-path.txt)
           ISO_FILE=$(find "$ISO_DIR" -name "*.iso" -type f | head -1)
           echo "ISO: $ISO_FILE"
           ls -lh "$ISO_FILE"
-          echo "iso_file=$ISO_FILE" >> "$GITHUB_ENV"
 
-      - name: Upload ISO artifact
-        uses: actions/upload-artifact@v6
-        with:
-          name: nasty-iso-x86_64
-          path: ${{ env.iso_file }}
-          if-no-files-found: error
+          # Copy to workspace with a clean name
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          DEST="nasty-x86_64-${SHORT_SHA}.iso"
+          cp "$ISO_FILE" "$DEST"
+          echo "iso_dest=$DEST" >> "$GITHUB_ENV"
+
+      - name: Upload as release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="iso-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
+          gh release create "$TAG" "${{ env.iso_dest }}" \
+            --title "NASty ISO $TAG" \
+            --notes "Automated ISO build from commit $(git rev-parse --short HEAD)"
