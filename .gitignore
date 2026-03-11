@@ -10,7 +10,6 @@ webui/.svelte-kit/
 result
 result-*
 *.iso
-flake.lock
 
 # IDE
 .idea/
