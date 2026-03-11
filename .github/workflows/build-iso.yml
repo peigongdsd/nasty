@@ -17,6 +17,13 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Compute npm deps hash
+        run: |
+          HASH=$(nix-prefetch-npm-deps webui/package-lock.json 2>/dev/null)
+          echo "Computed npmDepsHash: $HASH"
+          sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
+          echo "Updated flake.nix"
+
       - name: Build x86_64 ISO
         run: |
           set -o pipefail
@@ -33,7 +40,6 @@ jobs:
           echo "ISO: $ISO_FILE"
           ls -lh "$ISO_FILE"
 
-          # Copy to workspace with a clean name
           SHORT_SHA=$(git rev-parse --short HEAD)
           DEST="nasty-x86_64-${SHORT_SHA}.iso"
           cp "$ISO_FILE" "$DEST"
