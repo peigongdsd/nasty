@@ -369,10 +369,10 @@ in {
       virtualHosts."nasty" = {
         listen = [{ addr = "0.0.0.0"; port = cfg.webui.port; ssl = true; }];
         root = "${cfg.webui.package}/share/nasty-webui";
+        sslCertificate = tlsCertFile;
+        sslCertificateKey = tlsKeyFile;
 
         extraConfig = ''
-          ssl_certificate ${tlsCertFile};
-          ssl_certificate_key ${tlsKeyFile};
           add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         '';
 
