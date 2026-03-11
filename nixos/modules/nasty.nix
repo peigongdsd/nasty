@@ -112,7 +112,7 @@ in {
     # ── State directory ────────────────────────────────────────
 
     systemd.tmpfiles.rules = [
-      "d /var/lib/nasty 0750 root root -"
+      "d /var/lib/nasty 0751 root root -"
       "d /var/lib/nasty/tls 0750 root nginx -"
       "d ${cfg.storage.mountBase} 0755 root root -"
       "d /etc/exports.d 0755 root root -"
