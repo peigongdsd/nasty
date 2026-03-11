@@ -21,19 +21,22 @@ jobs:
         run: |
           cd nixos
           nix build .#nixosConfigurations.nasty-iso.config.system.build.isoImage \
-            --no-link --print-out-paths -L | tee /tmp/iso-path.txt
+            --no-link --print-out-paths -L 2>&1 | tee /tmp/build.log
+          # Extract the store path (last line that starts with /nix/store)
+          grep '^/nix/store' /tmp/build.log | tail -1 > /tmp/iso-path.txt
+          echo "ISO output: $(cat /tmp/iso-path.txt)"
+
+      - name: Report ISO details
+        run: |
+          ISO_DIR=$(cat /tmp/iso-path.txt)
+          ISO_FILE=$(find "$ISO_DIR" -name "*.iso" -type f | head -1)
+          echo "ISO: $ISO_FILE"
+          ls -lh "$ISO_FILE"
+          echo "iso_file=$ISO_FILE" >> "$GITHUB_ENV"
 
       - name: Upload ISO
         uses: actions/upload-artifact@v4
         with:
           name: nasty-iso-x86_64
-          path: |
-            /nix/store/*-nasty-*.iso/iso/*.iso
-          if-no-files-found: warn
-
-      - name: Report ISO path
-        run: |
-          ISO_DIR=$(cat /tmp/iso-path.txt | tail -1)
-          ISO_FILE=$(find "$ISO_DIR" -name "*.iso" -type f | head -1)
-          echo "ISO: $ISO_FILE"
-          ls -lh "$ISO_FILE"
+          path: ${{ env.iso_file }}
+          if-no-files-found: error
