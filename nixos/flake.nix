@@ -51,7 +51,7 @@
       # ISO image for installation
       nasty-iso = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-middleware; };
+        specialArgs = { inherit nasty-middleware nasty-webui; };
         modules = [
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
           ./iso.nix

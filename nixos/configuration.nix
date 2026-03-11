@@ -1,6 +1,10 @@
 { config, pkgs, nasty-middleware, nasty-webui ? null, ... }:
 
 {
+  imports = [
+    ./hardware-configuration.nix
+  ];
+
   networking.hostName = "nasty";
 
   # Enable the NASty module with all protocols

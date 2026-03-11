@@ -1,6 +1,17 @@
-{ config, pkgs, nasty-middleware, ... }:
+{ config, pkgs, lib, nasty-middleware, nasty-webui, ... }:
 
+let
+  nastySrc = lib.cleanSource ./..;
+in
 {
+  # Pre-built packages in the ISO's Nix store so nixos-install
+  # can reuse them instead of recompiling from source.
+  system.extraDependencies = [ nasty-middleware ]
+    ++ lib.optional (nasty-webui != null) nasty-webui;
+
+  # Bundle NASty source on the ISO for flake-based installation
+  environment.etc."nasty-src".source = nastySrc;
+
   boot.supportedFilesystems = [ "bcachefs" ];
 
   environment.systemPackages = with pkgs; [
@@ -10,10 +21,10 @@
     nvme-cli
     util-linux
     e2fsprogs
-    dosfstools     # for EFI system partition
+    dosfstools
     nixos-install-tools
+    git  # required for Nix flakes
 
-    # Guided installer script
     (writeShellScriptBin "nasty-install" ''
       set -euo pipefail
 
@@ -52,8 +63,8 @@
       PART1="''${DISK}1"
       PART2="''${DISK}2"
 
-      # Handle NVMe naming
-      if [[ "$DISK" == *nvme* ]]; then
+      # Handle NVMe / MMC naming
+      if [[ "$DISK" == *nvme* ]] || [[ "$DISK" == *mmcblk* ]]; then
         PART1="''${DISK}p1"
         PART2="''${DISK}p2"
       fi
@@ -67,26 +78,33 @@
       mkdir -p /mnt/boot
       mount "$PART1" /mnt/boot
 
-      echo "==> Generating NixOS configuration..."
-      nixos-generate-config --root /mnt
+      echo "==> Copying NASty source..."
+      cp -r /etc/nasty-src /mnt/etc/nixos
+      chmod -R u+w /mnt/etc/nixos
 
-      # Append NASty config
-      cat >> /mnt/etc/nixos/configuration.nix << 'NIXEOF'
+      echo "==> Generating hardware configuration..."
+      nixos-generate-config --root /mnt --dir /tmp/hw-config
+      cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/nixos/hardware-configuration.nix
 
-  # NASty NAS
-  services.nasty.enable = true;
-  boot.supportedFilesystems = [ "bcachefs" ];
-NIXEOF
+      # Flakes require a git repo to resolve paths
+      cd /mnt/etc/nixos
+      git init -q
+      git add .
 
-      echo "==> Installing NixOS (this may take a while)..."
-      nixos-install --no-root-passwd
+      echo "==> Installing NixOS with NASty..."
+      echo "    (this may take a while on first install)"
+      nixos-install --flake /mnt/etc/nixos/nixos#nasty --no-root-passwd
 
       echo ""
       echo "=== Installation complete! ==="
-      echo "Set a root password, then reboot."
-      echo "The NASty WebUI will be available at https://<ip>/"
-      echo "Default login: admin / admin"
       echo ""
+      echo "  The NASty WebUI will be available at https://<ip>/"
+      echo "  Default login: admin / admin"
+      echo ""
+      echo "  To reconfigure later:"
+      echo "    nixos-rebuild switch --flake /etc/nixos/nixos#nasty"
+      echo ""
+
       read -p "Set root password now? (yes/no): " SET_PW
       if [ "$SET_PW" = "yes" ]; then
         nixos-enter --root /mnt -c 'passwd'
@@ -97,7 +115,7 @@ NIXEOF
     '')
   ];
 
-  # Enable networking for NixOS install
+  # Enable networking for installation
   networking.wireless.enable = pkgs.lib.mkForce false;
   networking.useDHCP = pkgs.lib.mkForce true;
 
@@ -113,19 +131,18 @@ NIXEOF
 
     NASty NAS Installer
 
-    To install NASty:
-      1. Partition your disk:    cfdisk /dev/sdX
-      2. Format boot partition:  mkfs.fat -F32 /dev/sdX1
-      3. Format root partition:  mkfs.ext4 /dev/sdX2
-      4. Mount root:             mount /dev/sdX2 /mnt
-      5. Mount boot:             mkdir -p /mnt/boot && mount /dev/sdX1 /mnt/boot
-      6. Generate config:        nixos-generate-config --root /mnt
-      7. Edit configuration:     nano /mnt/etc/nixos/configuration.nix
-         - Add: services.nasty.enable = true;
-      8. Install:                nixos-install --flake github:your-org/nasty#nasty
-      9. Reboot:                 reboot
+    Run the guided installer:  nasty-install
 
-    Or run the guided installer:  nasty-install
+    Or install manually:
+      1. Partition your disk:    cfdisk /dev/sdX
+      2. Format & mount partitions
+      3. Copy source:            cp -r /etc/nasty-src /mnt/etc/nixos
+      4. Generate hardware config:
+           nixos-generate-config --root /mnt --dir /tmp/hw
+           cp /tmp/hw/hardware-configuration.nix /mnt/etc/nixos/nixos/
+      5. Init flake repo:        cd /mnt/etc/nixos && git init && git add .
+      6. Install:                nixos-install --flake /mnt/etc/nixos/nixos#nasty
+      7. Reboot:                 reboot
 
   '';
 }
