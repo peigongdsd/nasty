@@ -1,0 +1,14 @@
+[package]
+name = "nasty-sharing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nasty-common = { path = "../nasty-common" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
