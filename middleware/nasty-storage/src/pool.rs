@@ -262,27 +262,34 @@ impl PoolService {
 
         let mut devices = Vec::new();
         if let Some(blockdevices) = parsed.get("blockdevices").and_then(|v| v.as_array()) {
-            for dev in blockdevices {
-                let name = dev.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let dev_type = dev.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                let size = dev
-                    .get("size")
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-                    .unwrap_or(0);
-                let mountpoint = dev.get("mountpoint").and_then(|v| v.as_str()).map(String::from);
-                let fstype = dev.get("fstype").and_then(|v| v.as_str()).map(String::from);
+            fn collect_devices(devs: &[serde_json::Value], out: &mut Vec<BlockDevice>) {
+                for dev in devs {
+                    let name = dev.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let dev_type = dev.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let size = dev
+                        .get("size")
+                        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                        .unwrap_or(0);
+                    let mountpoint = dev.get("mountpoint").and_then(|v| v.as_str()).map(String::from);
+                    let fstype = dev.get("fstype").and_then(|v| v.as_str()).map(String::from);
 
-                if dev_type == "disk" || dev_type == "part" {
-                    devices.push(BlockDevice {
-                        path: format!("/dev/{name}"),
-                        size_bytes: size,
-                        dev_type: dev_type.to_string(),
-                        mount_point: mountpoint,
-                        fs_type: fstype,
-                        in_use: dev.get("mountpoint").and_then(|v| v.as_str()).is_some(),
-                    });
+                    if dev_type == "disk" || dev_type == "part" {
+                        out.push(BlockDevice {
+                            path: format!("/dev/{name}"),
+                            size_bytes: size,
+                            dev_type: dev_type.to_string(),
+                            mount_point: mountpoint,
+                            fs_type: fstype,
+                            in_use: dev.get("mountpoint").and_then(|v| v.as_str()).is_some(),
+                        });
+                    }
+
+                    if let Some(children) = dev.get("children").and_then(|v| v.as_array()) {
+                        collect_devices(children, out);
+                    }
                 }
             }
+            collect_devices(blockdevices, &mut devices);
         }
 
         Ok(devices)
