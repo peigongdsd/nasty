@@ -36,6 +36,11 @@ in
     (writeShellScriptBin "nasty-install" ''
       set -euo pipefail
 
+      if [ "$(id -u)" -ne 0 ]; then
+        echo "Error: nasty-install must be run as root"
+        exit 1
+      fi
+
       echo "=== NASty NAS Guided Installer ==="
       echo ""
 
