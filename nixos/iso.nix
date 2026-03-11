@@ -12,6 +12,14 @@ in
   # Bundle NASty source on the ISO for flake-based installation
   environment.etc."nasty-src".source = nastySrc;
 
+  # ── Branding ──────────────────────────────────────────────
+  isoImage.isoBaseName = "nasty";
+  isoImage.volumeID = "NASTY_INSTALLER";
+  isoImage.appendToMenuLabel = " NASty Installer";
+
+  system.nixos.distroName = "NASty";
+  system.nixos.distroId = "nasty";
+
   boot.supportedFilesystems = [ "bcachefs" ];
 
   environment.systemPackages = with pkgs; [
@@ -130,7 +138,7 @@ in
       git init -q
       git add .
 
-      echo "==> Installing NixOS with NASty..."
+      echo "==> Installing NASty..."
       echo "    (this may take a while on first install)"
       nixos-install --flake /mnt/etc/nixos/nixos#nasty --no-root-passwd
 

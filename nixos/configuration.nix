@@ -29,6 +29,10 @@
     nvmeof.enable = true;
   };
 
+  # Branding
+  system.nixos.distroName = "NASty";
+  system.nixos.distroId = "nasty";
+
   # Additional system configuration
   time.timeZone = "UTC";
 
