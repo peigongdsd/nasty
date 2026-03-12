@@ -33,6 +33,7 @@ pub struct AppState {
     pub alerts: nasty_system::alerts::AlertService,
     pub protocols: nasty_system::protocol::ProtocolService,
     pub updates: nasty_system::update::UpdateService,
+    pub metrics: Arc<nasty_system::metrics::MetricsDb>,
     pub pools: nasty_storage::PoolService,
     pub subvolumes: nasty_storage::SubvolumeService,
     pub nfs: nasty_sharing::NfsService,
@@ -52,6 +53,11 @@ async fn main() -> anyhow::Result<()> {
 
     let (event_tx, _) = tokio::sync::broadcast::channel::<String>(64);
 
+    let metrics = Arc::new(
+        nasty_system::metrics::MetricsDb::open()
+            .expect("failed to open metrics database"),
+    );
+
     let state = Arc::new(AppState {
         auth: AuthService::new().await,
         events: event_tx,
@@ -60,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         alerts: nasty_system::alerts::AlertService::new().await,
         protocols: nasty_system::protocol::ProtocolService::new(),
         updates: nasty_system::update::UpdateService::new(),
+        metrics: metrics.clone(),
         pools: nasty_storage::PoolService::new(),
         subvolumes: nasty_storage::SubvolumeService::new(nasty_storage::PoolService::new()),
         nfs: nasty_sharing::NfsService::new(),
@@ -77,6 +84,9 @@ async fn main() -> anyhow::Result<()> {
     state.subvolumes.restore_block_devices().await;
     state.protocols.restore().await;
     state.nvmeof.restore().await;
+
+    // Background metrics collector: samples I/O rates every 5s, writes to SQLite
+    tokio::spawn(metrics_collector(metrics));
 
     // Signal systemd that startup is complete
     sd_notify_ready();
@@ -249,6 +259,70 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState) -> Option<Sessi
                 .await;
             let _ = socket.send(Message::Close(None)).await;
             None
+        }
+    }
+}
+
+// ── Metrics collector ───────────────────────────────────────────
+
+async fn metrics_collector(db: Arc<nasty_system::metrics::MetricsDb>) {
+    use nasty_system::SystemService;
+
+    let sys = SystemService::new();
+    let mut prev_stats = sys.stats().await;
+    let mut prev_time = std::time::Instant::now();
+    let mut prune_counter = 0u32;
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(prev_time).as_secs_f64();
+        if elapsed <= 0.0 {
+            continue;
+        }
+
+        let stats = sys.stats().await;
+
+        // Compute network rates
+        let net_samples: Vec<(&str, f64, f64)> = stats
+            .network
+            .iter()
+            .filter_map(|curr| {
+                let prev = prev_stats.network.iter().find(|p| p.name == curr.name)?;
+                let rx = (curr.rx_bytes.saturating_sub(prev.rx_bytes)) as f64 / elapsed;
+                let tx = (curr.tx_bytes.saturating_sub(prev.tx_bytes)) as f64 / elapsed;
+                Some((curr.name.as_str(), rx, tx))
+            })
+            .collect();
+
+        // Compute disk rates
+        let disk_samples: Vec<(&str, f64, f64)> = stats
+            .disk_io
+            .iter()
+            .filter_map(|curr| {
+                let prev = prev_stats.disk_io.iter().find(|p| p.name == curr.name)?;
+                let read = (curr.read_bytes.saturating_sub(prev.read_bytes)) as f64 / elapsed;
+                let write = (curr.write_bytes.saturating_sub(prev.write_bytes)) as f64 / elapsed;
+                Some((curr.name.as_str(), read, write))
+            })
+            .collect();
+
+        if !net_samples.is_empty() {
+            db.insert("net", &net_samples);
+        }
+        if !disk_samples.is_empty() {
+            db.insert("disk", &disk_samples);
+        }
+
+        prev_stats = stats;
+        prev_time = now;
+
+        // Prune old data every ~5 minutes (60 iterations × 5s)
+        prune_counter += 1;
+        if prune_counter >= 60 {
+            prune_counter = 0;
+            db.prune();
         }
     }
 }

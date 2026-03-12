@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { formatBytes, formatUptime, formatPercent } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
-	import type { SystemInfo, SystemHealth, SystemStats, Pool, DiskHealth, DiskIoStats, NetIfStats, ActiveAlert, Settings } from '$lib/types';
+	import type { SystemInfo, SystemHealth, SystemStats, Pool, DiskHealth, DiskIoStats, NetIfStats, ActiveAlert, Settings, ResourceHistory } from '$lib/types';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { createIoHistory } from '$lib/history.svelte';
@@ -53,6 +53,35 @@
 			prevDiskIo = stats.disk_io;
 			prevNetIo = stats.network;
 			prevSampleTime = Date.now();
+		}
+
+		// Load persisted metrics history so charts render immediately
+		try {
+			const [netHist, diskHist] = await Promise.all([
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'net', duration_secs: 300 }),
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'disk', duration_secs: 300 }),
+			]);
+			for (const rh of netHist) {
+				for (const s of rh.samples) {
+					netHistory.push(rh.name, new Date(s.ts), s.in_rate, s.out_rate);
+				}
+			}
+			for (const rh of diskHist) {
+				for (const s of rh.samples) {
+					diskHistory.push(rh.name, new Date(s.ts), s.in_rate, s.out_rate);
+				}
+			}
+			// Seed the $state sample maps so charts render
+			if (stats) {
+				netSamples = new Map(
+					stats.network.map(n => [n.name, [...netHistory.getSamples(n.name)]])
+				);
+				diskSamples = new Map(
+					stats.disk_io.map(d => [d.name, [...diskHistory.getSamples(d.name)]])
+				);
+			}
+		} catch {
+			// Metrics history not available yet, charts will populate over time
 		}
 	}
 

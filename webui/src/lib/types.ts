@@ -276,6 +276,17 @@ export interface UpdateStatus {
 	reboot_required: boolean;
 }
 
+export interface IoSample {
+	ts: number;
+	in_rate: number;
+	out_rate: number;
+}
+
+export interface ResourceHistory {
+	name: string;
+	samples: IoSample[];
+}
+
 export interface ProtocolStatus {
 	name: string;
 	display_name: string;

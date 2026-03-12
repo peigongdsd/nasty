@@ -30,7 +30,7 @@ fn is_read_only(method: &str) -> bool {
         || matches!(
             method,
             "system.info" | "system.health" | "system.stats" | "system.disks"
-            | "system.alerts" | "system.settings.get" | "alert.rules.list"
+            | "system.alerts" | "system.settings.get" | "system.metrics.history" | "alert.rules.list"
             | "device.list" | "auth.me" | "auth.list_users"
             | "pool.usage" | "pool.scrub.status" | "pool.reconcile.status"
             | "service.protocol.list" | "subvolume.list_all"
@@ -143,6 +143,15 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         "system.info" => ok(req, state.system.info().await),
         "system.health" => ok(req, state.system.health().await),
         "system.stats" => ok(req, state.system.stats().await),
+        "system.metrics.history" => {
+            let kind = str_param(req, "kind").unwrap_or("net");
+            let name = str_param(req, "name");
+            let duration = req.params.as_ref()
+                .and_then(|p| p.get("duration_secs"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(300); // default 5 minutes
+            ok(req, state.metrics.query(kind, name, duration))
+        }
         "system.disks" => {
             if state.settings.get().await.smart_enabled {
                 ok(req, state.system.disks().await)
