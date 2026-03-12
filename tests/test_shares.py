@@ -221,7 +221,7 @@ async def test_nfs(ctx: TestContext):
         # Mount from client
         info(f"Mounting NFS share at {mount_point}...")
         os.makedirs(mount_point, exist_ok=True)
-        r = run(["mount", "-t", "nfs", f"{ctx.host}:{sv['path']}", mount_point], check=False)
+        r = run(["mount", "-t", "nfs4", f"{ctx.host}:{sv['path']}", mount_point], check=False)
         if r.returncode != 0:
             ctx.record("NFS: mount", False, r.stderr.strip())
             return
@@ -289,8 +289,8 @@ async def test_smb(ctx: TestContext):
         share_id = share["id"]
         ctx.record("SMB: share created", True)
 
-        # Brief pause for Samba to reload
-        await asyncio.sleep(1)
+        # Brief pause for Samba to reload config
+        await asyncio.sleep(3)
 
         # Mount from client
         info(f"Mounting SMB share at {mount_point}...")

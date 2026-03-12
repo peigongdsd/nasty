@@ -84,7 +84,7 @@
 	}
 
 	async function doApplyUpdate() {
-		status = { state: 'running', log: '' };
+		status = { state: 'running', log: '', reboot_required: false };
 		const ok = await withToast(
 			() => client.call('system.update.apply'),
 			'Update started'
@@ -95,7 +95,7 @@
 	}
 
 	async function doRollback() {
-		status = { state: 'running', log: '' };
+		status = { state: 'running', log: '', reboot_required: false };
 		const ok = await withToast(
 			() => client.call('system.update.rollback'),
 			'Rollback started'
@@ -145,6 +145,19 @@
 		<span class="flex-1">Update applied. Refresh your browser to load the new WebUI.</span>
 		<Button variant="secondary" size="sm" onclick={() => location.reload()}>
 			Refresh Now
+		</Button>
+	</div>
+{/if}
+
+{#if status?.reboot_required}
+	<div class="mb-4 flex items-center gap-4 rounded-lg border border-amber-800 bg-amber-950 px-4 py-3 text-sm text-amber-200">
+		<span class="flex-1">A kernel update was installed. Reboot to activate it.</span>
+		<Button
+			variant={confirmAction === 'reboot' ? 'destructive' : 'secondary'}
+			size="sm"
+			onclick={() => requestAction('reboot')}
+		>
+			{confirmAction === 'reboot' ? 'Confirm Reboot?' : 'Reboot Now'}
 		</Button>
 	</div>
 {/if}

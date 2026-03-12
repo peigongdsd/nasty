@@ -37,6 +37,8 @@ pub struct UpdateStatus {
     /// "idle", "running", "success", "failed"
     pub state: String,
     pub log: String,
+    /// True when the activated system has a different kernel than the booted one
+    pub reboot_required: bool,
 }
 
 pub struct UpdateService;
@@ -337,7 +339,11 @@ echo "==> Update complete!"
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
-        UpdateStatus { state, log }
+        UpdateStatus {
+            state,
+            log,
+            reboot_required: is_reboot_required().await,
+        }
     }
 }
 
@@ -407,6 +413,18 @@ async fn read_current_version() -> String {
         .await
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "dev".to_string())
+}
+
+/// Check if the booted kernel differs from the activated system's kernel.
+/// On NixOS, /run/booted-system is the system we booted into and
+/// /run/current-system is the latest activated profile (after nixos-rebuild switch).
+async fn is_reboot_required() -> bool {
+    let booted = tokio::fs::read_link("/run/booted-system/kernel").await;
+    let current = tokio::fs::read_link("/run/current-system/kernel").await;
+    match (booted, current) {
+        (Ok(b), Ok(c)) => b != c,
+        _ => false,
+    }
 }
 
 /// TODO: Remove once repo is public.

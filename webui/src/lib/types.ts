@@ -272,6 +272,8 @@ export interface UpdateStatus {
 	/** "idle", "running", "success", "failed" */
 	state: string;
 	log: string;
+	/** True when the activated system has a different kernel than the booted one */
+	reboot_required: boolean;
 }
 
 export interface ProtocolStatus {
