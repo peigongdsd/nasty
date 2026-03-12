@@ -112,7 +112,7 @@
 {#if loading}
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
-	<Card class="mb-6 max-w-4xl">
+	<Card class="mb-6 max-w-full">
 		<CardContent class="pt-6">
 			<div class="mb-4 flex items-center justify-between">
 				<div>
@@ -158,7 +158,7 @@
 	</Card>
 
 	{#if status && status.state !== 'idle'}
-		<Card class="max-w-4xl">
+		<Card class="max-w-full">
 			<CardContent class="pt-6">
 				<div class="mb-3 flex items-center gap-3">
 					<span class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -184,7 +184,7 @@
 		</Card>
 	{/if}
 
-	<p class="mt-6 max-w-4xl text-xs text-muted-foreground">
+	<p class="mt-6 max-w-full text-xs text-muted-foreground">
 		Updates are fetched from GitHub and applied using NixOS rebuild.
 		The system will atomically switch to the new version, restarting services as needed.
 		If anything goes wrong, use Rollback to return to the previous version.

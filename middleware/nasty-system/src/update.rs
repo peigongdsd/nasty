@@ -65,12 +65,15 @@ impl UpdateService {
             Err(_) => check_via_git_ls_remote().await?,
         };
 
+        // Strip "-dirty" suffix for comparison — the local build has a dirty
+        // git tree (hardware-configuration.nix) but the commit is the same
+        let current_clean = current.trim_end_matches("-dirty");
         let available = if latest == "unknown" {
             None
-        } else if current == "dev" {
+        } else if current_clean == "dev" {
             Some(true) // dev builds should always offer to update
         } else {
-            Some(current != latest)
+            Some(current_clean != latest)
         };
 
         Ok(UpdateInfo {
@@ -288,16 +291,29 @@ echo "==> Update complete!"
             Err(_) => "idle".to_string(),
         };
 
-        // Read journal output for the update unit
+        // Get the current invocation ID to only show logs from this run
+        let invocation_id = tokio::process::Command::new("systemctl")
+            .args(["show", UPDATE_UNIT, "--property=InvocationID", "--value"])
+            .output()
+            .await
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+
+        // Read journal output for the update unit (current invocation only)
+        let mut journal_args = vec![
+            "-u".to_string(),
+            UPDATE_UNIT.to_string(),
+            "--no-pager".to_string(),
+            "--output=cat".to_string(),
+        ];
+        if !invocation_id.is_empty() {
+            journal_args.push(format!("_SYSTEMD_INVOCATION_ID={invocation_id}"));
+        } else {
+            journal_args.extend(["-n".to_string(), "200".to_string()]);
+        }
+
         let log = tokio::process::Command::new("journalctl")
-            .args([
-                "-u",
-                UPDATE_UNIT,
-                "--no-pager",
-                "-n",
-                "200",
-                "--output=cat",
-            ])
+            .args(&journal_args)
             .output()
             .await
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
