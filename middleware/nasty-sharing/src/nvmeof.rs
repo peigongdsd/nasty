@@ -173,10 +173,6 @@ impl NvmeofService {
             return;
         }
 
-        // Load kernel modules
-        let _ = tokio::process::Command::new("modprobe").arg("nvmet").output().await;
-        let _ = tokio::process::Command::new("modprobe").arg("nvmet-tcp").output().await;
-
         let subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
         if subsystems.is_empty() {
             info!("No NVMe-oF subsystems to restore");

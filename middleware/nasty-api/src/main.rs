@@ -63,12 +63,12 @@ async fn main() -> anyhow::Result<()> {
     // Restore state from previous session:
     // 1. Mount pools tracked in pool-state.json
     // 2. Re-attach loop devices for block subvolumes
-    // 3. Restore NVMe-oF configfs (volatile, lost on reboot)
-    // 4. Start enabled protocol services (NFS, SMB, load kernel modules)
+    // 3. Start enabled protocols (services + kernel modules)
+    // 4. Restore NVMe-oF configfs (volatile, needs modules from step 3)
     state.pools.restore_mounts().await;
     state.subvolumes.restore_block_devices().await;
-    state.nvmeof.restore().await;
     state.protocols.restore().await;
+    state.nvmeof.restore().await;
 
     // Signal systemd that startup is complete
     sd_notify_ready();
