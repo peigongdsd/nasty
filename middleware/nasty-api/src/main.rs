@@ -21,8 +21,13 @@ mod terminal;
 use auth::{AuthService, Session};
 use router::handle_rpc_request;
 
+/// Broadcast channel for notifying all WebSocket clients of state changes.
+/// The payload is the collection name (e.g. "pool", "subvolume", "share.nfs").
+pub type EventBus = tokio::sync::broadcast::Sender<String>;
+
 pub struct AppState {
     pub auth: AuthService,
+    pub events: EventBus,
     pub system: nasty_system::SystemService,
     pub settings: nasty_system::settings::SettingsService,
     pub alerts: nasty_system::alerts::AlertService,
@@ -45,8 +50,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    let (event_tx, _) = tokio::sync::broadcast::channel::<String>(64);
+
     let state = Arc::new(AppState {
         auth: AuthService::new().await,
+        events: event_tx,
         system: nasty_system::SystemService::new(),
         settings: nasty_system::settings::SettingsService::new().await,
         alerts: nasty_system::alerts::AlertService::new().await,
@@ -135,6 +143,9 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) ->
 }
 
 async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
+    use futures_util::{SinkExt, StreamExt};
+    use nasty_common::Notification;
+
     info!("WebSocket client connected, awaiting authentication");
 
     // First message must be an auth token
@@ -145,16 +156,35 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<AppState>) {
 
     info!("WebSocket authenticated as '{}'", session.username);
 
-    while let Some(Ok(msg)) = socket.recv().await {
-        match msg {
-            Message::Text(text) => {
-                let response = handle_rpc_request(&text, &state, &session).await;
-                if socket.send(Message::Text(response.into())).await.is_err() {
-                    break;
+    let mut event_rx = state.events.subscribe();
+    let (mut writer, mut reader) = socket.split();
+
+    loop {
+        tokio::select! {
+            msg = reader.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        let response = handle_rpc_request(&text, &state, &session).await;
+                        if writer.send(Message::Text(response.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
                 }
             }
-            Message::Close(_) => break,
-            _ => {}
+            event = event_rx.recv() => {
+                if let Ok(collection) = event {
+                    let notification = Notification::new(
+                        "event",
+                        Some(serde_json::json!({ "collection": collection })),
+                    );
+                    let text = serde_json::to_string(&notification).unwrap();
+                    if writer.send(Message::Text(text.into())).await.is_err() {
+                        break;
+                    }
+                }
+            }
         }
     }
 

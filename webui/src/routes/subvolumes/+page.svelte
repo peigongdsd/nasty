@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { formatBytes } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
@@ -28,7 +28,13 @@
 
 	const client = getClient();
 
+	function handleEvent(_: string, params: unknown) {
+		const p = params as { collection?: string };
+		if (p?.collection === 'subvolume' || p?.collection === 'snapshot') refresh();
+	}
+
 	onMount(async () => {
+		client.onEvent(handleEvent);
 		pools = await client.call<Pool[]>('pool.list');
 		const mounted = pools.filter(p => p.mounted);
 		if (mounted.length > 0) {
@@ -37,6 +43,8 @@
 		}
 		loading = false;
 	});
+
+	onDestroy(() => client.offEvent(handleEvent));
 
 	async function refresh() {
 		if (!selectedPool) return;

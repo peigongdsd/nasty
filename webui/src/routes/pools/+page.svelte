@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { formatBytes, formatPercent } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
@@ -40,10 +40,18 @@
 
 	const client = getClient();
 
+	function handleEvent(_: string, params: unknown) {
+		const p = params as { collection?: string };
+		if (p?.collection === 'pool') refresh();
+	}
+
 	onMount(async () => {
+		client.onEvent(handleEvent);
 		await refresh();
 		loading = false;
 	});
+
+	onDestroy(() => client.offEvent(handleEvent));
 
 	async function refresh() {
 		await withToast(async () => {

@@ -119,6 +119,10 @@ export class NastyClient {
 		this.eventHandlers.push(handler);
 	}
 
+	offEvent(handler: EventHandler) {
+		this.eventHandlers = this.eventHandlers.filter((h) => h !== handler);
+	}
+
 	disconnect() {
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this._authenticated = false;

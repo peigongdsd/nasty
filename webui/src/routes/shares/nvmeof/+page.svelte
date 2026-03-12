@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { NvmeofSubsystem, Subvolume, ProtocolStatus } from '$lib/types';
@@ -45,11 +45,20 @@
 		}
 	});
 
+	function handleEvent(_: string, params: unknown) {
+		const p = params as { collection?: string };
+		if (p?.collection === 'share.nvmeof') refresh();
+		if (p?.collection === 'protocol') loadProtocol();
+	}
+
 	onMount(async () => {
+		client.onEvent(handleEvent);
 		await refresh();
 		await loadProtocol();
 		loading = false;
 	});
+
+	onDestroy(() => client.offEvent(handleEvent));
 
 	async function loadProtocol() {
 		try {

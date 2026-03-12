@@ -27,4 +27,5 @@ argon2 = { version = "0.5", features = ["rand"] }
 rand = "0.9"
 base64 = "0.22"
 tokio-util = "0.7"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 portable-pty = "0.9"

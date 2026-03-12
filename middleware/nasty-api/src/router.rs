@@ -38,6 +38,25 @@ fn is_read_only(method: &str) -> bool {
         )
 }
 
+/// Derive the collection name for a mutation method, or None if read-only.
+fn collection_for_method(method: &str) -> Option<&'static str> {
+    match method {
+        m if m.starts_with("pool.device.") => Some("pool"),
+        m if m.starts_with("pool.") && !is_read_only(m) => Some("pool"),
+        m if m.starts_with("device.") && !is_read_only(m) => Some("pool"),
+        m if m.starts_with("subvolume.") && !is_read_only(m) => Some("subvolume"),
+        m if m.starts_with("snapshot.") && !is_read_only(m) => Some("snapshot"),
+        m if m.starts_with("share.nfs.") && !is_read_only(m) => Some("share.nfs"),
+        m if m.starts_with("share.smb.") && !is_read_only(m) => Some("share.smb"),
+        m if m.starts_with("share.iscsi.") && !is_read_only(m) => Some("share.iscsi"),
+        m if m.starts_with("share.nvmeof.") && !is_read_only(m) => Some("share.nvmeof"),
+        m if m.starts_with("service.protocol.") && !is_read_only(m) => Some("protocol"),
+        m if m.starts_with("system.settings.") && !is_read_only(m) => Some("settings"),
+        m if m.starts_with("alert.rules.") && !is_read_only(m) => Some("alert"),
+        _ => None,
+    }
+}
+
 /// Route a JSON-RPC request to the appropriate handler
 pub async fn handle_rpc_request(raw: &str, state: &AppState, session: &Session) -> String {
     let request: Request = match serde_json::from_str(raw) {
@@ -65,6 +84,14 @@ pub async fn handle_rpc_request(raw: &str, state: &AppState, session: &Session) 
     }
 
     let response = route(&request, state, session).await;
+
+    // Broadcast event to all clients on successful mutations
+    if response.error.is_none() {
+        if let Some(collection) = collection_for_method(&request.method) {
+            let _ = state.events.send(collection.to_string());
+        }
+    }
+
     serde_json::to_string(&response).unwrap()
 }
 

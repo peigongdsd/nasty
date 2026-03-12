@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { AlertRule, ActiveAlert, AlertMetric, AlertCondition, AlertSeverity } from '$lib/types';
@@ -37,10 +37,18 @@
 		equals: 'Equals',
 	};
 
+	function handleEvent(_: string, params: unknown) {
+		const p = params as { collection?: string };
+		if (p?.collection === 'alert') refresh();
+	}
+
 	onMount(async () => {
+		client.onEvent(handleEvent);
 		await refresh();
 		loading = false;
 	});
+
+	onDestroy(() => client.offEvent(handleEvent));
 
 	async function refresh() {
 		await withToast(async () => {

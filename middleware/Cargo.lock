@@ -530,6 +530,7 @@ dependencies = [
  "argon2",
  "axum",
  "base64",
+ "futures-util",
  "nasty-common",
  "nasty-sharing",
  "nasty-storage",
