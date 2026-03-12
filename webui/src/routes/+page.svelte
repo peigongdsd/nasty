@@ -6,6 +6,8 @@
 	import type { SystemInfo, SystemHealth, SystemStats, Pool, DiskHealth, DiskIoStats, NetIfStats, ActiveAlert, Settings } from '$lib/types';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import { createIoHistory } from '$lib/history.svelte';
+	import IoChart from '$lib/components/io-chart.svelte';
 
 	let info: SystemInfo | null = $state(null);
 	let health: SystemHealth | null = $state(null);
@@ -21,6 +23,9 @@
 	let prevSampleTime = $state(0);
 	let diskIoRates: Map<string, { readRate: number; writeRate: number }> = $state(new Map());
 	let netIoRates: Map<string, { rxRate: number; txRate: number }> = $state(new Map());
+
+	const netHistory = createIoHistory();
+	const diskHistory = createIoHistory();
 
 	const client = getClient();
 
@@ -54,16 +59,17 @@
 			const newStats = await client.call<SystemStats>('system.stats');
 			const now = Date.now();
 			const elapsed = (now - prevSampleTime) / 1000;
+			const sampleTime = new Date(now);
 
 			if (prevSampleTime > 0 && elapsed > 0) {
 				const dRates = new Map<string, { readRate: number; writeRate: number }>();
 				for (const curr of newStats.disk_io) {
 					const prev = prevDiskIo.find(d => d.name === curr.name);
 					if (prev) {
-						dRates.set(curr.name, {
-							readRate: Math.max(0, (curr.read_bytes - prev.read_bytes) / elapsed),
-							writeRate: Math.max(0, (curr.write_bytes - prev.write_bytes) / elapsed),
-						});
+						const readRate = Math.max(0, (curr.read_bytes - prev.read_bytes) / elapsed);
+						const writeRate = Math.max(0, (curr.write_bytes - prev.write_bytes) / elapsed);
+						dRates.set(curr.name, { readRate, writeRate });
+						diskHistory.push(curr.name, sampleTime, readRate, writeRate);
 					}
 				}
 				diskIoRates = dRates;
@@ -72,10 +78,10 @@
 				for (const curr of newStats.network) {
 					const prev = prevNetIo.find(n => n.name === curr.name);
 					if (prev) {
-						nRates.set(curr.name, {
-							rxRate: Math.max(0, (curr.rx_bytes - prev.rx_bytes) / elapsed),
-							txRate: Math.max(0, (curr.tx_bytes - prev.tx_bytes) / elapsed),
-						});
+						const rxRate = Math.max(0, (curr.rx_bytes - prev.rx_bytes) / elapsed);
+						const txRate = Math.max(0, (curr.tx_bytes - prev.tx_bytes) / elapsed);
+						nRates.set(curr.name, { rxRate, txRate });
+						netHistory.push(curr.name, sampleTime, rxRate, txRate);
 					}
 				}
 				netIoRates = nRates;
@@ -266,6 +272,7 @@
 						{#each stats.network as iface}
 							{@const rates = netIoRates.get(iface.name)}
 							{@const ips = ipv4Only(iface.addresses)}
+							{@const samples = netHistory.getSamples(iface.name)}
 							<div class="py-2.5 first:pt-0 last:pb-0">
 								<div class="mb-1.5 flex items-center gap-2">
 									<span class="text-sm font-semibold">{iface.name}</span>
@@ -277,7 +284,7 @@
 										<span class="ml-auto font-mono text-xs">{ips.join(', ')}</span>
 									{/if}
 								</div>
-								<div class="flex gap-6 text-xs">
+								<div class="mb-2 flex gap-6 text-xs">
 									<div class="flex items-center gap-1.5">
 										<span class="w-5 text-right font-semibold text-muted-foreground">RX</span>
 										<span class="tabular-nums font-semibold">{rates ? `${formatBytes(rates.rxRate)}/s` : formatBytes(iface.rx_bytes)}</span>
@@ -291,6 +298,13 @@
 										<span class="tabular-nums">{formatBytes(iface.rx_bytes + iface.tx_bytes)}</span>
 									</div>
 								</div>
+								<IoChart
+									{samples}
+									inLabel="RX"
+									outLabel="TX"
+									inColor="var(--chart-2)"
+									outColor="var(--chart-1)"
+								/>
 							</div>
 						{/each}
 					</div>
@@ -307,6 +321,7 @@
 					<div class="divide-y divide-border">
 						{#each stats.disk_io as dio}
 							{@const rates = diskIoRates.get(dio.name)}
+							{@const samples = diskHistory.getSamples(dio.name)}
 							<div class="py-2.5 first:pt-0 last:pb-0">
 								<div class="mb-1.5 flex items-center gap-2">
 									<span class="text-sm font-semibold">{dio.name}</span>
@@ -315,7 +330,7 @@
 									{/if}
 									<span class="ml-auto text-xs tabular-nums text-muted-foreground">{formatBytes(dio.read_bytes + dio.write_bytes)}</span>
 								</div>
-								<div class="flex gap-6 text-xs">
+								<div class="mb-2 flex gap-6 text-xs">
 									<div class="flex items-center gap-1.5">
 										<span class="w-5 text-right font-bold text-muted-foreground">R</span>
 										{#if rates}
@@ -333,6 +348,13 @@
 										{/if}
 									</div>
 								</div>
+								<IoChart
+									{samples}
+									inLabel="Read"
+									outLabel="Write"
+									inColor="var(--chart-2)"
+									outColor="var(--chart-4)"
+								/>
 							</div>
 						{/each}
 					</div>
