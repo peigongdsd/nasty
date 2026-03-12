@@ -3,26 +3,36 @@
 	import { getClient } from '$lib/client';
 	import { formatBytes } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
-	import type { Pool, Subvolume, Snapshot } from '$lib/types';
+	import type { Pool, Subvolume, SubvolumeType } from '$lib/types';
+	import { Button } from '$lib/components/ui/button';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import * as Dialog from '$lib/components/ui/dialog';
 
 	let pools: Pool[] = $state([]);
 	let selectedPool = $state('');
 	let subvolumes: Subvolume[] = $state([]);
-	let snapshots: Snapshot[] = $state([]);
 	let loading = $state(true);
 
 	let showCreate = $state(false);
-	let newSubvolName = $state('');
+	let newName = $state('');
+	let newType: SubvolumeType = $state('filesystem');
+	let newVolsize = $state('');
+	let newCompression = $state('');
+	let newComments = $state('');
+
 	let showSnap = $state<string | null>(null);
 	let snapName = $state('');
-	let snapReadOnly = $state(true);
 
 	const client = getClient();
 
 	onMount(async () => {
 		pools = await client.call<Pool[]>('pool.list');
-		if (pools.length > 0) {
-			selectedPool = pools[0].name;
+		const mounted = pools.filter(p => p.mounted);
+		if (mounted.length > 0) {
+			selectedPool = mounted[0].name;
 			await refresh();
 		}
 		loading = false;
@@ -32,7 +42,6 @@
 		if (!selectedPool) return;
 		await withToast(async () => {
 			subvolumes = await client.call<Subvolume[]>('subvolume.list', { pool: selectedPool });
-			snapshots = await client.call<Snapshot[]>('snapshot.list', { pool: selectedPool });
 		});
 	}
 
@@ -42,13 +51,30 @@
 	}
 
 	async function createSubvolume() {
-		if (!newSubvolName || !selectedPool) return;
+		if (!newName || !selectedPool) return;
+		if (newType === 'block' && !newVolsize) return;
+
+		const params: Record<string, unknown> = {
+			pool: selectedPool,
+			name: newName,
+			subvolume_type: newType,
+		};
+		if (newType === 'block' && newVolsize) {
+			params.volsize_bytes = parseFloat(newVolsize) * 1073741824;
+		}
+		if (newCompression) params.compression = newCompression;
+		if (newComments) params.comments = newComments;
+
 		const ok = await withToast(
-			() => client.call('subvolume.create', { pool: selectedPool, name: newSubvolName }),
-			`Subvolume "${newSubvolName}" created`
+			() => client.call('subvolume.create', params),
+			`Subvolume "${newName}" created`
 		);
 		if (ok !== undefined) {
-			newSubvolName = '';
+			newName = '';
+			newType = 'filesystem';
+			newVolsize = '';
+			newCompression = '';
+			newComments = '';
 			showCreate = false;
 			await refresh();
 		}
@@ -63,6 +89,22 @@
 		await refresh();
 	}
 
+	async function attachSubvolume(name: string) {
+		await withToast(
+			() => client.call('subvolume.attach', { pool: selectedPool, name }),
+			`Loop device attached for "${name}"`
+		);
+		await refresh();
+	}
+
+	async function detachSubvolume(name: string) {
+		await withToast(
+			() => client.call('subvolume.detach', { pool: selectedPool, name }),
+			`Loop device detached for "${name}"`
+		);
+		await refresh();
+	}
+
 	async function createSnapshot() {
 		if (!showSnap || !snapName) return;
 		const ok = await withToast(
@@ -70,7 +112,7 @@
 				pool: selectedPool,
 				subvolume: showSnap,
 				name: snapName,
-				read_only: snapReadOnly,
+				read_only: true,
 			}),
 			`Snapshot "${snapName}" created`
 		);
@@ -81,80 +123,154 @@
 		await refresh();
 	}
 
-	async function deleteSnapshot(subvolume: string, name: string) {
-		if (!confirm(`Delete snapshot "${name}"?`)) return;
+	async function deleteSnapshot(subvolume: string, snap: string) {
+		if (!confirm(`Delete snapshot "${snap}"?`)) return;
 		await withToast(
-			() => client.call('snapshot.delete', { pool: selectedPool, subvolume, name }),
-			`Snapshot "${name}" deleted`
+			() => client.call('snapshot.delete', {
+				pool: selectedPool,
+				subvolume,
+				name: snap,
+			}),
+			`Snapshot "${snap}" deleted`
 		);
 		await refresh();
 	}
+
+	const mountedPools = $derived(pools.filter(p => p.mounted));
 </script>
 
-<h1>Subvolumes</h1>
+<h1 class="mb-4 text-2xl font-bold">Subvolumes</h1>
 
-{#if pools.length > 0}
-	<div class="toolbar">
-		<select value={selectedPool} onchange={(e) => selectPool((e.target as HTMLSelectElement).value)}>
-			{#each pools as p}
+{#if mountedPools.length > 0}
+	<div class="mb-4 flex items-center gap-4">
+		<select value={selectedPool} onchange={(e) => selectPool((e.target as HTMLSelectElement).value)} class="h-9 w-auto rounded-md border border-input bg-transparent px-3 text-sm">
+			{#each mountedPools as p}
 				<option value={p.name}>{p.name}</option>
 			{/each}
 		</select>
-		<button onclick={() => showCreate = !showCreate}>
+		<Button onclick={() => showCreate = !showCreate}>
 			{showCreate ? 'Cancel' : 'Create Subvolume'}
-		</button>
+		</Button>
 	</div>
 {/if}
 
 {#if showCreate}
-	<div class="form-card">
-		<h3>Create Subvolume in "{selectedPool}"</h3>
-		<div class="field">
-			<label for="subvol-name">Name</label>
-			<input id="subvol-name" bind:value={newSubvolName} placeholder="documents" />
-		</div>
-		<button onclick={createSubvolume} disabled={!newSubvolName}>Create</button>
-	</div>
+	<Card class="mb-6 max-w-lg">
+		<CardContent class="pt-6">
+			<h3 class="mb-4 text-lg font-semibold">Create Subvolume in "{selectedPool}"</h3>
+			<div class="mb-4">
+				<Label for="sv-name">Name</Label>
+				<Input id="sv-name" bind:value={newName} placeholder="documents" class="mt-1" />
+			</div>
+			<div class="mb-4">
+				<Label for="sv-type">Type</Label>
+				<select id="sv-type" bind:value={newType} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="filesystem">Filesystem (NFS, SMB)</option>
+					<option value="block">Block Device (iSCSI, NVMe-oF)</option>
+				</select>
+			</div>
+			{#if newType === 'block'}
+				<div class="mb-4">
+					<Label for="sv-volsize">Volume Size (GiB)</Label>
+					<Input id="sv-volsize" type="number" bind:value={newVolsize} placeholder="100" min="1" class="mt-1" />
+				</div>
+			{/if}
+			<div class="mb-4">
+				<Label for="sv-compression">Compression</Label>
+				<select id="sv-compression" bind:value={newCompression} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="">None</option>
+					<option value="lz4">LZ4</option>
+					<option value="zstd">Zstd</option>
+					<option value="gzip">Gzip</option>
+				</select>
+			</div>
+			<div class="mb-4">
+				<Label for="sv-comments">Comments</Label>
+				<Input id="sv-comments" bind:value={newComments} placeholder="Optional description" class="mt-1" />
+			</div>
+			<Button onclick={createSubvolume} disabled={!newName || (newType === 'block' && !newVolsize)}>Create</Button>
+		</CardContent>
+	</Card>
 {/if}
 
 {#if loading}
-	<p>Loading...</p>
+	<p class="text-muted-foreground">Loading...</p>
 {:else if pools.length === 0}
-	<p class="muted">No pools configured. Create a pool first.</p>
+	<p class="text-muted-foreground">No pools configured. Create a pool first.</p>
+{:else if mountedPools.length === 0}
+	<p class="text-muted-foreground">No mounted pools. Mount a pool first.</p>
 {:else if subvolumes.length === 0}
-	<p class="muted">No subvolumes in pool "{selectedPool}".</p>
+	<p class="text-muted-foreground">No subvolumes in pool "{selectedPool}".</p>
 {:else}
-	<table>
+	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th>Name</th>
-				<th>Size</th>
-				<th>Snapshots</th>
-				<th>Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Name</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Type</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Size</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Block Device</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Snapshots</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each subvolumes as sv}
-				<tr>
-					<td><strong>{sv.name}</strong><br /><span class="path">{sv.path}</span></td>
-					<td>{sv.size_bytes !== null ? formatBytes(sv.size_bytes) : '—'}</td>
-					<td>
+				<tr class="border-b border-border">
+					<td class="p-3">
+						<strong>{sv.name}</strong>
+						<span class="block font-mono text-xs text-muted-foreground">{sv.path}</span>
+						{#if sv.comments}
+							<span class="mt-0.5 block text-xs italic text-muted-foreground">{sv.comments}</span>
+						{/if}
+					</td>
+					<td class="p-3">
+						<Badge variant={sv.subvolume_type === 'filesystem' ? 'secondary' : 'outline'}
+							class={sv.subvolume_type === 'filesystem' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'}>
+							{sv.subvolume_type === 'filesystem' ? 'Filesystem' : 'Block'}
+						</Badge>
+					</td>
+					<td class="p-3 text-sm">
+						{#if sv.subvolume_type === 'block' && sv.volsize_bytes}
+							{formatBytes(sv.volsize_bytes)}
+							{#if sv.used_bytes !== null}
+								<span class="text-xs text-muted-foreground">({formatBytes(sv.used_bytes)} on disk)</span>
+							{/if}
+						{:else if sv.used_bytes !== null}
+							{formatBytes(sv.used_bytes)}
+						{:else}
+							—
+						{/if}
+					</td>
+					<td class="p-3">
+						{#if sv.subvolume_type === 'block'}
+							{#if sv.block_device}
+								<span class="font-mono text-xs">{sv.block_device}</span>
+								<Button variant="secondary" size="sm" class="ml-2" onclick={() => detachSubvolume(sv.name)}>Detach</Button>
+							{:else}
+								<span class="text-muted-foreground">Detached</span>
+								<Button variant="secondary" size="sm" class="ml-2" onclick={() => attachSubvolume(sv.name)}>Attach</Button>
+							{/if}
+						{:else}
+							<span class="text-muted-foreground">N/A</span>
+						{/if}
+					</td>
+					<td class="p-3">
 						{#if sv.snapshots.length === 0}
-							<span class="muted">None</span>
+							<span class="text-muted-foreground">None</span>
 						{:else}
 							{#each sv.snapshots as snap}
-								<div class="snap-row">
-									<span class="mono">{snap}</span>
-									<button class="danger small" onclick={() => deleteSnapshot(sv.name, snap)}>Delete</button>
+								<div class="my-0.5 flex items-center gap-2">
+									<span class="font-mono text-xs">{snap}</span>
+									<Button variant="destructive" size="sm" onclick={() => deleteSnapshot(sv.name, snap)}>Delete</Button>
 								</div>
 							{/each}
 						{/if}
 					</td>
-					<td class="actions">
-						<button class="secondary" onclick={() => { showSnap = sv.name; snapName = ''; }}>
-							Snapshot
-						</button>
-						<button class="danger" onclick={() => deleteSubvolume(sv.name)}>Delete</button>
+					<td class="p-3">
+						<div class="flex gap-2">
+							<Button variant="secondary" onclick={() => { showSnap = sv.name; snapName = ''; }}>Snapshot</Button>
+							<Button variant="destructive" onclick={() => deleteSubvolume(sv.name)}>Delete</Button>
+						</div>
 					</td>
 				</tr>
 			{/each}
@@ -162,43 +278,18 @@
 	</table>
 {/if}
 
-{#if showSnap}
-	<div class="modal-overlay" role="presentation" onclick={() => showSnap = null} onkeydown={(e) => { if (e.key === 'Escape') showSnap = null; }}>
-		<div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h3>Snapshot "{showSnap}"</h3>
-			<div class="field">
-				<label for="snap-name">Snapshot Name</label>
-				<input id="snap-name" bind:value={snapName} placeholder="snap-2024-01-15" />
-			</div>
-			<label class="checkbox">
-				<input type="checkbox" bind:checked={snapReadOnly} /> Read-only
-			</label>
-			<div class="modal-actions">
-				<button onclick={createSnapshot} disabled={!snapName}>Create</button>
-				<button class="secondary" onclick={() => showSnap = null}>Cancel</button>
-			</div>
+<Dialog.Root open={showSnap !== null} onOpenChange={(open) => { if (!open) showSnap = null; }}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Snapshot "{showSnap}"</Dialog.Title>
+		</Dialog.Header>
+		<div class="mb-4">
+			<Label for="snap-name">Snapshot Name</Label>
+			<Input id="snap-name" bind:value={snapName} placeholder="snap-2026-03-12" class="mt-1" />
 		</div>
-	</div>
-{/if}
-
-<style>
-	.toolbar { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; }
-	.toolbar select { width: auto; }
-	.form-card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 400px; }
-	.form-card h3 { margin: 0 0 1rem; }
-	.field { margin-bottom: 1rem; }
-	.field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.field input { width: 100%; box-sizing: border-box; }
-	.muted { color: #6b7280; }
-	.path { font-family: monospace; font-size: 0.75rem; color: #6b7280; }
-	.mono { font-family: monospace; font-size: 0.8rem; }
-	.actions { display: flex; gap: 0.5rem; }
-	.snap-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; }
-	:global(button.small) { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
-	.checkbox { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; cursor: pointer; }
-	.checkbox input { width: auto; }
-	.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-	.modal { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; min-width: 350px; }
-	.modal h3 { margin: 0 0 1rem; }
-	.modal-actions { display: flex; gap: 0.5rem; }
-</style>
+		<Dialog.Footer>
+			<Button onclick={createSnapshot} disabled={!snapName}>Create</Button>
+			<Button variant="secondary" onclick={() => showSnap = null}>Cancel</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

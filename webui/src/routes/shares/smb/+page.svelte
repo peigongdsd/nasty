@@ -3,6 +3,11 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { SmbShare } from '$lib/types';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
 
 	let shares: SmbShare[] = $state([]);
 	let showCreate = $state(false);
@@ -66,99 +71,88 @@
 	}
 </script>
 
-<h1>SMB Shares</h1>
+<h1 class="mb-4 text-2xl font-bold">SMB Shares</h1>
 
-<div class="toolbar">
-	<button onclick={() => showCreate = !showCreate}>
+<div class="mb-4">
+	<Button onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Share'}
-	</button>
+	</Button>
 </div>
 
 {#if showCreate}
-	<div class="form-card">
-		<h3>New SMB Share</h3>
-		<div class="field">
-			<label for="smb-name">Share Name</label>
-			<input id="smb-name" bind:value={newName} placeholder="documents" />
-		</div>
-		<div class="field">
-			<label for="smb-path">Path</label>
-			<input id="smb-path" bind:value={newPath} placeholder="/mnt/nasty/tank/data" />
-		</div>
-		<div class="field">
-			<label for="smb-comment">Comment</label>
-			<input id="smb-comment" bind:value={newComment} placeholder="Optional description" />
-		</div>
-		<div class="checkboxes">
-			<label><input type="checkbox" bind:checked={newReadOnly} /> Read-only</label>
-			<label><input type="checkbox" bind:checked={newGuestOk} /> Allow guests</label>
-		</div>
-		<button onclick={create} disabled={!newName || !newPath}>Create</button>
-	</div>
+	<Card class="mb-6 max-w-lg">
+		<CardContent class="pt-6">
+			<h3 class="mb-4 text-lg font-semibold">New SMB Share</h3>
+			<div class="mb-4">
+				<Label for="smb-name">Share Name</Label>
+				<Input id="smb-name" bind:value={newName} placeholder="documents" class="mt-1" />
+			</div>
+			<div class="mb-4">
+				<Label for="smb-path">Path</Label>
+				<Input id="smb-path" bind:value={newPath} placeholder="/mnt/nasty/tank/data" class="mt-1" />
+			</div>
+			<div class="mb-4">
+				<Label for="smb-comment">Comment</Label>
+				<Input id="smb-comment" bind:value={newComment} placeholder="Optional description" class="mt-1" />
+			</div>
+			<div class="mb-4 flex gap-6">
+				<label class="flex cursor-pointer items-center gap-2">
+					<input type="checkbox" bind:checked={newReadOnly} class="h-4 w-4" /> Read-only
+				</label>
+				<label class="flex cursor-pointer items-center gap-2">
+					<input type="checkbox" bind:checked={newGuestOk} class="h-4 w-4" /> Allow guests
+				</label>
+			</div>
+			<Button onclick={create} disabled={!newName || !newPath}>Create</Button>
+		</CardContent>
+	</Card>
 {/if}
 
 {#if loading}
-	<p>Loading...</p>
+	<p class="text-muted-foreground">Loading...</p>
 {:else if shares.length === 0}
-	<p class="muted">No SMB shares configured.</p>
+	<p class="text-muted-foreground">No SMB shares configured.</p>
 {:else}
-	<table>
+	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th>Name</th>
-				<th>Path</th>
-				<th>Access</th>
-				<th>Status</th>
-				<th>Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Name</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Path</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Access</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each shares as share}
-				<tr>
-					<td>
+				<tr class="border-b border-border">
+					<td class="p-3">
 						<strong>{share.name}</strong>
-						{#if share.comment}<br /><span class="muted">{share.comment}</span>{/if}
+						{#if share.comment}<br /><span class="text-xs text-muted-foreground">{share.comment}</span>{/if}
 					</td>
-					<td class="mono">{share.path}</td>
-					<td>
-						<span class="tag">{share.read_only ? 'RO' : 'RW'}</span>
-						{#if share.guest_ok}<span class="tag">Guest</span>{/if}
+					<td class="p-3 font-mono text-sm">{share.path}</td>
+					<td class="p-3">
+						<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">{share.read_only ? 'RO' : 'RW'}</span>
+						{#if share.guest_ok}<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">Guest</span>{/if}
 						{#if share.valid_users.length > 0}
-							<span class="tag">Users: {share.valid_users.join(', ')}</span>
+							<span class="inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">Users: {share.valid_users.join(', ')}</span>
 						{/if}
 					</td>
-					<td>
-						<span class="badge" class:enabled={share.enabled} class:disabled={!share.enabled}>
+					<td class="p-3">
+						<Badge variant={share.enabled ? 'default' : 'secondary'}>
 							{share.enabled ? 'Enabled' : 'Disabled'}
-						</span>
+						</Badge>
 					</td>
-					<td class="actions">
-						<button class="secondary" onclick={() => toggleEnabled(share)}>
-							{share.enabled ? 'Disable' : 'Enable'}
-						</button>
-						<button class="danger" onclick={() => remove(share.id)}>Delete</button>
+					<td class="p-3">
+						<div class="flex gap-2">
+							<Button variant="secondary" size="sm" onclick={() => toggleEnabled(share)}>
+								{share.enabled ? 'Disable' : 'Enable'}
+							</Button>
+							<Button variant="destructive" size="sm" onclick={() => remove(share.id)}>Delete</Button>
+						</div>
 					</td>
 				</tr>
 			{/each}
 		</tbody>
 	</table>
 {/if}
-
-<style>
-	.toolbar { margin: 1rem 0; }
-	.form-card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 450px; }
-	.form-card h3 { margin: 0 0 1rem; }
-	.field { margin-bottom: 1rem; }
-	.field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.field input { width: 100%; box-sizing: border-box; }
-	.checkboxes { display: flex; gap: 1.5rem; margin-bottom: 1rem; }
-	.checkboxes label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-	.checkboxes input { width: auto; }
-	.mono { font-family: monospace; font-size: 0.85rem; }
-	.muted { color: #6b7280; font-size: 0.8rem; }
-	.tag { display: inline-block; background: #1e2130; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.75rem; margin: 0.1rem; }
-	.badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-	.badge.enabled { background: #064e3b; color: #4ade80; }
-	.badge.disabled { background: #374151; color: #9ca3af; }
-	.actions { display: flex; gap: 0.5rem; }
-</style>

@@ -6,6 +6,11 @@
 	import Toasts from '$lib/components/Toasts.svelte';
 	import type { AuthResult } from '$lib/rpc';
 	import favicon from '$lib/assets/favicon.svg';
+	import '../app.css';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Separator } from '$lib/components/ui/separator';
 
 	let { children } = $props();
 	let connected = $state(false);
@@ -80,6 +85,7 @@
 		{ href: '/shares/nvmeof', label: 'NVMe-oF' },
 		{ href: '/disks', label: 'Disks' },
 		{ href: '/alerts', label: 'Alerts' },
+		{ href: '/services', label: 'Services' },
 		{ href: '/terminal', label: 'Terminal' },
 		{ href: '/users', label: 'Users' },
 	];
@@ -93,136 +99,54 @@
 <Toasts />
 
 {#if showLogin}
-	<div class="login-page">
-		<div class="login-card">
-			<h1>NASty</h1>
-			<p class="subtitle">Sign in to manage your storage</p>
+	<div class="flex min-h-screen items-center justify-center">
+		<div class="w-[340px] rounded-xl border border-border bg-card p-8">
+			<h1 class="mb-1 text-2xl font-bold text-foreground">NASty</h1>
+			<p class="mb-6 text-sm text-muted-foreground">Sign in to manage your storage</p>
 			{#if loginError}
-				<p class="login-error">{loginError}</p>
+				<p class="mb-4 text-sm text-destructive">{loginError}</p>
 			{/if}
 			<form onsubmit={(e) => { e.preventDefault(); handleLogin(); }}>
-				<div class="field">
-					<label for="username">Username</label>
-					<input id="username" bind:value={loginUser} autocomplete="username" />
+				<div class="mb-4">
+					<Label for="username">Username</Label>
+					<Input id="username" bind:value={loginUser} autocomplete="username" class="mt-1" />
 				</div>
-				<div class="field">
-					<label for="password">Password</label>
-					<input id="password" type="password" bind:value={loginPass} autocomplete="current-password" />
+				<div class="mb-4">
+					<Label for="password">Password</Label>
+					<Input id="password" type="password" bind:value={loginPass} autocomplete="current-password" class="mt-1" />
 				</div>
-				<button type="submit">Sign In</button>
+				<Button type="submit" class="w-full">Sign In</Button>
 			</form>
 		</div>
 	</div>
 {:else}
-	<div class="app">
-		<aside class="sidebar">
-			<div class="logo">NASty</div>
-			<nav>
+	<div class="flex min-h-screen">
+		<aside class="flex w-[200px] shrink-0 flex-col border-r border-border bg-card py-4">
+			<div class="mb-2 border-b border-border px-4 pb-4 text-xl font-bold">NASty</div>
+			<nav class="flex flex-1 flex-col">
 				{#each nav as item}
-					<a href={item.href}>{item.label}</a>
+					<a href={item.href} class="px-4 py-2 text-sm text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground">{item.label}</a>
 				{/each}
 			</nav>
-			<div class="sidebar-footer">
+			<div class="border-t border-border px-4 pt-3">
 				{#if authInfo}
-					<div class="user-info">
-						<span class="username">{authInfo.username}</span>
-						<span class="role">{authInfo.role}</span>
+					<div class="mb-2 flex items-center justify-between">
+						<span class="text-sm font-semibold">{authInfo.username}</span>
+						<span class="rounded bg-secondary px-1.5 py-0.5 text-[0.7rem] uppercase text-muted-foreground">{authInfo.role}</span>
 					</div>
 				{/if}
-				<button class="logout-btn" onclick={handleLogout}>Sign Out</button>
-				<div class="status" class:ok={connected}>
+				<Button variant="secondary" size="sm" class="mb-2 w-full" onclick={handleLogout}>Sign Out</Button>
+				<div class="text-xs {connected ? 'text-green-400' : 'text-muted-foreground'}">
 					{connected ? 'Connected' : 'Disconnected'}
 				</div>
 			</div>
 		</aside>
-		<main>
+		<main class="flex-1 overflow-y-auto p-6">
 			{#if !connected}
-				<p>Connecting to middleware...</p>
+				<p class="text-muted-foreground">Connecting to middleware...</p>
 			{:else}
 				{@render children()}
 			{/if}
 		</main>
 	</div>
 {/if}
-
-<style>
-	:global(body) {
-		margin: 0;
-		font-family: system-ui, -apple-system, sans-serif;
-		background: #0f1117;
-		color: #e0e0e0;
-	}
-	:global(a) { color: #6ea8fe; }
-	:global(button) {
-		background: #2563eb;
-		color: white;
-		border: none;
-		padding: 0.5rem 1rem;
-		border-radius: 4px;
-		cursor: pointer;
-		font-size: 0.875rem;
-	}
-	:global(button:hover) { background: #1d4ed8; }
-	:global(button.danger) { background: #dc2626; }
-	:global(button.danger:hover) { background: #b91c1c; }
-	:global(button.secondary) { background: #374151; }
-	:global(button.secondary:hover) { background: #4b5563; }
-	:global(input, select) {
-		background: #1e2130;
-		color: #e0e0e0;
-		border: 1px solid #374151;
-		padding: 0.5rem;
-		border-radius: 4px;
-		font-size: 0.875rem;
-	}
-	:global(table) { width: 100%; border-collapse: collapse; }
-	:global(th) { text-align: left; padding: 0.75rem; border-bottom: 2px solid #2d3348; font-size: 0.75rem; text-transform: uppercase; color: #9ca3af; }
-	:global(td) { padding: 0.75rem; border-bottom: 1px solid #1e2130; }
-
-	/* Login page */
-	.login-page {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 100vh;
-	}
-	.login-card {
-		background: #161926;
-		border: 1px solid #2d3348;
-		border-radius: 12px;
-		padding: 2.5rem;
-		width: 340px;
-	}
-	.login-card h1 { margin: 0 0 0.25rem; font-size: 2rem; }
-	.subtitle { color: #6b7280; margin: 0 0 1.5rem; font-size: 0.875rem; }
-	.login-error { color: #f87171; font-size: 0.875rem; margin: 0 0 1rem; }
-	.login-card .field { margin-bottom: 1rem; }
-	.login-card .field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.login-card .field input { width: 100%; box-sizing: border-box; }
-	.login-card button { width: 100%; padding: 0.7rem; font-size: 1rem; }
-
-	/* App layout */
-	.app { display: flex; min-height: 100vh; }
-	.sidebar {
-		width: 200px;
-		background: #161926;
-		border-right: 1px solid #2d3348;
-		display: flex;
-		flex-direction: column;
-		padding: 1rem 0;
-		flex-shrink: 0;
-	}
-	.logo { font-size: 1.5rem; font-weight: 700; padding: 0 1rem 1rem; border-bottom: 1px solid #2d3348; margin-bottom: 0.5rem; }
-	nav { display: flex; flex-direction: column; flex: 1; }
-	nav a { padding: 0.6rem 1rem; text-decoration: none; color: #9ca3af; font-size: 0.875rem; }
-	nav a:hover { background: #1e2130; color: #e0e0e0; }
-	.sidebar-footer { padding: 0.75rem 1rem; border-top: 1px solid #2d3348; }
-	.user-info { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-	.username { font-size: 0.875rem; font-weight: 600; }
-	.role { font-size: 0.7rem; color: #6b7280; text-transform: uppercase; background: #1e2130; padding: 0.1rem 0.4rem; border-radius: 3px; }
-	.logout-btn { width: 100%; background: #374151; font-size: 0.8rem; padding: 0.4rem; margin-bottom: 0.5rem; }
-	.logout-btn:hover { background: #4b5563; }
-	.status { font-size: 0.75rem; color: #6b7280; }
-	.status.ok { color: #4ade80; }
-	main { flex: 1; padding: 2rem; overflow-y: auto; }
-</style>

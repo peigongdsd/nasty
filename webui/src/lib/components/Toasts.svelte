@@ -5,82 +5,26 @@
 </script>
 
 {#if toasts.length > 0}
-	<div class="toast-container">
+	<div class="fixed right-4 top-4 z-[1000] flex max-w-[420px] flex-col gap-2">
 		{#each toasts as toast (toast.id)}
-			<div class="toast toast-{toast.type}" role="alert">
-				<span class="toast-icon">
+			<div
+				class="flex animate-in slide-in-from-right items-start gap-2.5 rounded-lg border px-4 py-3 text-sm shadow-lg {
+					toast.type === 'success' ? 'border-green-900 bg-green-950 text-green-200' :
+					toast.type === 'error' ? 'border-red-900 bg-red-950 text-red-200' :
+					'border-border bg-card text-foreground'
+				}"
+				role="alert"
+			>
+				<span class="shrink-0 text-base leading-5">
 					{#if toast.type === 'success'}&#10003;{:else if toast.type === 'error'}&#10007;{:else}&#9432;{/if}
 				</span>
-				<span class="toast-msg">{toast.message}</span>
-				<button class="toast-close" onclick={() => dismiss(toast.id)} aria-label="Dismiss">&times;</button>
+				<span class="flex-1 break-words leading-snug">{toast.message}</span>
+				<button
+					class="shrink-0 bg-transparent p-0 text-lg leading-none opacity-60 hover:bg-transparent hover:opacity-100"
+					onclick={() => dismiss(toast.id)}
+					aria-label="Dismiss"
+				>&times;</button>
 			</div>
 		{/each}
 	</div>
 {/if}
-
-<style>
-	.toast-container {
-		position: fixed;
-		top: 1rem;
-		right: 1rem;
-		z-index: 1000;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		max-width: 420px;
-	}
-	.toast {
-		display: flex;
-		align-items: start;
-		gap: 0.6rem;
-		padding: 0.75rem 1rem;
-		border-radius: 6px;
-		font-size: 0.875rem;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-		animation: slide-in 0.2s ease-out;
-	}
-	.toast-success {
-		background: #064e3b;
-		border: 1px solid #065f46;
-		color: #a7f3d0;
-	}
-	.toast-error {
-		background: #450a0a;
-		border: 1px solid #7f1d1d;
-		color: #fca5a5;
-	}
-	.toast-info {
-		background: #1e2130;
-		border: 1px solid #2d3348;
-		color: #e0e0e0;
-	}
-	.toast-icon {
-		font-size: 1rem;
-		flex-shrink: 0;
-		line-height: 1.3;
-	}
-	.toast-msg {
-		flex: 1;
-		line-height: 1.4;
-		word-break: break-word;
-	}
-	.toast-close {
-		background: none;
-		border: none;
-		color: inherit;
-		font-size: 1.1rem;
-		cursor: pointer;
-		padding: 0;
-		opacity: 0.6;
-		flex-shrink: 0;
-		line-height: 1;
-	}
-	.toast-close:hover {
-		opacity: 1;
-		background: none;
-	}
-	@keyframes slide-in {
-		from { transform: translateX(100%); opacity: 0; }
-		to { transform: translateX(0); opacity: 1; }
-	}
-</style>

@@ -3,18 +3,22 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { UserInfo } from '$lib/types';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 
 	let users: UserInfo[] = $state([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
 
-	// Create form
 	let newUsername = $state('');
 	let newPassword = $state('');
 	let newPasswordConfirm = $state('');
 	let newRole = $state<'admin' | 'readonly'>('readonly');
 
-	// Change password modal
 	let pwUser = $state<string | null>(null);
 	let pwNew = $state('');
 	let pwConfirm = $state('');
@@ -80,72 +84,76 @@
 	}
 </script>
 
-<h1>Users</h1>
+<h1 class="mb-4 text-2xl font-bold">Users</h1>
 
-<div class="toolbar">
-	<button onclick={() => showCreate = !showCreate}>
+<div class="mb-4">
+	<Button onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create User'}
-	</button>
+	</Button>
 </div>
 
 {#if showCreate}
-	<div class="form-card">
-		<h3>New User</h3>
-		<div class="field">
-			<label for="new-username">Username</label>
-			<input id="new-username" bind:value={newUsername} placeholder="johndoe" autocomplete="off" />
-		</div>
-		<div class="field">
-			<label for="new-password">Password</label>
-			<input id="new-password" type="password" bind:value={newPassword} placeholder="Min 8 characters" autocomplete="new-password" />
-		</div>
-		<div class="field">
-			<label for="new-password-confirm">Confirm Password</label>
-			<input id="new-password-confirm" type="password" bind:value={newPasswordConfirm} autocomplete="new-password" />
-			{#if newPasswordConfirm && newPassword !== newPasswordConfirm}
-				<span class="field-error">Passwords do not match</span>
-			{/if}
-		</div>
-		<div class="field">
-			<label for="new-role">Role</label>
-			<select id="new-role" bind:value={newRole}>
-				<option value="readonly">Read Only</option>
-				<option value="admin">Admin</option>
-			</select>
-		</div>
-		<button onclick={createUser} disabled={!newUsername || !newPassword || newPassword.length < 8 || newPassword !== newPasswordConfirm}>
-			Create
-		</button>
-	</div>
+	<Card class="mb-6 max-w-md">
+		<CardContent class="pt-6">
+			<h3 class="mb-4 text-lg font-semibold">New User</h3>
+			<div class="mb-4">
+				<Label for="new-username">Username</Label>
+				<Input id="new-username" bind:value={newUsername} placeholder="johndoe" autocomplete="off" class="mt-1" />
+			</div>
+			<div class="mb-4">
+				<Label for="new-password">Password</Label>
+				<Input id="new-password" type="password" bind:value={newPassword} placeholder="Min 8 characters" autocomplete="new-password" class="mt-1" />
+			</div>
+			<div class="mb-4">
+				<Label for="new-password-confirm">Confirm Password</Label>
+				<Input id="new-password-confirm" type="password" bind:value={newPasswordConfirm} autocomplete="new-password" class="mt-1" />
+				{#if newPasswordConfirm && newPassword !== newPasswordConfirm}
+					<span class="mt-1 block text-xs text-destructive">Passwords do not match</span>
+				{/if}
+			</div>
+			<div class="mb-4">
+				<Label for="new-role">Role</Label>
+				<select id="new-role" bind:value={newRole} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="readonly">Read Only</option>
+					<option value="admin">Admin</option>
+				</select>
+			</div>
+			<Button onclick={createUser} disabled={!newUsername || !newPassword || newPassword.length < 8 || newPassword !== newPasswordConfirm}>
+				Create
+			</Button>
+		</CardContent>
+	</Card>
 {/if}
 
 {#if loading}
-	<p>Loading...</p>
+	<p class="text-muted-foreground">Loading...</p>
 {:else if users.length === 0}
-	<p class="muted">No users configured.</p>
+	<p class="text-muted-foreground">No users configured.</p>
 {:else}
-	<table>
+	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th>Username</th>
-				<th>Role</th>
-				<th>Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Username</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Role</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each users as user}
-				<tr>
-					<td><strong>{user.username}</strong></td>
-					<td>
-						<span class="badge" class:admin={user.role === 'admin'} class:readonly={user.role === 'readonly'}>
+				<tr class="border-b border-border">
+					<td class="p-3"><strong>{user.username}</strong></td>
+					<td class="p-3">
+						<Badge variant="secondary" class={user.role === 'admin' ? 'bg-blue-950 text-blue-400' : ''}>
 							{user.role === 'admin' ? 'Admin' : 'Read Only'}
-						</span>
+						</Badge>
 					</td>
-					<td class="actions">
-						<button class="secondary" onclick={() => { pwUser = user.username; pwNew = ''; pwConfirm = ''; }}>
-							Change Password
-						</button>
-						<button class="danger" onclick={() => deleteUser(user.username)}>Delete</button>
+					<td class="p-3">
+						<div class="flex gap-2">
+							<Button variant="secondary" size="sm" onclick={() => { pwUser = user.username; pwNew = ''; pwConfirm = ''; }}>
+								Change Password
+							</Button>
+							<Button variant="destructive" size="sm" onclick={() => deleteUser(user.username)}>Delete</Button>
+						</div>
 					</td>
 				</tr>
 			{/each}
@@ -153,46 +161,27 @@
 	</table>
 {/if}
 
-{#if pwUser}
-	<div class="modal-overlay" role="presentation" onclick={() => pwUser = null} onkeydown={(e) => { if (e.key === 'Escape') pwUser = null; }}>
-		<div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h3>Change Password for "{pwUser}"</h3>
-			<div class="field">
-				<label for="pw-new">New Password</label>
-				<input id="pw-new" type="password" bind:value={pwNew} placeholder="Min 8 characters" autocomplete="new-password" />
-			</div>
-			<div class="field">
-				<label for="pw-confirm">Confirm Password</label>
-				<input id="pw-confirm" type="password" bind:value={pwConfirm} autocomplete="new-password" />
-				{#if pwConfirm && pwNew !== pwConfirm}
-					<span class="field-error">Passwords do not match</span>
-				{/if}
-			</div>
-			<div class="modal-actions">
-				<button onclick={changePassword} disabled={!pwNew || pwNew.length < 8 || pwNew !== pwConfirm}>
-					Change Password
-				</button>
-				<button class="secondary" onclick={() => pwUser = null}>Cancel</button>
-			</div>
+<Dialog.Root open={pwUser !== null} onOpenChange={(open) => { if (!open) pwUser = null; }}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Change Password for "{pwUser}"</Dialog.Title>
+		</Dialog.Header>
+		<div class="mb-4">
+			<Label for="pw-new">New Password</Label>
+			<Input id="pw-new" type="password" bind:value={pwNew} placeholder="Min 8 characters" autocomplete="new-password" class="mt-1" />
 		</div>
-	</div>
-{/if}
-
-<style>
-	.toolbar { margin: 1rem 0; }
-	.form-card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 400px; }
-	.form-card h3 { margin: 0 0 1rem; }
-	.field { margin-bottom: 1rem; }
-	.field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.field input, .field select { width: 100%; box-sizing: border-box; }
-	.field-error { color: #f87171; font-size: 0.75rem; margin-top: 0.25rem; display: block; }
-	.muted { color: #6b7280; }
-	.badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-	.badge.admin { background: #1e3a5f; color: #60a5fa; }
-	.badge.readonly { background: #374151; color: #9ca3af; }
-	.actions { display: flex; gap: 0.5rem; }
-	.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-	.modal { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; min-width: 350px; }
-	.modal h3 { margin: 0 0 1rem; }
-	.modal-actions { display: flex; gap: 0.5rem; }
-</style>
+		<div class="mb-4">
+			<Label for="pw-confirm">Confirm Password</Label>
+			<Input id="pw-confirm" type="password" bind:value={pwConfirm} autocomplete="new-password" class="mt-1" />
+			{#if pwConfirm && pwNew !== pwConfirm}
+				<span class="mt-1 block text-xs text-destructive">Passwords do not match</span>
+			{/if}
+		</div>
+		<Dialog.Footer>
+			<Button onclick={changePassword} disabled={!pwNew || pwNew.length < 8 || pwNew !== pwConfirm}>
+				Change Password
+			</Button>
+			<Button variant="secondary" onclick={() => pwUser = null}>Cancel</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

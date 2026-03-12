@@ -4,12 +4,17 @@
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { getToken } from '$lib/auth';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+
+	import type { IDisposable } from '@xterm/xterm';
 
 	let terminalEl: HTMLDivElement;
 	let term: Terminal | null = null;
 	let fitAddon: FitAddon | null = null;
 	let ws: WebSocket | null = null;
 	let status = $state<'connecting' | 'connected' | 'disconnected'>('connecting');
+	let termListeners: IDisposable[] = [];
 
 	onMount(() => {
 		term = new Terminal({
@@ -85,26 +90,26 @@
 		ws.onmessage = (event) => {
 			const data = event.data;
 
-			// Check for JSON control messages
 			if (status === 'connecting') {
 				try {
 					const msg = JSON.parse(data);
 					if (msg.authenticated) {
 						status = 'connected';
 
-						// Wire up input: terminal → WebSocket
-						term?.onData((input) => {
+						termListeners.forEach(l => l.dispose());
+						termListeners = [];
+
+						termListeners.push(term!.onData((input) => {
 							if (ws?.readyState === WebSocket.OPEN) {
 								ws.send(input);
 							}
-						});
+						}));
 
-						// Wire up resize
-						term?.onResize(({ cols, rows }) => {
+						termListeners.push(term!.onResize(({ cols, rows }) => {
 							if (ws?.readyState === WebSocket.OPEN) {
 								ws.send(JSON.stringify({ type: 'resize', cols, rows }));
 							}
-						});
+						}));
 
 						return;
 					}
@@ -118,7 +123,6 @@
 				}
 			}
 
-			// Regular terminal output
 			term?.write(data);
 		};
 
@@ -141,77 +145,30 @@
 	}
 </script>
 
-<div class="terminal-page">
-	<div class="terminal-header">
-		<h2>Terminal</h2>
-		<div class="terminal-controls">
-			<span class="status" class:connected={status === 'connected'} class:connecting={status === 'connecting'}>
-				{status}
-			</span>
+<div class="flex h-[calc(100vh-4rem)] flex-col">
+	<div class="mb-4 flex shrink-0 items-center justify-between">
+		<h2 class="text-2xl font-bold">Terminal</h2>
+		<div class="flex items-center gap-3">
+			<span class="text-xs uppercase {
+				status === 'connected' ? 'text-green-400' :
+				status === 'connecting' ? 'text-amber-500' : 'text-muted-foreground'
+			}">{status}</span>
 			{#if status === 'disconnected'}
-				<button onclick={reconnect}>Reconnect</button>
+				<Button size="sm" onclick={reconnect}>Reconnect</Button>
 			{/if}
 		</div>
 	</div>
-	<div class="terminal-container" bind:this={terminalEl}></div>
+	<div class="flex-1 overflow-hidden rounded-lg border border-border p-1" style="background: #0f1117" bind:this={terminalEl}></div>
 </div>
 
 <style>
 	@import '@xterm/xterm/css/xterm.css';
 
-	.terminal-page {
-		display: flex;
-		flex-direction: column;
-		height: calc(100vh - 4rem);
-	}
-
-	.terminal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-		flex-shrink: 0;
-	}
-
-	.terminal-header h2 {
-		margin: 0;
-		font-size: 1.5rem;
-	}
-
-	.terminal-controls {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.status {
-		font-size: 0.75rem;
-		text-transform: uppercase;
-		color: #6b7280;
-	}
-
-	.status.connected {
-		color: #4ade80;
-	}
-
-	.status.connecting {
-		color: #f59e0b;
-	}
-
-	.terminal-container {
-		flex: 1;
-		border: 1px solid #2d3348;
-		border-radius: 8px;
-		overflow: hidden;
-		padding: 4px;
-		background: #0f1117;
-	}
-
-	.terminal-container :global(.xterm) {
+	div :global(.xterm) {
 		height: 100%;
 	}
 
-	.terminal-container :global(.xterm-viewport) {
+	div :global(.xterm-viewport) {
 		overflow-y: auto !important;
 	}
 </style>

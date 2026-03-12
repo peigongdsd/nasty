@@ -3,6 +3,12 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { NvmeofSubsystem } from '$lib/types';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 
 	let subsystems: NvmeofSubsystem[] = $state([]);
 	let showCreate = $state(false);
@@ -10,11 +16,9 @@
 
 	let newName = $state('');
 
-	// Add namespace
 	let nsSubsys = $state<string | null>(null);
 	let nsDevicePath = $state('');
 
-	// Add port
 	let portSubsys = $state<string | null>(null);
 	let portTransport = $state('tcp');
 	let portAddr = $state('0.0.0.0');
@@ -107,164 +111,148 @@
 	}
 </script>
 
-<h1>NVMe-oF Subsystems</h1>
+<h1 class="mb-4 text-2xl font-bold">NVMe-oF Subsystems</h1>
 
-<div class="toolbar">
-	<button onclick={() => showCreate = !showCreate}>
+<div class="mb-4">
+	<Button onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Subsystem'}
-	</button>
+	</Button>
 </div>
 
 {#if showCreate}
-	<div class="form-card">
-		<h3>New NVMe-oF Subsystem</h3>
-		<div class="field">
-			<label for="nvme-name">Name</label>
-			<input id="nvme-name" bind:value={newName} placeholder="faststore" />
-			<span class="hint">NQN: nqn.2024-01.com.nasty:{newName || '...'}</span>
-		</div>
-		<button onclick={create} disabled={!newName}>Create</button>
-	</div>
+	<Card class="mb-6 max-w-lg">
+		<CardContent class="pt-6">
+			<h3 class="mb-4 text-lg font-semibold">New NVMe-oF Subsystem</h3>
+			<div class="mb-4">
+				<Label for="nvme-name">Name</Label>
+				<Input id="nvme-name" bind:value={newName} placeholder="faststore" class="mt-1" />
+				<span class="mt-1 block text-xs text-muted-foreground">NQN: nqn.2024-01.com.nasty:{newName || '...'}</span>
+			</div>
+			<Button onclick={create} disabled={!newName}>Create</Button>
+		</CardContent>
+	</Card>
 {/if}
 
 {#if loading}
-	<p>Loading...</p>
+	<p class="text-muted-foreground">Loading...</p>
 {:else if subsystems.length === 0}
-	<p class="muted">No NVMe-oF subsystems configured.</p>
+	<p class="text-muted-foreground">No NVMe-oF subsystems configured.</p>
 {:else}
 	{#each subsystems as subsys}
-		<div class="card">
-			<div class="card-header">
-				<div>
-					<strong class="mono">{subsys.nqn}</strong>
-					<div class="muted">
-						{subsys.allow_any_host ? 'Any host allowed' : `${subsys.allowed_hosts.length} allowed host(s)`}
+		<Card class="mb-4">
+			<CardContent class="pt-5">
+				<div class="mb-4 flex items-start justify-between">
+					<div>
+						<strong class="font-mono text-sm">{subsys.nqn}</strong>
+						<div class="text-xs text-muted-foreground">
+							{subsys.allow_any_host ? 'Any host allowed' : `${subsys.allowed_hosts.length} allowed host(s)`}
+						</div>
+					</div>
+					<div class="flex gap-2">
+						<Button variant="secondary" size="sm" onclick={() => { nsSubsys = subsys.id; nsDevicePath = ''; }}>Add Namespace</Button>
+						<Button variant="secondary" size="sm" onclick={() => { portSubsys = subsys.id; portAddr = '0.0.0.0'; portSvcId = 4420; }}>Add Port</Button>
+						<Button variant="destructive" size="sm" onclick={() => remove(subsys.id)}>Delete</Button>
 					</div>
 				</div>
-				<div class="actions">
-					<button class="secondary" onclick={() => { nsSubsys = subsys.id; nsDevicePath = ''; }}>Add Namespace</button>
-					<button class="secondary" onclick={() => { portSubsys = subsys.id; portAddr = '0.0.0.0'; portSvcId = 4420; }}>Add Port</button>
-					<button class="danger" onclick={() => remove(subsys.id)}>Delete</button>
-				</div>
-			</div>
 
-			<div class="section">
-				<h4>Namespaces</h4>
-				{#if subsys.namespaces.length === 0}
-					<span class="muted">No namespaces</span>
-				{:else}
-					<table class="inner-table">
-						<thead><tr><th>NSID</th><th>Device</th><th>Status</th><th></th></tr></thead>
-						<tbody>
-							{#each subsys.namespaces as ns}
+				<div class="mb-3">
+					<h4 class="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">Namespaces</h4>
+					{#if subsys.namespaces.length === 0}
+						<span class="text-sm text-muted-foreground">No namespaces</span>
+					{:else}
+						<table class="w-full text-sm">
+							<thead>
 								<tr>
-									<td>{ns.nsid}</td>
-									<td class="mono">{ns.device_path}</td>
-									<td>
-										<span class="badge" class:enabled={ns.enabled}>{ns.enabled ? 'Enabled' : 'Disabled'}</span>
-									</td>
-									<td><button class="danger small" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</button></td>
+									<th class="p-1.5 text-left text-xs uppercase text-muted-foreground">NSID</th>
+									<th class="p-1.5 text-left text-xs uppercase text-muted-foreground">Device</th>
+									<th class="p-1.5 text-left text-xs uppercase text-muted-foreground">Status</th>
+									<th class="p-1.5"></th>
 								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
-			</div>
-
-			<div class="section">
-				<h4>Ports</h4>
-				{#if subsys.ports.length === 0}
-					<span class="muted">No ports (not listening)</span>
-				{:else}
-					{#each subsys.ports as port}
-						<div class="port-row">
-							<span class="tag">{port.transport.toUpperCase()}</span>
-							<span class="mono">{port.addr}:{port.service_id}</span>
-							<span class="muted">({port.addr_family})</span>
-							<button class="danger small" onclick={() => removePort(subsys.id, port.port_id)}>Remove</button>
-						</div>
-					{/each}
-				{/if}
-			</div>
-
-			{#if subsys.allowed_hosts.length > 0}
-				<div class="section">
-					<h4>Allowed Hosts</h4>
-					{#each subsys.allowed_hosts as host}
-						<div class="mono">{host}</div>
-					{/each}
+							</thead>
+							<tbody>
+								{#each subsys.namespaces as ns}
+									<tr class="border-b border-border">
+										<td class="p-1.5">{ns.nsid}</td>
+										<td class="p-1.5 font-mono text-xs">{ns.device_path}</td>
+										<td class="p-1.5">
+											<Badge variant={ns.enabled ? 'default' : 'secondary'}>{ns.enabled ? 'Enabled' : 'Disabled'}</Badge>
+										</td>
+										<td class="p-1.5"><Button variant="destructive" size="sm" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</Button></td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
 				</div>
-			{/if}
-		</div>
+
+				<div class="mb-3">
+					<h4 class="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">Ports</h4>
+					{#if subsys.ports.length === 0}
+						<span class="text-sm text-muted-foreground">No ports (not listening)</span>
+					{:else}
+						{#each subsys.ports as port}
+							<div class="my-1 flex items-center gap-2">
+								<span class="rounded bg-secondary px-1.5 py-0.5 text-xs">{port.transport.toUpperCase()}</span>
+								<span class="font-mono text-sm">{port.addr}:{port.service_id}</span>
+								<span class="text-xs text-muted-foreground">({port.addr_family})</span>
+								<Button variant="destructive" size="sm" onclick={() => removePort(subsys.id, port.port_id)}>Remove</Button>
+							</div>
+						{/each}
+					{/if}
+				</div>
+
+				{#if subsys.allowed_hosts.length > 0}
+					<div>
+						<h4 class="mb-1.5 text-xs uppercase tracking-wide text-muted-foreground">Allowed Hosts</h4>
+						{#each subsys.allowed_hosts as host}
+							<div class="font-mono text-sm">{host}</div>
+						{/each}
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
 	{/each}
 {/if}
 
-{#if nsSubsys}
-	<div class="modal-overlay" role="presentation" onclick={() => nsSubsys = null} onkeydown={(e) => { if (e.key === 'Escape') nsSubsys = null; }}>
-		<div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h3>Add Namespace</h3>
-			<div class="field">
-				<label for="ns-device">Device Path</label>
-				<input id="ns-device" bind:value={nsDevicePath} placeholder="/dev/nvme0n1" />
-			</div>
-			<div class="modal-actions">
-				<button onclick={addNamespace} disabled={!nsDevicePath}>Add</button>
-				<button class="secondary" onclick={() => nsSubsys = null}>Cancel</button>
-			</div>
+<Dialog.Root open={nsSubsys !== null} onOpenChange={(open) => { if (!open) nsSubsys = null; }}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Add Namespace</Dialog.Title>
+		</Dialog.Header>
+		<div class="mb-4">
+			<Label for="ns-device">Device Path</Label>
+			<Input id="ns-device" bind:value={nsDevicePath} placeholder="/dev/nvme0n1" class="mt-1" />
 		</div>
-	</div>
-{/if}
+		<Dialog.Footer>
+			<Button onclick={addNamespace} disabled={!nsDevicePath}>Add</Button>
+			<Button variant="secondary" onclick={() => nsSubsys = null}>Cancel</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
-{#if portSubsys}
-	<div class="modal-overlay" role="presentation" onclick={() => portSubsys = null} onkeydown={(e) => { if (e.key === 'Escape') portSubsys = null; }}>
-		<div class="modal" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
-			<h3>Add Port</h3>
-			<div class="field">
-				<label for="port-transport">Transport</label>
-				<select id="port-transport" bind:value={portTransport}>
-					<option value="tcp">TCP</option>
-					<option value="rdma">RDMA</option>
-				</select>
-			</div>
-			<div class="field">
-				<label for="port-addr">Address</label>
-				<input id="port-addr" bind:value={portAddr} />
-			</div>
-			<div class="field">
-				<label for="port-svcid">Port</label>
-				<input id="port-svcid" type="number" bind:value={portSvcId} />
-			</div>
-			<div class="modal-actions">
-				<button onclick={addPort}>Add</button>
-				<button class="secondary" onclick={() => portSubsys = null}>Cancel</button>
-			</div>
+<Dialog.Root open={portSubsys !== null} onOpenChange={(open) => { if (!open) portSubsys = null; }}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Add Port</Dialog.Title>
+		</Dialog.Header>
+		<div class="mb-4">
+			<Label for="port-transport">Transport</Label>
+			<select id="port-transport" bind:value={portTransport} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+				<option value="tcp">TCP</option>
+				<option value="rdma">RDMA</option>
+			</select>
 		</div>
-	</div>
-{/if}
-
-<style>
-	.toolbar { margin: 1rem 0; }
-	.form-card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 450px; }
-	.form-card h3 { margin: 0 0 1rem; }
-	.field { margin-bottom: 1rem; }
-	.field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.field input, .field select { width: 100%; box-sizing: border-box; }
-	.hint { font-size: 0.75rem; color: #6b7280; }
-	.mono { font-family: monospace; font-size: 0.85rem; }
-	.muted { color: #6b7280; font-size: 0.8rem; }
-	.tag { display: inline-block; background: #1e2130; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.75rem; }
-	.badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-	.badge.enabled { background: #064e3b; color: #4ade80; }
-	.card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
-	.card-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem; }
-	.section { margin-top: 0.75rem; }
-	.section h4 { margin: 0 0 0.4rem; color: #9ca3af; font-size: 0.75rem; text-transform: uppercase; }
-	.actions { display: flex; gap: 0.5rem; }
-	.port-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.25rem 0; }
-	.inner-table { margin-top: 0.25rem; }
-	:global(button.small) { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
-	.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-	.modal { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; min-width: 380px; }
-	.modal h3 { margin: 0 0 1rem; }
-	.modal-actions { display: flex; gap: 0.5rem; }
-</style>
+		<div class="mb-4">
+			<Label for="port-addr">Address</Label>
+			<Input id="port-addr" bind:value={portAddr} class="mt-1" />
+		</div>
+		<div class="mb-4">
+			<Label for="port-svcid">Port</Label>
+			<Input id="port-svcid" type="number" bind:value={portSvcId} class="mt-1" />
+		</div>
+		<Dialog.Footer>
+			<Button onclick={addPort}>Add</Button>
+			<Button variant="secondary" onclick={() => portSubsys = null}>Cancel</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

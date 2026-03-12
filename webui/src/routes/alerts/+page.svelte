@@ -3,13 +3,17 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import type { AlertRule, ActiveAlert, AlertMetric, AlertCondition, AlertSeverity } from '$lib/types';
+	import { Button } from '$lib/components/ui/button';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Card, CardContent } from '$lib/components/ui/card';
 
 	let rules: AlertRule[] = $state([]);
 	let activeAlerts: ActiveAlert[] = $state([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
 
-	// Create form
 	let newName = $state('');
 	let newMetric = $state<AlertMetric>('pool_usage_percent');
 	let newCondition = $state<AlertCondition>('above');
@@ -87,149 +91,120 @@
 	}
 </script>
 
-<h1>Alerts</h1>
+<h1 class="mb-4 text-2xl font-bold">Alerts</h1>
 
 {#if activeAlerts.length > 0}
-	<div class="active-section">
-		<h2>Active Alerts ({activeAlerts.length})</h2>
+	<div class="mb-6">
+		<h2 class="mb-3 text-base font-semibold">Active Alerts ({activeAlerts.length})</h2>
 		{#each activeAlerts as alert}
-			<div class="active-alert" class:warning={alert.severity === 'warning'} class:critical={alert.severity === 'critical'}>
-				<span class="severity-badge" class:warning={alert.severity === 'warning'} class:critical={alert.severity === 'critical'}>
-					{alert.severity.toUpperCase()}
-				</span>
-				<span class="alert-message">{alert.message}</span>
-				<span class="alert-source">{alert.source}</span>
+			<div class="mb-2 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm {
+				alert.severity === 'critical' ? 'border-red-800 bg-red-950 text-red-200' : 'border-amber-800 bg-amber-950 text-amber-200'
+			}">
+				<span class="rounded px-1.5 py-0.5 text-[0.7rem] font-semibold uppercase {
+					alert.severity === 'critical' ? 'bg-red-900 text-red-200' : 'bg-amber-900 text-amber-200'
+				}">{alert.severity}</span>
+				<span class="flex-1">{alert.message}</span>
+				<span class="font-mono text-xs opacity-70">{alert.source}</span>
 			</div>
 		{/each}
 	</div>
 {:else if !loading}
-	<div class="no-alerts">No active alerts</div>
-{/if}
-
-<div class="toolbar">
-	<h2>Alert Rules</h2>
-	<button onclick={() => showCreate = !showCreate}>
-		{showCreate ? 'Cancel' : 'Create Rule'}
-	</button>
-</div>
-
-{#if showCreate}
-	<div class="form-card">
-		<h3>New Alert Rule</h3>
-		<div class="field">
-			<label for="rule-name">Name</label>
-			<input id="rule-name" bind:value={newName} placeholder="My alert rule" />
-		</div>
-		<div class="field-row">
-			<div class="field">
-				<label for="rule-metric">Metric</label>
-				<select id="rule-metric" bind:value={newMetric}>
-					{#each Object.entries(metricLabels) as [val, label]}
-						<option value={val}>{label}</option>
-					{/each}
-				</select>
-			</div>
-			<div class="field">
-				<label for="rule-condition">Condition</label>
-				<select id="rule-condition" bind:value={newCondition}>
-					{#each Object.entries(conditionLabels) as [val, label]}
-						<option value={val}>{label}</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-		<div class="field-row">
-			<div class="field">
-				<label for="rule-threshold">Threshold</label>
-				<input id="rule-threshold" type="number" bind:value={newThreshold} />
-			</div>
-			<div class="field">
-				<label for="rule-severity">Severity</label>
-				<select id="rule-severity" bind:value={newSeverity}>
-					<option value="warning">Warning</option>
-					<option value="critical">Critical</option>
-				</select>
-			</div>
-		</div>
-		<button onclick={createRule} disabled={!newName}>Create</button>
+	<div class="mb-6 rounded-lg border border-green-900 bg-green-950 px-4 py-2.5 text-sm text-green-400">
+		No active alerts
 	</div>
 {/if}
 
+<div class="mb-4 flex items-center justify-between">
+	<h2 class="text-base font-semibold">Alert Rules</h2>
+	<Button onclick={() => showCreate = !showCreate}>
+		{showCreate ? 'Cancel' : 'Create Rule'}
+	</Button>
+</div>
+
+{#if showCreate}
+	<Card class="mb-6 max-w-lg">
+		<CardContent class="pt-6">
+			<h3 class="mb-4 text-lg font-semibold">New Alert Rule</h3>
+			<div class="mb-4">
+				<Label for="rule-name">Name</Label>
+				<Input id="rule-name" bind:value={newName} placeholder="My alert rule" class="mt-1" />
+			</div>
+			<div class="mb-4 flex gap-4">
+				<div class="flex-1">
+					<Label for="rule-metric">Metric</Label>
+					<select id="rule-metric" bind:value={newMetric} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+						{#each Object.entries(metricLabels) as [val, label]}
+							<option value={val}>{label}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="flex-1">
+					<Label for="rule-condition">Condition</Label>
+					<select id="rule-condition" bind:value={newCondition} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+						{#each Object.entries(conditionLabels) as [val, label]}
+							<option value={val}>{label}</option>
+						{/each}
+					</select>
+				</div>
+			</div>
+			<div class="mb-4 flex gap-4">
+				<div class="flex-1">
+					<Label for="rule-threshold">Threshold</Label>
+					<Input id="rule-threshold" type="number" bind:value={newThreshold} class="mt-1" />
+				</div>
+				<div class="flex-1">
+					<Label for="rule-severity">Severity</Label>
+					<select id="rule-severity" bind:value={newSeverity} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+						<option value="warning">Warning</option>
+						<option value="critical">Critical</option>
+					</select>
+				</div>
+			</div>
+			<Button onclick={createRule} disabled={!newName}>Create</Button>
+		</CardContent>
+	</Card>
+{/if}
+
 {#if loading}
-	<p>Loading...</p>
+	<p class="text-muted-foreground">Loading...</p>
 {:else}
-	<table>
+	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th>Name</th>
-				<th>Metric</th>
-				<th>Condition</th>
-				<th>Severity</th>
-				<th>Status</th>
-				<th>Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Name</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Metric</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Condition</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Severity</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
 			{#each rules as rule}
-				<tr class:disabled-row={!rule.enabled}>
-					<td><strong>{rule.name}</strong></td>
-					<td>{metricLabels[rule.metric] ?? rule.metric}</td>
-					<td>{conditionLabels[rule.condition] ?? rule.condition} {rule.threshold}</td>
-					<td>
-						<span class="severity-badge" class:warning={rule.severity === 'warning'} class:critical={rule.severity === 'critical'}>
-							{rule.severity}
-						</span>
+				<tr class="border-b border-border {!rule.enabled ? 'opacity-50' : ''}">
+					<td class="p-3"><strong>{rule.name}</strong></td>
+					<td class="p-3">{metricLabels[rule.metric] ?? rule.metric}</td>
+					<td class="p-3">{conditionLabels[rule.condition] ?? rule.condition} {rule.threshold}</td>
+					<td class="p-3">
+						<span class="rounded px-1.5 py-0.5 text-[0.7rem] font-semibold uppercase {
+							rule.severity === 'critical' ? 'bg-red-950 text-red-200' : 'bg-amber-950 text-amber-200'
+						}">{rule.severity}</span>
 					</td>
-					<td>
-						<span class="status-badge" class:enabled={rule.enabled} class:disabled={!rule.enabled}>
+					<td class="p-3">
+						<Badge variant={rule.enabled ? 'default' : 'secondary'}>
 							{rule.enabled ? 'Enabled' : 'Disabled'}
-						</span>
+						</Badge>
 					</td>
-					<td class="actions">
-						<button class="secondary" onclick={() => toggleRule(rule)}>
-							{rule.enabled ? 'Disable' : 'Enable'}
-						</button>
-						<button class="danger" onclick={() => deleteRule(rule.id)}>Delete</button>
+					<td class="p-3">
+						<div class="flex gap-2">
+							<Button variant="secondary" size="sm" onclick={() => toggleRule(rule)}>
+								{rule.enabled ? 'Disable' : 'Enable'}
+							</Button>
+							<Button variant="destructive" size="sm" onclick={() => deleteRule(rule.id)}>Delete</Button>
+						</div>
 					</td>
 				</tr>
 			{/each}
 		</tbody>
 	</table>
 {/if}
-
-<style>
-	h2 { font-size: 1rem; margin: 0; }
-
-	/* Active alerts */
-	.active-section { margin-bottom: 1.5rem; }
-	.active-section h2 { margin-bottom: 0.75rem; }
-	.active-alert { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.875rem; }
-	.active-alert.warning { background: #422006; border: 1px solid #854d0e; color: #fde68a; }
-	.active-alert.critical { background: #450a0a; border: 1px solid #991b1b; color: #fca5a5; }
-	.alert-message { flex: 1; }
-	.alert-source { font-size: 0.75rem; opacity: 0.7; font-family: monospace; }
-	.no-alerts { color: #4ade80; font-size: 0.9rem; margin: 1rem 0; padding: 0.6rem 1rem; background: #064e3b; border: 1px solid #065f46; border-radius: 6px; }
-
-	/* Toolbar */
-	.toolbar { display: flex; align-items: center; justify-content: space-between; margin: 1.5rem 0 1rem; }
-
-	/* Form */
-	.form-card { background: #161926; border: 1px solid #2d3348; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; max-width: 500px; }
-	.form-card h3 { margin: 0 0 1rem; }
-	.field { margin-bottom: 1rem; }
-	.field label { display: block; margin-bottom: 0.25rem; color: #9ca3af; font-size: 0.875rem; }
-	.field input, .field select { width: 100%; box-sizing: border-box; }
-	.field-row { display: flex; gap: 1rem; }
-	.field-row .field { flex: 1; }
-
-	/* Badges */
-	.severity-badge { padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
-	.severity-badge.warning { background: #422006; color: #fde68a; }
-	.severity-badge.critical { background: #450a0a; color: #fca5a5; }
-	.status-badge { padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-	.status-badge.enabled { background: #064e3b; color: #4ade80; }
-	.status-badge.disabled { background: #374151; color: #9ca3af; }
-
-	.disabled-row { opacity: 0.5; }
-	.actions { display: flex; gap: 0.5rem; }
-</style>
