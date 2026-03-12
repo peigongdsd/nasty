@@ -241,11 +241,13 @@ impl IscsiService {
             let _ = targetcli(&format!("{bs_path} delete")).await;
         }
 
-        // Remove the target
-        targetcli(&format!("/iscsi delete {}", target.iqn)).await?;
+        // Remove the target from configfs (best-effort — may already be gone after reboot)
+        if let Err(e) = targetcli(&format!("/iscsi delete {}", target.iqn)).await {
+            tracing::warn!("targetcli delete failed (may already be gone): {e}");
+        }
 
         state_dir().remove(&req.id).await?;
-        save_lio_config().await?;
+        let _ = save_lio_config().await;
 
         info!("Deleted iSCSI target '{}'", req.id);
         Ok(())
