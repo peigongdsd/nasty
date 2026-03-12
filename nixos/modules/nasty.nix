@@ -15,7 +15,7 @@ let
     src = pkgs.fetchPypi {
       pname = "rtslib_fb";
       inherit version;
-      hash = "sha256-k3T1YcNpF+qZ9BVSd8MxY6nnkCwhOWj2HZrlGZKxN8U=";
+      hash = "sha256-AITaplGnKxys0OqvFicl32m5kfUBz/6H4PZ+mSJKcmc=";
     };
   });
   targetcli-fixed = pkgs.targetcli-fb.override {
