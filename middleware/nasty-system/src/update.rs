@@ -4,8 +4,9 @@ use tracing::info;
 
 const VERSION_PATH: &str = "/etc/nasty-version";
 const UPDATE_UNIT: &str = "nasty-update";
-const FLAKE_URL: &str = "github:fenio/nasty?dir=nixos#nasty";
+const LOCAL_FLAKE: &str = "/etc/nixos/nixos#nasty";
 const REPO_URL: &str = "https://github.com/fenio/nasty.git";
+const LOCAL_REPO: &str = "/etc/nixos";
 
 // TODO: Remove token-based auth once the repo is public.
 // The token file is only needed for private repo access.
@@ -96,13 +97,42 @@ impl UpdateService {
             .output()
             .await;
 
+        // Build the update script:
+        // 1. Pull latest source into /etc/nixos
+        // 2. Rebuild from local flake (which has hardware-configuration.nix)
+        let token = read_github_token().await;
+        let repo_url = if let Some(ref t) = token {
+            format!("https://{}@github.com/fenio/nasty.git", t)
+        } else {
+            REPO_URL.to_string()
+        };
+
         // TODO: Remove token env var once repo is public.
-        // For private repos, nix needs a GitHub access token to fetch the flake.
-        let token_env = read_github_token().await
+        let token_env = token
             .map(|t| format!("access-tokens = github.com={t}"))
             .unwrap_or_default();
 
-        // Launch nixos-rebuild as a transient systemd service
+        let script = format!(
+            r#"#!/bin/bash
+set -euo pipefail
+echo "Starting NASty system update..."
+echo "==> Pulling latest source..."
+cd {LOCAL_REPO}
+git remote set-url origin "{repo_url}"
+git fetch origin
+git reset --hard origin/main
+echo "==> Rebuilding system..."
+nixos-rebuild switch --flake {LOCAL_FLAKE}
+echo "==> Update complete!"
+"#
+        );
+
+        // Write script to a temp file
+        let script_path = "/tmp/nasty-update.sh";
+        tokio::fs::write(script_path, &script).await
+            .map_err(|e| UpdateError::CommandFailed(format!("failed to write update script: {e}")))?;
+
+        // Launch as a transient systemd service
         // This avoids the middleware's ProtectSystem restrictions
         let mut cmd = tokio::process::Command::new("systemd-run");
         cmd.args([
@@ -122,10 +152,8 @@ impl UpdateService {
 
         cmd.args([
                 "--",
-                "nixos-rebuild",
-                "switch",
-                "--flake",
-                FLAKE_URL,
+                "bash",
+                script_path,
             ]);
 
         let output = cmd
