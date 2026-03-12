@@ -1,4 +1,5 @@
 pub mod alerts;
+pub mod protocol;
 
 use serde::{Deserialize, Serialize};
 

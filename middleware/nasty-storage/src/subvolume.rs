@@ -7,6 +7,9 @@ use tracing::info;
 use crate::cmd;
 use crate::pool::PoolService;
 
+const STATE_PATH: &str = "/var/lib/nasty/subvolumes.json";
+const BLOCK_FILE_NAME: &str = "vol.img";
+
 #[derive(Debug, Error)]
 pub enum SubvolumeError {
     #[error("pool not found: {0}")]
@@ -17,18 +20,33 @@ pub enum SubvolumeError {
     AlreadyExists(String),
     #[error("subvolume not found: {0}")]
     NotFound(String),
-    #[error("bcachefs command failed: {0}")]
+    #[error("volsize is required for block subvolumes")]
+    VolsizeRequired,
+    #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SubvolumeType {
+    Filesystem,
+    Block,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Subvolume {
     pub name: String,
     pub pool: String,
+    pub subvolume_type: SubvolumeType,
     pub path: String,
-    pub size_bytes: Option<u64>,
+    pub used_bytes: Option<u64>,
+    pub compression: Option<String>,
+    pub comments: Option<String>,
+    // Block-specific
+    pub volsize_bytes: Option<u64>,
+    pub block_device: Option<String>,
     pub snapshots: Vec<String>,
 }
 
@@ -41,10 +59,31 @@ pub struct Snapshot {
     pub read_only: bool,
 }
 
+/// Persisted metadata for subvolumes (things bcachefs doesn't track)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SubvolumeMeta {
+    name: String,
+    pool: String,
+    #[serde(alias = "dataset_type")]
+    subvolume_type: SubvolumeType,
+    volsize_bytes: Option<u64>,
+    compression: Option<String>,
+    comments: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateSubvolumeRequest {
     pub pool: String,
     pub name: String,
+    #[serde(default = "default_type")]
+    pub subvolume_type: SubvolumeType,
+    pub volsize_bytes: Option<u64>,
+    pub compression: Option<String>,
+    pub comments: Option<String>,
+}
+
+fn default_type() -> SubvolumeType {
+    SubvolumeType::Filesystem
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,9 +128,10 @@ impl SubvolumeService {
             .ok_or_else(|| SubvolumeError::PoolNotMounted(pool_name.to_string()))
     }
 
-    /// List subvolumes in a pool by scanning direct children of the mount point
+    /// List subvolumes in a pool
     pub async fn list(&self, pool_name: &str) -> Result<Vec<Subvolume>, SubvolumeError> {
         let mount_point = self.pool_mount_point(pool_name).await?;
+        let state = load_state().await;
         let mut subvolumes = Vec::new();
 
         let mut entries = tokio::fs::read_dir(&mount_point).await?;
@@ -104,8 +144,6 @@ impl SubvolumeService {
                 continue;
             }
 
-            // Check if this is a bcachefs subvolume by trying to list snapshots
-            // A subvolume is a directory created via `bcachefs subvolume create`
             if path.is_dir() && is_subvolume(&path).await {
                 let snapshots = self
                     .list_snapshots_for(pool_name, &name)
@@ -113,12 +151,47 @@ impl SubvolumeService {
                     .unwrap_or_default();
 
                 let size = dir_usage(&path).await;
+                let path_str = path.to_string_lossy().to_string();
+
+                let meta = state
+                    .iter()
+                    .find(|m| m.pool == pool_name && m.name == name);
+
+                let (subvolume_type, volsize_bytes, compression, comments) =
+                    if let Some(m) = meta {
+                        (
+                            m.subvolume_type.clone(),
+                            m.volsize_bytes,
+                            m.compression.clone(),
+                            m.comments.clone(),
+                        )
+                    } else {
+                        // Auto-detect: if vol.img exists, it's a block subvolume
+                        let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
+                        if Path::new(&img_path).exists() {
+                            (SubvolumeType::Block, file_size(&img_path).await, None, None)
+                        } else {
+                            (SubvolumeType::Filesystem, None, None, None)
+                        }
+                    };
+
+                let block_device = if subvolume_type == SubvolumeType::Block {
+                    let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
+                    find_loop_device(&img_path).await
+                } else {
+                    None
+                };
 
                 subvolumes.push(Subvolume {
-                    name: name.clone(),
+                    name,
                     pool: pool_name.to_string(),
-                    path: path.to_string_lossy().to_string(),
-                    size_bytes: size,
+                    subvolume_type,
+                    path: path_str,
+                    used_bytes: size,
+                    compression,
+                    comments,
+                    volsize_bytes,
+                    block_device,
                     snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
                 });
             }
@@ -133,27 +206,11 @@ impl SubvolumeService {
         pool_name: &str,
         name: &str,
     ) -> Result<Subvolume, SubvolumeError> {
-        let mount_point = self.pool_mount_point(pool_name).await?;
-        let path = format!("{mount_point}/{name}");
-
-        if !Path::new(&path).exists() {
-            return Err(SubvolumeError::NotFound(name.to_string()));
-        }
-
-        let snapshots = self
-            .list_snapshots_for(pool_name, name)
-            .await
-            .unwrap_or_default();
-
-        let size = dir_usage(Path::new(&path)).await;
-
-        Ok(Subvolume {
-            name: name.to_string(),
-            pool: pool_name.to_string(),
-            path,
-            size_bytes: size,
-            snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
-        })
+        let subvolumes = self.list(pool_name).await?;
+        subvolumes
+            .into_iter()
+            .find(|s| s.name == name)
+            .ok_or_else(|| SubvolumeError::NotFound(name.to_string()))
     }
 
     /// Create a new subvolume
@@ -165,25 +222,85 @@ impl SubvolumeService {
             return Err(SubvolumeError::AlreadyExists(req.name.clone()));
         }
 
+        if req.subvolume_type == SubvolumeType::Block && req.volsize_bytes.is_none() {
+            return Err(SubvolumeError::VolsizeRequired);
+        }
+
+        // Create the bcachefs subvolume
         info!("Creating subvolume '{}' in pool '{}'", req.name, req.pool);
         cmd::run_ok("bcachefs", &["subvolume", "create", &subvol_path])
             .await
             .map_err(SubvolumeError::CommandFailed)?;
+
+        // Set compression if specified
+        if let Some(ref comp) = req.compression {
+            info!("Setting compression={} on subvolume '{}'", comp, req.name);
+            let _ = cmd::run_ok(
+                "bcachefs",
+                &[
+                    "set-file-option",
+                    &format!("--compression={comp}"),
+                    &subvol_path,
+                ],
+            )
+            .await;
+        }
+
+        // For block subvolumes: create sparse file and attach loop device
+        if req.subvolume_type == SubvolumeType::Block {
+            let volsize = req.volsize_bytes.unwrap();
+            let img_path = format!("{subvol_path}/{BLOCK_FILE_NAME}");
+
+            info!(
+                "Creating block subvolume '{}' with size {} bytes",
+                req.name, volsize
+            );
+            cmd::run_ok("truncate", &["-s", &volsize.to_string(), &img_path])
+                .await
+                .map_err(SubvolumeError::CommandFailed)?;
+
+            info!("Attaching loop device for '{}'", req.name);
+            cmd::run_ok("losetup", &["--find", "--show", &img_path])
+                .await
+                .map_err(SubvolumeError::CommandFailed)?;
+        }
+
+        // Save metadata
+        let meta = SubvolumeMeta {
+            name: req.name.clone(),
+            pool: req.pool.clone(),
+            subvolume_type: req.subvolume_type,
+            volsize_bytes: req.volsize_bytes,
+            compression: req.compression,
+            comments: req.comments,
+        };
+        let mut state = load_state().await;
+        state.push(meta);
+        save_state(&state).await?;
 
         self.get(&req.pool, &req.name).await
     }
 
     /// Delete a subvolume
     pub async fn delete(&self, req: DeleteSubvolumeRequest) -> Result<(), SubvolumeError> {
+        let subvol = self.get(&req.pool, &req.name).await?;
+
+        // For block subvolumes: detach loop device first
+        if subvol.subvolume_type == SubvolumeType::Block {
+            if let Some(ref loop_dev) = subvol.block_device {
+                info!("Detaching loop device {} for '{}'", loop_dev, req.name);
+                let _ = cmd::run_ok("losetup", &["-d", loop_dev]).await;
+            }
+        }
+
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let subvol_path = format!("{mount_point}/{}", req.name);
 
-        if !Path::new(&subvol_path).exists() {
-            return Err(SubvolumeError::NotFound(req.name.clone()));
-        }
-
         // Delete all snapshots for this subvolume first
-        let snapshots = self.list_snapshots_for(&req.pool, &req.name).await.unwrap_or_default();
+        let snapshots = self
+            .list_snapshots_for(&req.pool, &req.name)
+            .await
+            .unwrap_or_default();
         for snap in snapshots {
             info!("Deleting snapshot '{}' before subvolume deletion", snap.name);
             cmd::run_ok("bcachefs", &["subvolume", "delete", &snap.path])
@@ -196,7 +313,53 @@ impl SubvolumeService {
             .await
             .map_err(SubvolumeError::CommandFailed)?;
 
+        // Remove from state
+        let mut state = load_state().await;
+        state.retain(|m| !(m.pool == req.pool && m.name == req.name));
+        save_state(&state).await?;
+
         Ok(())
+    }
+
+    /// Attach a block subvolume's loop device (e.g. after reboot)
+    pub async fn attach(
+        &self,
+        pool_name: &str,
+        name: &str,
+    ) -> Result<Subvolume, SubvolumeError> {
+        let subvol = self.get(pool_name, name).await?;
+        if subvol.subvolume_type != SubvolumeType::Block {
+            return Err(SubvolumeError::CommandFailed(
+                "only block subvolumes can be attached".to_string(),
+            ));
+        }
+        if subvol.block_device.is_some() {
+            return Ok(subvol);
+        }
+
+        let img_path = format!("{}/{}", subvol.path, BLOCK_FILE_NAME);
+        info!("Attaching loop device for '{}'", name);
+        cmd::run_ok("losetup", &["--find", "--show", &img_path])
+            .await
+            .map_err(SubvolumeError::CommandFailed)?;
+
+        self.get(pool_name, name).await
+    }
+
+    /// Detach a block subvolume's loop device
+    pub async fn detach(
+        &self,
+        pool_name: &str,
+        name: &str,
+    ) -> Result<Subvolume, SubvolumeError> {
+        let subvol = self.get(pool_name, name).await?;
+        if let Some(ref loop_dev) = subvol.block_device {
+            info!("Detaching loop device {} for '{}'", loop_dev, name);
+            cmd::run_ok("losetup", &["-d", loop_dev])
+                .await
+                .map_err(SubvolumeError::CommandFailed)?;
+        }
+        self.get(pool_name, name).await
     }
 
     /// Create a snapshot of a subvolume
@@ -331,13 +494,10 @@ impl SubvolumeService {
 }
 
 /// Check if a directory is a bcachefs subvolume.
-/// bcachefs subvolumes have a different inode number structure,
-/// but the simplest heuristic is checking via the subvolume list command.
 /// For now we treat all direct children dirs of the mount as subvolumes.
 async fn is_subvolume(path: &Path) -> bool {
     // TODO: use `bcachefs subvolume list` or check xattrs to distinguish
-    // real subvolumes from regular directories. For now, assume all
-    // top-level dirs (except .snapshots) are subvolumes.
+    // real subvolumes from regular directories.
     path.is_dir()
 }
 
@@ -349,4 +509,45 @@ async fn dir_usage(path: &Path) -> Option<u64> {
         .split_whitespace()
         .next()
         .and_then(|s| s.parse().ok())
+}
+
+/// Load persisted subvolume metadata
+async fn load_state() -> Vec<SubvolumeMeta> {
+    // Try new path first, fall back to old datasets.json for migration
+    for path in [STATE_PATH, "/var/lib/nasty/datasets.json"] {
+        if let Ok(content) = tokio::fs::read_to_string(path).await {
+            if let Ok(state) = serde_json::from_str(&content) {
+                return state;
+            }
+        }
+    }
+    Vec::new()
+}
+
+/// Save subvolume metadata
+async fn save_state(state: &[SubvolumeMeta]) -> Result<(), SubvolumeError> {
+    let json = serde_json::to_string_pretty(state)
+        .map_err(|e| SubvolumeError::CommandFailed(e.to_string()))?;
+    tokio::fs::write(STATE_PATH, json).await?;
+    Ok(())
+}
+
+/// Find the loop device attached to a given file
+async fn find_loop_device(file_path: &str) -> Option<String> {
+    let output = cmd::run_ok("losetup", &["-j", file_path]).await.ok()?;
+    let line = output.lines().next()?;
+    let dev = line.split(':').next()?;
+    if dev.starts_with("/dev/loop") {
+        Some(dev.to_string())
+    } else {
+        None
+    }
+}
+
+/// Get file size
+async fn file_size(path: &str) -> Option<u64> {
+    tokio::fs::metadata(path)
+        .await
+        .ok()
+        .map(|m| m.len())
 }

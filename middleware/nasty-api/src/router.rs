@@ -32,6 +32,8 @@ fn is_read_only(method: &str) -> bool {
             "system.info" | "system.health" | "system.stats" | "system.disks"
             | "system.alerts" | "alert.rules.list"
             | "device.list" | "auth.me" | "auth.list_users"
+            | "pool.usage" | "pool.scrub.status" | "pool.reconcile.status"
+            | "service.protocol.list"
         )
 }
 
@@ -114,6 +116,23 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         "system.health" => ok(req, state.system.health().await),
         "system.stats" => ok(req, state.system.stats().await),
         "system.disks" => ok(req, state.system.disks().await),
+
+        // ── Protocols ────────────────────────────────────────────
+        "service.protocol.list" => ok(req, state.protocols.list().await),
+        "service.protocol.enable" => match require_str(req, "name") {
+            Ok(name) => match state.protocols.enable(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "service.protocol.disable" => match require_str(req, "name") {
+            Ok(name) => match state.protocols.disable(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
 
         // ── Alerts ───────────────────────────────────────────────
         "system.alerts" => {
@@ -211,6 +230,78 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
         },
+        "pool.device.add" => match parse_params(req) {
+            Ok(p) => match state.pools.device_add(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "pool.device.remove" => match parse_params(req) {
+            Ok(p) => match state.pools.device_remove(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "pool.device.evacuate" => match parse_params(req) {
+            Ok(p) => match state.pools.device_evacuate(p).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "pool.device.set_state" => match parse_params(req) {
+            Ok(p) => match state.pools.device_set_state(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "pool.device.online" => match parse_params(req) {
+            Ok(p) => match state.pools.device_online(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "pool.device.offline" => match parse_params(req) {
+            Ok(p) => match state.pools.device_offline(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+
+        // ── Pool health & monitoring ─────────────────────────────
+        "pool.usage" => match require_str(req, "name") {
+            Ok(name) => match state.pools.usage(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "pool.scrub.start" => match require_str(req, "name") {
+            Ok(name) => match state.pools.scrub_start(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "pool.scrub.status" => match require_str(req, "name") {
+            Ok(name) => match state.pools.scrub_status(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "pool.reconcile.status" => match require_str(req, "name") {
+            Ok(name) => match state.pools.reconcile_status(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
 
         // ── Subvolumes ──────────────────────────────────────────
         "subvolume.list" => match require_str(req, "pool") {
@@ -240,6 +331,20 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
+        },
+        "subvolume.attach" => match (require_str(req, "pool"), require_str(req, "name")) {
+            (Ok(pool), Ok(name)) => match state.subvolumes.attach(pool, name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            (Err(r), _) | (_, Err(r)) => r,
+        },
+        "subvolume.detach" => match (require_str(req, "pool"), require_str(req, "name")) {
+            (Ok(pool), Ok(name)) => match state.subvolumes.detach(pool, name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            (Err(r), _) | (_, Err(r)) => r,
         },
 
         // ── Snapshots ───────────────────────────────────────────

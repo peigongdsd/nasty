@@ -17,17 +17,68 @@ export interface ServiceStatus {
 	running: boolean;
 }
 
+export interface PoolDevice {
+	path: string;
+	/** Hierarchical label for tiering (e.g. "ssd.fast", "hdd.archive") */
+	label: string | null;
+	/** Durability: 0 = cache, 1 = normal, 2 = hardware RAID */
+	durability: number | null;
+	/** Device state: rw, ro, failed, spare */
+	state: string | null;
+}
+
+export type DeviceState = 'rw' | 'ro' | 'failed' | 'spare';
+
 export interface Pool {
 	name: string;
 	uuid: string;
-	devices: string[];
+	devices: PoolDevice[];
 	mount_point: string | null;
 	mounted: boolean;
 	total_bytes: number;
 	used_bytes: number;
 	available_bytes: number;
+	options: PoolOptions;
+}
+
+export interface PoolOptions {
 	compression: string | null;
-	replicas: number;
+	background_compression: string | null;
+	data_replicas: number | null;
+	metadata_replicas: number | null;
+	data_checksum: string | null;
+	metadata_checksum: string | null;
+	foreground_target: string | null;
+	background_target: string | null;
+	promote_target: string | null;
+	metadata_target: string | null;
+	erasure_code: boolean | null;
+	encrypted: boolean | null;
+	error_action: string | null;
+}
+
+export interface FsUsage {
+	raw: string;
+	devices: FsDeviceUsage[];
+	data_bytes: number;
+	metadata_bytes: number;
+	reserved_bytes: number;
+}
+
+export interface FsDeviceUsage {
+	path: string;
+	used_bytes: number;
+	free_bytes: number;
+	total_bytes: number;
+}
+
+export interface ScrubStatus {
+	running: boolean;
+	raw: string;
+}
+
+export interface ReconcileStatus {
+	raw: string;
 }
 
 export interface BlockDevice {
@@ -39,11 +90,18 @@ export interface BlockDevice {
 	in_use: boolean;
 }
 
+export type SubvolumeType = 'filesystem' | 'block';
+
 export interface Subvolume {
 	name: string;
 	pool: string;
+	subvolume_type: SubvolumeType;
 	path: string;
-	size_bytes: number | null;
+	used_bytes: number | null;
+	compression: string | null;
+	comments: string | null;
+	volsize_bytes: number | null;
+	block_device: string | null;
 	snapshots: string[];
 }
 
@@ -201,6 +259,13 @@ export interface SmartAttribute {
 	threshold: number;
 	raw_value: number;
 	failing: boolean;
+}
+
+export interface ProtocolStatus {
+	name: string;
+	display_name: string;
+	enabled: boolean;
+	running: boolean;
 }
 
 export interface AlertRule {

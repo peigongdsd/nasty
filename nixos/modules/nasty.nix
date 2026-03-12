@@ -163,6 +163,9 @@ in {
       wantedBy = [ "multi-user.target" ];
       after = [
         "network.target"
+        "nasty-pool-mount.service"
+        "nasty-block-restore.service"
+        "nasty-protocol-restore.service"
       ] ++ lib.optional cfg.nfs.enable "nfs-server.service"
         ++ lib.optional cfg.smb.enable "smb.service"
         ++ lib.optional cfg.nvmeof.enable "nasty-nvmeof-restore.service";
@@ -207,7 +210,11 @@ in {
     systemd.services.nasty-nvmeof-restore = mkIf cfg.nvmeof.enable {
       description = "NASty NVMe-oF target restore";
       wantedBy = [ "multi-user.target" ];
-      after = [ "sys-kernel-config.mount" ];
+      after = [
+        "sys-kernel-config.mount"
+        "nasty-pool-mount.service"
+        "nasty-block-restore.service"
+      ];
       before = [ "nasty-middleware.service" ];
 
       # Script that reads our state file and recreates nvmet configfs entries
@@ -296,7 +303,7 @@ in {
     };
 
     # ── Pool auto-mount on boot ────────────────────────────────
-    # Re-mount bcachefs pools that were previously mounted
+    # Re-mount bcachefs pools that were previously mounted (tracked by middleware)
 
     systemd.services.nasty-pool-mount = {
       description = "NASty pool auto-mount";
@@ -304,7 +311,9 @@ in {
       after = [ "local-fs.target" ];
       before = [
         "nasty-middleware.service"
+        "nasty-block-restore.service"
         "nfs-server.service"
+        "smb.service"
       ];
 
       serviceConfig = {
@@ -313,26 +322,187 @@ in {
         ExecStart = pkgs.writeShellScript "nasty-pool-mount" ''
           set -euo pipefail
           MOUNT_BASE="${cfg.storage.mountBase}"
+          STATE="/var/lib/nasty/pool-state.json"
 
-          # Find bcachefs devices using blkid
-          ${pkgs.util-linux}/bin/blkid -t TYPE=bcachefs -o device 2>/dev/null | while IFS= read -r dev; do
-            # Get the UUID
-            UUID=$(${pkgs.util-linux}/bin/blkid -s UUID -o value "$dev" 2>/dev/null) || continue
+          # If no state file, fall back to mounting all known pools
+          if [ ! -f "$STATE" ]; then
+            echo "No pool state file, discovering and mounting all bcachefs pools"
+            ${pkgs.util-linux}/bin/blkid -t TYPE=bcachefs -o device 2>/dev/null | while IFS= read -r dev; do
+              for mp in "$MOUNT_BASE"/*/; do
+                [ -d "$mp" ] || continue
+                POOL_NAME=$(basename "$mp")
+                if ! mountpoint -q "$mp" 2>/dev/null; then
+                  echo "Auto-mounting pool $POOL_NAME ($dev) at $mp"
+                  ${pkgs.bcachefs-tools}/bin/bcachefs mount "$dev" "$mp" || echo "  WARNING: failed to mount $dev"
+                fi
+              done
+            done
+            echo "Pool auto-mount complete (fallback)"
+            exit 0
+          fi
 
-            # Check if any mount point exists for this device under our base
-            for mp in "$MOUNT_BASE"/*/; do
-              [ -d "$mp" ] || continue
-              POOL_NAME=$(basename "$mp")
+          # Read pool names from state file
+          POOLS=$(${pkgs.jq}/bin/jq -r '.[]' "$STATE" 2>/dev/null) || exit 0
 
-              # Try mounting if not already mounted
-              if ! mountpoint -q "$mp" 2>/dev/null; then
-                echo "Auto-mounting pool $POOL_NAME ($dev) at $mp"
-                ${pkgs.bcachefs-tools}/bin/bcachefs mount "$dev" "$mp" || echo "  WARNING: failed to mount $dev"
+          # Build a map of UUID -> device list from blkid
+          declare -A UUID_DEVS
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            DEV=""
+            UUID=""
+            for kv in $line; do
+              case "$kv" in
+                DEVNAME=*) DEV="''${kv#DEVNAME=}" ;;
+                UUID=*) UUID="''${kv#UUID=}" ;;
+              esac
+            done
+            [ -z "$UUID" ] || [ -z "$DEV" ] && continue
+            UUID_DEVS[$UUID]="''${UUID_DEVS[$UUID]:-}:$DEV"
+          done < <(${pkgs.util-linux}/bin/blkid -t TYPE=bcachefs -o export 2>/dev/null || true)
+
+          echo "$POOLS" | while IFS= read -r pool_name; do
+            [ -z "$pool_name" ] && continue
+            MP="$MOUNT_BASE/$pool_name"
+
+            # Skip if already mounted
+            if mountpoint -q "$MP" 2>/dev/null; then
+              echo "Pool $pool_name already mounted at $MP"
+              continue
+            fi
+
+            # Create mount point if needed
+            mkdir -p "$MP"
+
+            # Try each UUID's devices until we find one that mounts here
+            MOUNTED=false
+            for uuid in "''${!UUID_DEVS[@]}"; do
+              DEVLIST="''${UUID_DEVS[$uuid]}"
+              # Remove leading colon and use first device for mount
+              DEVLIST="''${DEVLIST#:}"
+              if ${pkgs.bcachefs-tools}/bin/bcachefs mount "$DEVLIST" "$MP" 2>/dev/null; then
+                echo "Mounted pool $pool_name (UUID $uuid) at $MP"
+                MOUNTED=true
+                break
               fi
             done
+
+            if [ "$MOUNTED" = false ]; then
+              echo "WARNING: could not mount pool $pool_name"
+            fi
           done
 
           echo "Pool auto-mount complete"
+        '';
+      };
+    };
+
+    # ── Block subvolume loop device restore ──────────────────────
+    # Re-attach loop devices for block subvolumes after pools are mounted
+
+    systemd.services.nasty-block-restore = {
+      description = "NASty block subvolume loop device restore";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "nasty-pool-mount.service" ];
+      before = [
+        "nasty-middleware.service"
+        "nasty-nvmeof-restore.service"
+      ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "nasty-block-restore" ''
+          set -euo pipefail
+          STATE="/var/lib/nasty/subvolumes.json"
+          MOUNT_BASE="${cfg.storage.mountBase}"
+
+          if [ ! -f "$STATE" ]; then
+            echo "No subvolume state file, skipping block restore"
+            exit 0
+          fi
+
+          # Find all block subvolumes from state file
+          ${pkgs.jq}/bin/jq -r '.[] | select(.subvolume_type == "block") | "\(.pool) \(.name)"' "$STATE" 2>/dev/null | while IFS=' ' read -r pool name; do
+            [ -z "$pool" ] || [ -z "$name" ] && continue
+
+            IMG="$MOUNT_BASE/$pool/$name/vol.img"
+
+            if [ ! -f "$IMG" ]; then
+              echo "WARNING: block image $IMG not found for $pool/$name"
+              continue
+            fi
+
+            # Check if already attached
+            if ${pkgs.util-linux}/bin/losetup -j "$IMG" 2>/dev/null | grep -q "$IMG"; then
+              echo "Loop device already attached for $pool/$name"
+              continue
+            fi
+
+            LODEV=$(${pkgs.util-linux}/bin/losetup --find --show "$IMG" 2>/dev/null) || {
+              echo "WARNING: failed to attach loop device for $pool/$name"
+              continue
+            }
+
+            echo "Attached $LODEV for block subvolume $pool/$name"
+          done
+
+          echo "Block subvolume restore complete"
+        '';
+      };
+    };
+
+    # ── Protocol restore on boot ──────────────────────────────────
+    # Start/stop protocol services based on saved state
+
+    systemd.services.nasty-protocol-restore = {
+      description = "NASty protocol service restore";
+      wantedBy = [ "multi-user.target" ];
+      after = [
+        "nasty-pool-mount.service"
+        "nasty-block-restore.service"
+      ] ++ lib.optional cfg.nfs.enable "nfs-server.service"
+        ++ lib.optional cfg.smb.enable "smb.service";
+      before = [ "nasty-middleware.service" ];
+
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "nasty-protocol-restore" ''
+          set -euo pipefail
+          STATE="/var/lib/nasty/protocols.json"
+
+          if [ ! -f "$STATE" ]; then
+            echo "No protocol state file, all protocols remain at NixOS defaults"
+            exit 0
+          fi
+
+          # Read state and stop disabled services
+          for proto in nfs smb iscsi nvmeof; do
+            ENABLED=$(${pkgs.jq}/bin/jq -r ".$proto // true" "$STATE" 2>/dev/null)
+
+            if [ "$ENABLED" = "false" ]; then
+              case "$proto" in
+                nfs)
+                  echo "Stopping NFS (disabled by user)"
+                  systemctl stop nfs-server.service 2>/dev/null || true
+                  ;;
+                smb)
+                  echo "Stopping SMB (disabled by user)"
+                  systemctl stop smb.service nmb.service 2>/dev/null || true
+                  ;;
+                iscsi)
+                  echo "iSCSI disabled by user (kernel modules will not be loaded)"
+                  ;;
+                nvmeof)
+                  echo "NVMe-oF disabled by user (kernel modules will not be loaded)"
+                  ;;
+              esac
+            else
+              echo "Protocol $proto is enabled"
+            fi
+          done
+
+          echo "Protocol restore complete"
         '';
       };
     };

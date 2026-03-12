@@ -1,4 +1,4 @@
-//! bcachefs pool and dataset management
+//! bcachefs pool and subvolume management
 //!
 //! This crate wraps bcachefs-tools CLI and sysfs interfaces
 //! to provide storage pool lifecycle operations.
