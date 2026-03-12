@@ -149,6 +149,10 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Err(e) => err(req, e),
         },
         "system.update.status" => ok(req, state.updates.status().await),
+        "system.reboot" => match state.updates.reboot().await {
+            Ok(()) => ok(req, "ok"),
+            Err(e) => err(req, e),
+        },
 
         // ── Protocols ────────────────────────────────────────────
         "service.protocol.list" => ok(req, state.protocols.list().await),

@@ -247,6 +247,24 @@ echo "==> Update complete!"
         Ok(())
     }
 
+    /// Reboot the system
+    pub async fn reboot(&self) -> Result<(), UpdateError> {
+        info!("System reboot requested");
+        let output = tokio::process::Command::new("systemctl")
+            .arg("reboot")
+            .output()
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("systemctl reboot: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(UpdateError::CommandFailed(format!(
+                "reboot failed: {stderr}"
+            )));
+        }
+        Ok(())
+    }
+
     /// Get the current status of a running/completed update
     pub async fn status(&self) -> UpdateStatus {
         // Use systemctl show to get detailed state
