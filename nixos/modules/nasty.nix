@@ -79,6 +79,8 @@ in {
       };
     };
 
+    # Protocol options control whether packages/firewall rules are available.
+    # Actual service start/stop is managed by the middleware via protocols.json.
     nfs.enable = mkEnableOption "NFS server for NASty shares" // { default = true; };
     smb.enable = mkEnableOption "Samba server for NASty shares" // { default = true; };
     iscsi.enable = mkEnableOption "iSCSI target (LIO) for NASty" // { default = true; };
@@ -175,9 +177,7 @@ in {
         "nasty-pool-mount.service"
         "nasty-block-restore.service"
         "nasty-protocol-restore.service"
-      ] ++ lib.optional cfg.nfs.enable "nfs-server.service"
-        ++ lib.optional cfg.smb.enable "smb.service"
-        ++ lib.optional cfg.nvmeof.enable "nasty-nvmeof-restore.service";
+      ] ++ lib.optional cfg.nvmeof.enable "nasty-nvmeof-restore.service";
 
       path = with pkgs; [
         bashInteractive  # bash for terminal
@@ -337,8 +337,6 @@ in {
       before = [
         "nasty-middleware.service"
         "nasty-block-restore.service"
-        "nfs-server.service"
-        "smb.service"
       ];
 
       serviceConfig = {
@@ -489,10 +487,10 @@ in {
       description = "NASty protocol service restore";
       wantedBy = [ "multi-user.target" ];
       after = [
+        "network.target"
         "nasty-pool-mount.service"
         "nasty-block-restore.service"
-      ] ++ lib.optional cfg.nfs.enable "nfs-server.service"
-        ++ lib.optional cfg.smb.enable "smb.service";
+      ];
       before = [ "nasty-middleware.service" ];
 
       serviceConfig = {
@@ -511,25 +509,29 @@ in {
               ENABLED="false"
             fi
 
-            if [ "$ENABLED" = "false" ]; then
+            if [ "$ENABLED" = "true" ]; then
               case "$proto" in
                 nfs)
-                  echo "Stopping NFS (disabled by user)"
-                  systemctl stop nfs-server.service 2>/dev/null || true
+                  echo "Starting NFS (enabled by user)"
+                  systemctl start nfs-server.service 2>/dev/null || true
                   ;;
                 smb)
-                  echo "Stopping SMB (disabled by user)"
-                  systemctl stop smb.service nmb.service 2>/dev/null || true
+                  echo "Starting SMB (enabled by user)"
+                  systemctl start smb.service nmb.service 2>/dev/null || true
                   ;;
                 iscsi)
-                  echo "iSCSI disabled by user (kernel modules will not be loaded)"
+                  echo "Loading iSCSI kernel modules (enabled by user)"
+                  modprobe target_core_mod 2>/dev/null || true
+                  modprobe iscsi_target_mod 2>/dev/null || true
                   ;;
                 nvmeof)
-                  echo "NVMe-oF disabled by user (kernel modules will not be loaded)"
+                  echo "Loading NVMe-oF kernel modules (enabled by user)"
+                  modprobe nvmet 2>/dev/null || true
+                  modprobe nvmet-tcp 2>/dev/null || true
                   ;;
               esac
             else
-              echo "Protocol $proto is enabled"
+              echo "Protocol $proto is disabled, skipping"
             fi
           done
 
@@ -539,13 +541,19 @@ in {
     };
 
     # ── NFS server ─────────────────────────────────────────────
+    # NFS service is NOT auto-started by NixOS — the middleware manages it.
+    # We still declare the server config so nfsd is available when started.
 
     services.nfs.server = mkIf cfg.nfs.enable {
       enable = true;
-      # nfsd will pick up /etc/exports.d/*.exports automatically
+      # Prevent NixOS from auto-starting nfs-server
+      # The middleware / protocol-restore service handles start/stop
     };
 
+    systemd.services.nfs-server.wantedBy = mkIf cfg.nfs.enable (lib.mkForce []);
+
     # ── Samba ──────────────────────────────────────────────────
+    # Same approach: declare config but don't auto-start.
 
     services.samba = mkIf cfg.smb.enable {
       enable = true;
@@ -555,6 +563,9 @@ in {
         "include" = "/etc/samba/smb.nasty.conf";
       };
     };
+
+    systemd.services.smb.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
+    systemd.services.nmb.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
 
     # ── iSCSI / LIO ───────────────────────────────────────────
     # kernel modules loaded via boot.kernelModules above
