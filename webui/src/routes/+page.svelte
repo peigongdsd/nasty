@@ -23,6 +23,8 @@
 	let prevSampleTime = $state(0);
 	let diskIoRates: Map<string, { readRate: number; writeRate: number }> = $state(new Map());
 	let netIoRates: Map<string, { rxRate: number; txRate: number }> = $state(new Map());
+	let netSamples: Map<string, { time: Date; in: number; out: number }[]> = $state(new Map());
+	let diskSamples: Map<string, { time: Date; in: number; out: number }[]> = $state(new Map());
 
 	const netHistory = createIoHistory();
 	const diskHistory = createIoHistory();
@@ -73,6 +75,9 @@
 					}
 				}
 				diskIoRates = dRates;
+				diskSamples = new Map(
+					newStats.disk_io.map(d => [d.name, [...diskHistory.getSamples(d.name)]])
+				);
 
 				const nRates = new Map<string, { rxRate: number; txRate: number }>();
 				for (const curr of newStats.network) {
@@ -85,6 +90,9 @@
 					}
 				}
 				netIoRates = nRates;
+				netSamples = new Map(
+					newStats.network.map(n => [n.name, [...netHistory.getSamples(n.name)]])
+				);
 			}
 
 			prevDiskIo = newStats.disk_io;
@@ -272,7 +280,7 @@
 						{#each stats.network as iface}
 							{@const rates = netIoRates.get(iface.name)}
 							{@const ips = ipv4Only(iface.addresses)}
-							{@const samples = netHistory.getSamples(iface.name)}
+							{@const samples = netSamples.get(iface.name) ?? []}
 							<div class="py-2.5 first:pt-0 last:pb-0">
 								<div class="mb-1.5 flex items-center gap-2">
 									<span class="text-sm font-semibold">{iface.name}</span>
@@ -321,7 +329,7 @@
 					<div class="divide-y divide-border">
 						{#each stats.disk_io as dio}
 							{@const rates = diskIoRates.get(dio.name)}
-							{@const samples = diskHistory.getSamples(dio.name)}
+							{@const samples = diskSamples.get(dio.name) ?? []}
 							<div class="py-2.5 first:pt-0 last:pb-0">
 								<div class="mb-1.5 flex items-center gap-2">
 									<span class="text-sm font-semibold">{dio.name}</span>
