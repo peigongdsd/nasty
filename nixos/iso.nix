@@ -195,20 +195,6 @@ in
     # Auto-launch installer on tty1 (only once)
     if [ "$(tty)" = "/dev/tty1" ] && [ ! -f /tmp/.nasty-installer-ran ]; then
       touch /tmp/.nasty-installer-ran
-      echo ""
-      cat <<'BANNER'
-
-     _   _           _____ _
-    | \ | |   /\    / ____| |
-    |  \| |  /  \  | (___ | |_ _   _
-    | . ` | / /\ \  \___ \| __| | | |
-    | |\  |/ ____ \ ____) | |_| |_| |
-    |_| \_/_/    \_\_____/ \__|\__, |
-                                __/ |
-                               |___/
-    NASty NAS Installer
-
-BANNER
       nasty-install
     fi
   '';
