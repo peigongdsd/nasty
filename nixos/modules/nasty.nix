@@ -185,6 +185,7 @@ in {
         bcachefs-tools   # bcachefs
         smartmontools    # smartctl
         git              # for update check (git ls-remote)
+        curl             # for update check (GitHub API, TODO: remove when repo is public)
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
         ++ lib.optionals cfg.smb.enable [ samba ]
         ++ lib.optionals cfg.iscsi.enable [ targetcli-fb ]
