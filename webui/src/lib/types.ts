@@ -236,6 +236,7 @@ export interface NetIfStats {
 	tx_packets: number;
 	speed_mbps: number | null;
 	up: boolean;
+	addresses: string[];
 }
 
 export interface DiskHealth {

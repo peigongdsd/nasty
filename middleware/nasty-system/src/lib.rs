@@ -71,6 +71,7 @@ pub struct NetIfStats {
     pub tx_packets: u64,
     pub speed_mbps: Option<u32>,
     pub up: bool,
+    pub addresses: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -215,8 +216,33 @@ fn memory_stats() -> MemoryStats {
     }
 }
 
+fn interface_addresses() -> std::collections::HashMap<String, Vec<String>> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(output) = std::process::Command::new("ip").args(["-j", "addr", "show"]).output() else {
+        return map;
+    };
+    let Ok(json): Result<Vec<serde_json::Value>, _> = serde_json::from_slice(&output.stdout) else {
+        return map;
+    };
+    for iface in json {
+        let Some(name) = iface["ifname"].as_str() else { continue };
+        let mut addrs = Vec::new();
+        if let Some(addr_info) = iface["addr_info"].as_array() {
+            for ai in addr_info {
+                if let Some(local) = ai["local"].as_str() {
+                    let prefix = ai["prefixlen"].as_u64().unwrap_or(0);
+                    addrs.push(format!("{local}/{prefix}"));
+                }
+            }
+        }
+        map.insert(name.to_string(), addrs);
+    }
+    map
+}
+
 fn network_stats() -> Vec<NetIfStats> {
     let content = std::fs::read_to_string("/proc/net/dev").unwrap_or_default();
+    let addr_map = interface_addresses();
     let mut interfaces = Vec::new();
 
     for line in content.lines().skip(2) {
@@ -248,6 +274,8 @@ fn network_stats() -> Vec<NetIfStats> {
             .and_then(|s| s.trim().parse::<i32>().ok())
             .and_then(|v| if v > 0 { Some(v as u32) } else { None });
 
+        let addresses = addr_map.get(name).cloned().unwrap_or_default();
+
         interfaces.push(NetIfStats {
             name: name.to_string(),
             rx_bytes: vals[0],
@@ -256,6 +284,7 @@ fn network_stats() -> Vec<NetIfStats> {
             tx_packets: vals[9],
             speed_mbps,
             up,
+            addresses,
         });
     }
 

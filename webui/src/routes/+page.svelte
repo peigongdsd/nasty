@@ -257,7 +257,10 @@
 							<span class="text-sm font-semibold">{iface.name}</span>
 							<span class="h-2 w-2 rounded-full {iface.up ? 'bg-green-400' : 'bg-red-400'}"></span>
 							{#if iface.speed_mbps}
-								<span class="ml-auto text-xs text-muted-foreground">{iface.speed_mbps >= 1000 ? `${iface.speed_mbps / 1000}G` : `${iface.speed_mbps}M`}</span>
+								<span class="text-xs text-muted-foreground">{iface.speed_mbps >= 1000 ? `${iface.speed_mbps / 1000}G` : `${iface.speed_mbps}M`}</span>
+							{/if}
+							{#if iface.addresses.length > 0}
+								<span class="ml-auto font-mono text-xs text-muted-foreground">{iface.addresses.join(', ')}</span>
 							{/if}
 						</div>
 						<div class="flex gap-4 text-xs">
