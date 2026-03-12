@@ -11,6 +11,8 @@
 	let status: UpdateStatus | null = $state(null);
 	let loading = $state(true);
 	let checking = $state(false);
+	let confirmAction: 'update' | 'rollback' | null = $state(null);
+	let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = $state(null);
 	let logEl: HTMLPreElement | undefined = $state();
 
@@ -30,6 +32,7 @@
 
 	onDestroy(() => {
 		stopPolling();
+		if (confirmTimer) clearTimeout(confirmTimer);
 	});
 
 	async function loadVersion() {
@@ -59,8 +62,26 @@
 		checking = false;
 	}
 
-	async function applyUpdate() {
-		if (!confirm('Start system update? Services will restart when the update completes.')) return;
+	function requestAction(action: 'update' | 'rollback') {
+		if (confirmAction === action) {
+			// Second click — execute
+			clearConfirm();
+			if (action === 'update') doApplyUpdate();
+			else doRollback();
+		} else {
+			// First click — ask for confirmation
+			confirmAction = action;
+			if (confirmTimer) clearTimeout(confirmTimer);
+			confirmTimer = setTimeout(clearConfirm, 4000);
+		}
+	}
+
+	function clearConfirm() {
+		confirmAction = null;
+		if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+	}
+
+	async function doApplyUpdate() {
 		status = { state: 'running', log: '' };
 		const ok = await withToast(
 			() => client.call('system.update.apply'),
@@ -71,8 +92,7 @@
 		}
 	}
 
-	async function rollback() {
-		if (!confirm('Rollback to the previous system version?')) return;
+	async function doRollback() {
 		status = { state: 'running', log: '' };
 		const ok = await withToast(
 			() => client.call('system.update.rollback'),
@@ -112,7 +132,7 @@
 {#if loading}
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
-	<Card class="mb-6 max-w-full">
+	<Card class="mb-6">
 		<CardContent class="pt-6">
 			<div class="mb-4 flex items-center justify-between">
 				<div>
@@ -146,19 +166,27 @@
 					{checking ? 'Checking...' : 'Check for Updates'}
 				</Button>
 				{#if info?.update_available}
-					<Button onclick={applyUpdate} disabled={status?.state === 'running'}>
-						Update Now
+					<Button
+						variant={confirmAction === 'update' ? 'destructive' : 'default'}
+						onclick={() => requestAction('update')}
+						disabled={status?.state === 'running'}
+					>
+						{confirmAction === 'update' ? 'Confirm Update?' : 'Update Now'}
 					</Button>
 				{/if}
-				<Button variant="secondary" onclick={rollback} disabled={status?.state === 'running'}>
-					Rollback
+				<Button
+					variant={confirmAction === 'rollback' ? 'destructive' : 'secondary'}
+					onclick={() => requestAction('rollback')}
+					disabled={status?.state === 'running'}
+				>
+					{confirmAction === 'rollback' ? 'Confirm Rollback?' : 'Rollback'}
 				</Button>
 			</div>
 		</CardContent>
 	</Card>
 
 	{#if status && status.state !== 'idle'}
-		<Card class="max-w-full">
+		<Card>
 			<CardContent class="pt-6">
 				<div class="mb-3 flex items-center gap-3">
 					<span class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -178,13 +206,13 @@
 					{/if}
 				</div>
 				{#if status.log}
-					<pre bind:this={logEl} class="max-h-96 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{status.log}</pre>
+					<pre bind:this={logEl} class="max-h-[32rem] overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{status.log}</pre>
 				{/if}
 			</CardContent>
 		</Card>
 	{/if}
 
-	<p class="mt-6 max-w-full text-xs text-muted-foreground">
+	<p class="mt-6 text-xs text-muted-foreground">
 		Updates are fetched from GitHub and applied using NixOS rebuild.
 		The system will atomically switch to the new version, restarting services as needed.
 		If anything goes wrong, use Rollback to return to the previous version.
