@@ -48,7 +48,7 @@ impl Protocol {
     fn services(&self) -> &[&str] {
         match self {
             Protocol::Nfs => &["nfs-server.service"],
-            Protocol::Smb => &["smb.service", "nmb.service"],
+            Protocol::Smb => &["samba-smbd.service", "samba-nmbd.service"],
             Protocol::Iscsi => &[], // LIO has no daemon; managed via targetcli
             Protocol::Nvmeof => &[], // configfs-based, no daemon
         }
@@ -228,10 +228,10 @@ impl ProtocolService {
 async fn is_protocol_running(proto: Protocol) -> bool {
     match proto {
         Protocol::Nfs => systemctl_is_active("nfs-server.service").await,
-        Protocol::Smb => systemctl_is_active("smb.service").await,
+        Protocol::Smb => systemctl_is_active("samba-smbd.service").await,
         Protocol::Iscsi => {
-            // iSCSI is "running" if the kernel modules are loaded
-            std::path::Path::new("/sys/kernel/config/target/iscsi").exists()
+            // iSCSI is "running" if the kernel target modules are loaded
+            std::path::Path::new("/sys/kernel/config/target/core").exists()
         }
         Protocol::Nvmeof => {
             // NVMe-oF is "running" if nvmet configfs is available
