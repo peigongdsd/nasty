@@ -219,24 +219,33 @@ impl NvmeofService {
                 let _ = configfs_symlink(&host_path, &link).await;
             }
 
-            // Restore ports
+            // Restore ports — reuse existing port if one already binds to the same address
             for port in &subsys.ports {
-                let port_path = format!("{NVMET_BASE}/ports/{}", port.port_id);
-                if let Err(e) = configfs_mkdir(&port_path).await {
-                    warn!("  Failed to create port {}: {e}", port.port_id);
-                    continue;
-                }
-                let _ = configfs_write(&format!("{port_path}/addr_trtype"), &port.transport).await;
-                let _ = configfs_write(&format!("{port_path}/addr_traddr"), &port.addr).await;
-                let _ = configfs_write(&format!("{port_path}/addr_trsvcid"), &port.service_id).await;
-                let _ = configfs_write(&format!("{port_path}/addr_adrfam"), &port.addr_family).await;
+                let svc_id: u16 = port.service_id.parse().unwrap_or(4420);
+                let actual_port_id = if let Some(existing) = find_existing_port(
+                    &port.transport, &port.addr, svc_id, &port.addr_family,
+                ).await {
+                    existing
+                } else {
+                    let port_path = format!("{NVMET_BASE}/ports/{}", port.port_id);
+                    if let Err(e) = configfs_mkdir(&port_path).await {
+                        warn!("  Failed to create port {}: {e}", port.port_id);
+                        continue;
+                    }
+                    let _ = configfs_write(&format!("{port_path}/addr_trtype"), &port.transport).await;
+                    let _ = configfs_write(&format!("{port_path}/addr_traddr"), &port.addr).await;
+                    let _ = configfs_write(&format!("{port_path}/addr_trsvcid"), &port.service_id).await;
+                    let _ = configfs_write(&format!("{port_path}/addr_adrfam"), &port.addr_family).await;
+                    port.port_id
+                };
 
+                let port_path = format!("{NVMET_BASE}/ports/{actual_port_id}");
                 let link = format!("{port_path}/subsystems/{}", subsys.nqn);
                 let _ = configfs_symlink(
                     &format!("{NVMET_BASE}/subsystems/{}", subsys.nqn),
                     &link,
                 ).await;
-                info!("  Restored port {} ({}:{})", port.port_id, port.addr, port.service_id);
+                info!("  Restored port {} ({}:{})", actual_port_id, port.addr, port.service_id);
             }
         }
 
@@ -458,17 +467,25 @@ impl NvmeofService {
         let svc_id = req.service_id.unwrap_or(4420);
         let addr_family = req.addr_family.unwrap_or_else(|| "ipv4".to_string());
 
-        let port_id = next_port_id().await;
-
-        // Create port in configfs
-        let port_path = format!("{NVMET_BASE}/ports/{port_id}");
-        configfs_mkdir(&port_path).await?;
-        configfs_write(&format!("{port_path}/addr_trtype"), &transport).await?;
-        configfs_write(&format!("{port_path}/addr_traddr"), &addr).await?;
-        configfs_write(&format!("{port_path}/addr_trsvcid"), &svc_id.to_string()).await?;
-        configfs_write(&format!("{port_path}/addr_adrfam"), &addr_family).await?;
+        // Check if an existing port already binds to the same address —
+        // multiple subsystems can share a single NVMe-oF port.
+        let port_id = if let Some(existing) = find_existing_port(&transport, &addr, svc_id, &addr_family).await {
+            info!("Reusing existing port {existing} for {}:{svc_id}", addr);
+            existing
+        } else {
+            let pid = next_port_id().await;
+            // Create new port in configfs
+            let port_path = format!("{NVMET_BASE}/ports/{pid}");
+            configfs_mkdir(&port_path).await?;
+            configfs_write(&format!("{port_path}/addr_trtype"), &transport).await?;
+            configfs_write(&format!("{port_path}/addr_traddr"), &addr).await?;
+            configfs_write(&format!("{port_path}/addr_trsvcid"), &svc_id.to_string()).await?;
+            configfs_write(&format!("{port_path}/addr_adrfam"), &addr_family).await?;
+            pid
+        };
 
         // Link subsystem to port
+        let port_path = format!("{NVMET_BASE}/ports/{port_id}");
         let link_path = format!("{port_path}/subsystems/{}", subsys.nqn);
         configfs_symlink(
             &format!("{NVMET_BASE}/subsystems/{}", subsys.nqn),
@@ -595,6 +612,44 @@ impl NvmeofService {
         info!("Removed allowed host from subsystem '{}'", subsys.nqn);
         Ok(subsys)
     }
+}
+
+// ── port reuse ─────────────────────────────────────────────────
+
+/// Scan all existing configfs ports for one matching the given transport/addr/service_id.
+/// Returns the port_id if found, so multiple subsystems can share a single listener.
+async fn find_existing_port(transport: &str, addr: &str, svc_id: u16, addr_family: &str) -> Option<u16> {
+    let mut entries = tokio::fs::read_dir(format!("{NVMET_BASE}/ports")).await.ok()?;
+    let svc_str = svc_id.to_string();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let port_id: u16 = match name.to_str().and_then(|s| s.parse().ok()) {
+            Some(id) => id,
+            None => continue,
+        };
+        let port_path = format!("{NVMET_BASE}/ports/{port_id}");
+
+        async fn read_attr(base: &str, attr: &str) -> Option<String> {
+            tokio::fs::read_to_string(format!("{base}/{attr}"))
+                .await
+                .ok()
+                .map(|s| s.trim().to_string())
+        }
+
+        let existing_transport = read_attr(&port_path, "addr_trtype").await;
+        let existing_addr = read_attr(&port_path, "addr_traddr").await;
+        let existing_svc = read_attr(&port_path, "addr_trsvcid").await;
+        let existing_fam = read_attr(&port_path, "addr_adrfam").await;
+
+        if existing_transport.as_deref() == Some(transport)
+            && existing_addr.as_deref() == Some(addr)
+            && existing_svc.as_deref() == Some(&svc_str)
+            && existing_fam.as_deref() == Some(addr_family)
+        {
+            return Some(port_id);
+        }
+    }
+    None
 }
 
 // ── configfs helpers ────────────────────────────────────────────
