@@ -146,6 +146,10 @@ echo "==> Update complete!"
                 "--property=StandardError=journal",
             ]);
 
+        // Pass middleware's PATH so the script can find git, nixos-rebuild, etc.
+        let path = std::env::var("PATH").unwrap_or_default();
+        cmd.args(["--setenv", &format!("PATH={path}")]);
+
         if !token_env.is_empty() {
             cmd.args(["--setenv", &format!("NIX_CONFIG={token_env}")]);
         }
@@ -188,6 +192,7 @@ echo "==> Update complete!"
             .output()
             .await;
 
+        let path = std::env::var("PATH").unwrap_or_default();
         let output = tokio::process::Command::new("systemd-run")
             .args([
                 "--unit",
@@ -198,6 +203,8 @@ echo "==> Update complete!"
                 "--property=Type=oneshot",
                 "--property=StandardOutput=journal",
                 "--property=StandardError=journal",
+                "--setenv",
+                &format!("PATH={path}"),
                 "--",
                 "nixos-rebuild",
                 "switch",
