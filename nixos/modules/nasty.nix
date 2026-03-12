@@ -127,6 +127,7 @@ in {
       "d /var/lib/nasty/shares/nvmeof 0750 root root -"
       "d ${cfg.storage.mountBase} 0755 root root -"
       "d /etc/exports.d 0755 root root -"
+      "f /etc/samba/smb.nasty.conf 0644 root root -"
     ];
 
     # ── Self-signed TLS certificate ───────────────────────────
@@ -185,6 +186,7 @@ in {
         bcachefs-tools   # bcachefs
         smartmontools    # smartctl
         iproute2         # ip (for network addresses)
+        kmod             # modprobe (for iSCSI/NVMe-oF kernel modules)
         systemd          # systemctl, journalctl (for update status)
         nixos-rebuild-ng # nixos-rebuild (for system updates)
         git              # for update check (git ls-remote)
@@ -261,8 +263,8 @@ in {
           NVMET="/sys/kernel/config/nvmet"
 
           # Ensure nvmet module is loaded
-          modprobe nvmet
-          modprobe nvmet-tcp 2>/dev/null || true
+          ${pkgs.kmod}/bin/modprobe nvmet
+          ${pkgs.kmod}/bin/modprobe nvmet-tcp 2>/dev/null || true
 
           # Read each per-subsystem JSON file from the state directory
           for f in "$STATE_DIR"/*.json; do
@@ -524,13 +526,13 @@ in {
                   ;;
                 iscsi)
                   echo "Loading iSCSI kernel modules (enabled by user)"
-                  modprobe target_core_mod 2>/dev/null || true
-                  modprobe iscsi_target_mod 2>/dev/null || true
+                  ${pkgs.kmod}/bin/modprobe target_core_mod 2>/dev/null || true
+                  ${pkgs.kmod}/bin/modprobe iscsi_target_mod 2>/dev/null || true
                   ;;
                 nvmeof)
                   echo "Loading NVMe-oF kernel modules (enabled by user)"
-                  modprobe nvmet 2>/dev/null || true
-                  modprobe nvmet-tcp 2>/dev/null || true
+                  ${pkgs.kmod}/bin/modprobe nvmet 2>/dev/null || true
+                  ${pkgs.kmod}/bin/modprobe nvmet-tcp 2>/dev/null || true
                   ;;
               esac
             else

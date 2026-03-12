@@ -184,10 +184,21 @@ async fn apply_exports() -> Result<(), NfsError> {
             content.push_str(&format!("# {comment}\n"));
         }
 
+        // Generate a stable fsid from the share ID so NFS can identify
+        // bcachefs subvolumes (which are separate filesystem entities).
+        let fsid = stable_fsid(&share.id);
+
         let clients: Vec<String> = share
             .clients
             .iter()
-            .map(|c| format!("{}({})", c.host, c.options))
+            .map(|c| {
+                let opts = if c.options.contains("fsid=") {
+                    c.options.clone()
+                } else {
+                    format!("{},fsid={fsid}", c.options)
+                };
+                format!("{}({})", c.host, opts)
+            })
             .collect();
 
         content.push_str(&format!("{}\t{}\n", share.path, clients.join(" ")));
@@ -197,6 +208,17 @@ async fn apply_exports() -> Result<(), NfsError> {
     reload_exports().await?;
 
     Ok(())
+}
+
+/// Derive a stable numeric fsid (1–2^31) from a share ID string.
+/// NFS needs fsid to identify non-root filesystems like bcachefs subvolumes.
+fn stable_fsid(id: &str) -> u32 {
+    let mut hash: u32 = 5381;
+    for b in id.bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(b as u32);
+    }
+    // Keep in range 1..2^31 (0 is reserved for root fs)
+    (hash % 0x7FFF_FFFE) + 1
 }
 
 async fn reload_exports() -> Result<(), NfsError> {
