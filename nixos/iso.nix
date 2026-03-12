@@ -180,7 +180,8 @@ in
       fi
 
       echo ""
-      echo "Run 'reboot' when ready."
+      read -p "Press Enter to reboot or Ctrl+C for a shell... "
+      reboot
     '')
   ];
 
