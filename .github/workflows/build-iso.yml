@@ -17,6 +17,11 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      # TODO: Remove once repo is public — only needed for private repo updates
+      - name: Inject GitHub token for updates
+        if: ${{ vars.NASTY_GITHUB_TOKEN != '' }}
+        run: echo "${{ vars.NASTY_GITHUB_TOKEN }}" > nixos/github-token
+
       - name: Compute npm deps hash
         run: |
           HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)

@@ -132,6 +132,14 @@ in
       mkdir -p /mnt/etc/nixos
       cp -rL --no-preserve=mode /etc/nasty-src/* /mnt/etc/nixos/
 
+      # TODO: Remove once repo is public — copy GitHub token for update support
+      if [ -f /etc/nasty-src/nixos/github-token ]; then
+        echo "==> Installing GitHub token for updates..."
+        mkdir -p /mnt/var/lib/nasty
+        cp /etc/nasty-src/nixos/github-token /mnt/var/lib/nasty/github-token
+        chmod 600 /mnt/var/lib/nasty/github-token
+      fi
+
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
       cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/nixos/hardware-configuration.nix
