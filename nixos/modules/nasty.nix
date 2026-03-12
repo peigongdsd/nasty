@@ -203,11 +203,10 @@ in {
         RestartSec = 5;
         StateDirectory = "nasty";
 
-        # Security hardening — keep minimal since the engine is a privileged
-        # system manager (mounts filesystems, writes /etc/exports.d, etc.).
-        # ProtectSystem is NOT used: it creates a private mount namespace
-        # which makes pool mounts invisible to NFS/SMB/iSCSI services.
-        ProtectHome = true;
+        # No filesystem sandboxing (ProtectSystem, ProtectHome, etc.) — any of
+        # these create a private mount namespace, making pool mounts invisible
+        # to NFS/SMB/iSCSI services.  The engine is a privileged system manager;
+        # security is enforced at the API authentication layer.
         NoNewPrivileges = false;  # needs root for mount/format operations
       };
     };
