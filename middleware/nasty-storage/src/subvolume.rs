@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -7,7 +8,7 @@ use tracing::info;
 use crate::cmd;
 use crate::pool::PoolService;
 
-const STATE_PATH: &str = "/var/lib/nasty/subvolumes.json";
+const STATE_DIR: &str = "/var/lib/nasty/subvolumes";
 const BLOCK_FILE_NAME: &str = "vol.img";
 
 #[derive(Debug, Error)]
@@ -62,13 +63,29 @@ pub struct Snapshot {
 /// Persisted metadata for subvolumes (things bcachefs doesn't track)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SubvolumeMeta {
+    id: String,
     name: String,
     pool: String,
-    #[serde(alias = "dataset_type")]
     subvolume_type: SubvolumeType,
     volsize_bytes: Option<u64>,
     compression: Option<String>,
     comments: Option<String>,
+}
+
+impl SubvolumeMeta {
+    fn make_id(pool: &str, name: &str) -> String {
+        format!("{pool}_{name}")
+    }
+}
+
+impl HasId for SubvolumeMeta {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
+
+fn state_dir() -> StateDir {
+    StateDir::new(STATE_DIR)
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,7 +148,7 @@ impl SubvolumeService {
     /// List subvolumes in a pool
     pub async fn list(&self, pool_name: &str) -> Result<Vec<Subvolume>, SubvolumeError> {
         let mount_point = self.pool_mount_point(pool_name).await?;
-        let state = load_state().await;
+        let state: Vec<SubvolumeMeta> = state_dir().load_all().await;
         let mut subvolumes = Vec::new();
 
         let mut entries = tokio::fs::read_dir(&mount_point).await?;
@@ -284,7 +301,9 @@ impl SubvolumeService {
         }
 
         // Save metadata
+        let id = SubvolumeMeta::make_id(&req.pool, &req.name);
         let meta = SubvolumeMeta {
+            id: id.clone(),
             name: req.name.clone(),
             pool: req.pool.clone(),
             subvolume_type: req.subvolume_type,
@@ -292,9 +311,7 @@ impl SubvolumeService {
             compression: req.compression,
             comments: req.comments,
         };
-        let mut state = load_state().await;
-        state.push(meta);
-        save_state(&state).await?;
+        state_dir().save(&id, &meta).await?;
 
         self.get(&req.pool, &req.name).await
     }
@@ -332,9 +349,8 @@ impl SubvolumeService {
             .map_err(SubvolumeError::CommandFailed)?;
 
         // Remove from state
-        let mut state = load_state().await;
-        state.retain(|m| !(m.pool == req.pool && m.name == req.name));
-        save_state(&state).await?;
+        let id = SubvolumeMeta::make_id(&req.pool, &req.name);
+        state_dir().remove(&id).await?;
 
         Ok(())
     }
@@ -527,27 +543,6 @@ async fn dir_usage(path: &Path) -> Option<u64> {
         .split_whitespace()
         .next()
         .and_then(|s| s.parse().ok())
-}
-
-/// Load persisted subvolume metadata
-async fn load_state() -> Vec<SubvolumeMeta> {
-    // Try new path first, fall back to old datasets.json for migration
-    for path in [STATE_PATH, "/var/lib/nasty/datasets.json"] {
-        if let Ok(content) = tokio::fs::read_to_string(path).await {
-            if let Ok(state) = serde_json::from_str(&content) {
-                return state;
-            }
-        }
-    }
-    Vec::new()
-}
-
-/// Save subvolume metadata
-async fn save_state(state: &[SubvolumeMeta]) -> Result<(), SubvolumeError> {
-    let json = serde_json::to_string_pretty(state)
-        .map_err(|e| SubvolumeError::CommandFailed(e.to_string()))?;
-    tokio::fs::write(STATE_PATH, json).await?;
-    Ok(())
 }
 
 /// Find the loop device attached to a given file

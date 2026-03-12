@@ -117,6 +117,12 @@ in {
     systemd.tmpfiles.rules = [
       "d /var/lib/nasty 0751 root root -"
       "d /var/lib/nasty/tls 0750 root nginx -"
+      "d /var/lib/nasty/subvolumes 0750 root root -"
+      "d /var/lib/nasty/shares 0750 root root -"
+      "d /var/lib/nasty/shares/nfs 0750 root root -"
+      "d /var/lib/nasty/shares/smb 0750 root root -"
+      "d /var/lib/nasty/shares/iscsi 0750 root root -"
+      "d /var/lib/nasty/shares/nvmeof 0750 root root -"
       "d ${cfg.storage.mountBase} 0755 root root -"
       "d /etc/exports.d 0755 root root -"
     ];
@@ -241,10 +247,10 @@ in {
             exit 0
           fi
 
-          STATE="/var/lib/nasty/nvmeof-targets.json"
+          STATE_DIR="/var/lib/nasty/shares/nvmeof"
 
-          if [ ! -f "$STATE" ]; then
-            echo "No NVMe-oF state file, skipping restore"
+          if [ ! -d "$STATE_DIR" ]; then
+            echo "No NVMe-oF state directory, skipping restore"
             exit 0
           fi
 
@@ -254,12 +260,12 @@ in {
           modprobe nvmet
           modprobe nvmet-tcp 2>/dev/null || true
 
-          # Parse state file with jq and recreate entries
-          SUBSYSTEMS=$(${pkgs.jq}/bin/jq -r '.subsystems[]' "$STATE" 2>/dev/null) || exit 0
+          # Read each per-subsystem JSON file from the state directory
+          for f in "$STATE_DIR"/*.json; do
+            [ -f "$f" ] || continue
 
-          echo "$SUBSYSTEMS" | ${pkgs.jq}/bin/jq -c '.' | while IFS= read -r subsys; do
-            NQN=$(echo "$subsys" | ${pkgs.jq}/bin/jq -r '.nqn')
-            ALLOW_ANY=$(echo "$subsys" | ${pkgs.jq}/bin/jq -r '.allow_any_host')
+            NQN=$(${pkgs.jq}/bin/jq -r '.nqn' "$f")
+            ALLOW_ANY=$(${pkgs.jq}/bin/jq -r '.allow_any_host' "$f")
 
             echo "Restoring NVMe-oF subsystem: $NQN"
 
@@ -273,7 +279,7 @@ in {
             fi
 
             # Restore namespaces
-            echo "$subsys" | ${pkgs.jq}/bin/jq -c '.namespaces[]' 2>/dev/null | while IFS= read -r ns; do
+            ${pkgs.jq}/bin/jq -c '.namespaces[]' "$f" 2>/dev/null | while IFS= read -r ns; do
               NSID=$(echo "$ns" | ${pkgs.jq}/bin/jq -r '.nsid')
               DEV=$(echo "$ns" | ${pkgs.jq}/bin/jq -r '.device_path')
               ENABLED=$(echo "$ns" | ${pkgs.jq}/bin/jq -r '.enabled')
@@ -291,13 +297,13 @@ in {
             done
 
             # Restore allowed hosts
-            echo "$subsys" | ${pkgs.jq}/bin/jq -r '.allowed_hosts[]' 2>/dev/null | while IFS= read -r host_nqn; do
+            ${pkgs.jq}/bin/jq -r '.allowed_hosts[]' "$f" 2>/dev/null | while IFS= read -r host_nqn; do
               mkdir -p "$NVMET/hosts/$host_nqn"
               ln -sf "$NVMET/hosts/$host_nqn" "$NVMET/subsystems/$NQN/allowed_hosts/$host_nqn" 2>/dev/null || true
             done
 
             # Restore ports
-            echo "$subsys" | ${pkgs.jq}/bin/jq -c '.ports[]' 2>/dev/null | while IFS= read -r port; do
+            ${pkgs.jq}/bin/jq -c '.ports[]' "$f" 2>/dev/null | while IFS= read -r port; do
               PORT_ID=$(echo "$port" | ${pkgs.jq}/bin/jq -r '.port_id')
               TRTYPE=$(echo "$port" | ${pkgs.jq}/bin/jq -r '.transport')
               TRADDR=$(echo "$port" | ${pkgs.jq}/bin/jq -r '.addr')
@@ -431,37 +437,43 @@ in {
         RemainAfterExit = true;
         ExecStart = pkgs.writeShellScript "nasty-block-restore" ''
           set -euo pipefail
-          STATE="/var/lib/nasty/subvolumes.json"
+          STATE_DIR="/var/lib/nasty/subvolumes"
           MOUNT_BASE="${cfg.storage.mountBase}"
 
-          if [ ! -f "$STATE" ]; then
-            echo "No subvolume state file, skipping block restore"
+          if [ ! -d "$STATE_DIR" ]; then
+            echo "No subvolume state directory, skipping block restore"
             exit 0
           fi
 
-          # Find all block subvolumes from state file
-          ${pkgs.jq}/bin/jq -r '.[] | select(.subvolume_type == "block") | "\(.pool) \(.name)"' "$STATE" 2>/dev/null | while IFS=' ' read -r pool name; do
-            [ -z "$pool" ] || [ -z "$name" ] && continue
+          # Read each per-subvolume JSON file and find block types
+          for f in "$STATE_DIR"/*.json; do
+            [ -f "$f" ] || continue
 
-            IMG="$MOUNT_BASE/$pool/$name/vol.img"
+            TYPE=$(${pkgs.jq}/bin/jq -r '.subvolume_type' "$f" 2>/dev/null)
+            [ "$TYPE" = "block" ] || continue
+
+            POOL=$(${pkgs.jq}/bin/jq -r '.pool' "$f")
+            NAME=$(${pkgs.jq}/bin/jq -r '.name' "$f")
+
+            IMG="$MOUNT_BASE/$POOL/$NAME/vol.img"
 
             if [ ! -f "$IMG" ]; then
-              echo "WARNING: block image $IMG not found for $pool/$name"
+              echo "WARNING: block image $IMG not found for $POOL/$NAME"
               continue
             fi
 
             # Check if already attached
             if ${pkgs.util-linux}/bin/losetup -j "$IMG" 2>/dev/null | grep -q "$IMG"; then
-              echo "Loop device already attached for $pool/$name"
+              echo "Loop device already attached for $POOL/$NAME"
               continue
             fi
 
             LODEV=$(${pkgs.util-linux}/bin/losetup --find --show "$IMG" 2>/dev/null) || {
-              echo "WARNING: failed to attach loop device for $pool/$name"
+              echo "WARNING: failed to attach loop device for $POOL/$NAME"
               continue
             }
 
-            echo "Attached $LODEV for block subvolume $pool/$name"
+            echo "Attached $LODEV for block subvolume $POOL/$NAME"
           done
 
           echo "Block subvolume restore complete"

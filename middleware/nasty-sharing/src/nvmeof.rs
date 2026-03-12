@@ -1,12 +1,13 @@
 use std::path::Path;
 
+use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
 
-const STATE_PATH: &str = "/var/lib/nasty/nvmeof-targets.json";
-const STATE_DIR: &str = "/var/lib/nasty";
+const STATE_DIR: &str = "/var/lib/nasty/shares/nvmeof";
+const PORT_COUNTER_PATH: &str = "/var/lib/nasty/shares/nvmeof/.next_port_id";
 const NVMET_BASE: &str = "/sys/kernel/config/nvmet";
 const DEFAULT_NQN_PREFIX: &str = "nqn.2024-01.com.nasty";
 
@@ -126,12 +127,26 @@ pub struct RemoveHostRequest {
     pub host_nqn: String,
 }
 
-// ── State ───────────────────────────────────────────────────────
+impl HasId for NvmeofSubsystem {
+    fn id(&self) -> &str {
+        &self.id
+    }
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct NvmeofState {
-    subsystems: Vec<NvmeofSubsystem>,
-    next_port_id: u16,
+fn state_dir() -> StateDir {
+    StateDir::new(STATE_DIR)
+}
+
+/// Atomic port ID counter (separate from per-subsystem state)
+async fn next_port_id() -> u16 {
+    let current = tokio::fs::read_to_string(PORT_COUNTER_PATH)
+        .await
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(0);
+    let next = current + 1;
+    let _ = tokio::fs::write(PORT_COUNTER_PATH, next.to_string()).await;
+    current
 }
 
 // ── Service ─────────────────────────────────────────────────────
@@ -144,15 +159,15 @@ impl NvmeofService {
     }
 
     pub async fn list(&self) -> Result<Vec<NvmeofSubsystem>, NvmeofError> {
-        Ok(load_state().await.subsystems)
+
+        Ok(state_dir().load_all().await)
     }
 
     pub async fn get(&self, id: &str) -> Result<NvmeofSubsystem, NvmeofError> {
-        load_state()
+
+        state_dir()
+            .load::<NvmeofSubsystem>(id)
             .await
-            .subsystems
-            .into_iter()
-            .find(|s| s.id == id)
             .ok_or_else(|| NvmeofError::NotFound(id.to_string()))
     }
 
@@ -160,16 +175,16 @@ impl NvmeofService {
         &self,
         req: CreateSubsystemRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
+
+        let subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
         let nqn = format!("{DEFAULT_NQN_PREFIX}:{}", req.name);
 
-        if state.subsystems.iter().any(|s| s.nqn == nqn) {
+        if subsystems.iter().any(|s| s.nqn == nqn) {
             return Err(NvmeofError::AlreadyExists(nqn));
         }
 
         let allow_any = req.allow_any_host.unwrap_or(true);
 
-        // Create subsystem in configfs
         let subsys_path = format!("{NVMET_BASE}/subsystems/{nqn}");
         configfs_mkdir(&subsys_path).await?;
         configfs_write(&format!("{subsys_path}/attr_allow_any_host"), if allow_any { "1" } else { "0" }).await?;
@@ -184,8 +199,8 @@ impl NvmeofService {
             enabled: true,
         };
 
-        state.subsystems.push(subsystem.clone());
-        save_state(&state).await?;
+        state_dir().save(&subsystem.id, &subsystem).await
+            .map_err(NvmeofError::Io)?;
 
         info!("Created NVMe-oF subsystem {nqn}");
         Ok(subsystem)
@@ -193,19 +208,16 @@ impl NvmeofService {
 
     /// Create a complete NVMe-oF share in one step: subsystem + namespace + port
     pub async fn create_quick(&self, req: QuickCreateRequest) -> Result<NvmeofSubsystem, NvmeofError> {
-        // Create subsystem
         let subsys = self.create(CreateSubsystemRequest {
             name: req.name,
             allow_any_host: Some(true),
         }).await?;
 
-        // Add namespace with the block device
         let subsys = self.add_namespace(AddNamespaceRequest {
             subsystem_id: subsys.id.clone(),
             device_path: req.device_path,
         }).await?;
 
-        // Add a TCP port
         let subsys = self.add_port(AddPortRequest {
             subsystem_id: subsys.id.clone(),
             transport: Some("tcp".to_string()),
@@ -218,15 +230,11 @@ impl NvmeofService {
     }
 
     pub async fn delete(&self, req: DeleteSubsystemRequest) -> Result<(), NvmeofError> {
-        let mut state = load_state().await;
 
-        let idx = state
-            .subsystems
-            .iter()
-            .position(|s| s.id == req.id)
+        let subsys: NvmeofSubsystem = state_dir()
+            .load(&req.id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.id.clone()))?;
-
-        let subsys = &state.subsystems[idx];
 
         // Unlink from ports first
         for port in &subsys.ports {
@@ -270,8 +278,8 @@ impl NvmeofService {
         let subsys_path = format!("{NVMET_BASE}/subsystems/{}", subsys.nqn);
         configfs_rmdir(&subsys_path).await?;
 
-        state.subsystems.remove(idx);
-        save_state(&state).await?;
+        state_dir().remove(&req.id).await
+            .map_err(NvmeofError::Io)?;
 
         info!("Deleted NVMe-oF subsystem '{}'", req.id);
         Ok(())
@@ -285,11 +293,10 @@ impl NvmeofService {
             return Err(NvmeofError::DeviceNotFound(req.device_path));
         }
 
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let nsid = subsys
@@ -312,22 +319,21 @@ impl NvmeofService {
             enabled: true,
         });
 
-        let result = subsys.clone();
-        save_state(&state).await?;
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
 
-        info!("Added namespace {nsid} to subsystem '{}'", result.nqn);
-        Ok(result)
+        info!("Added namespace {nsid} to subsystem '{}'", subsys.nqn);
+        Ok(subsys)
     }
 
     pub async fn remove_namespace(
         &self,
         req: RemoveNamespaceRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let ns_idx = subsys
@@ -344,22 +350,22 @@ impl NvmeofService {
         configfs_rmdir(&ns_path).await?;
 
         subsys.namespaces.remove(ns_idx);
-        let result = subsys.clone();
-        save_state(&state).await?;
 
-        info!("Removed namespace {} from subsystem '{}'", req.nsid, result.nqn);
-        Ok(result)
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
+
+        info!("Removed namespace {} from subsystem '{}'", req.nsid, subsys.nqn);
+        Ok(subsys)
     }
 
     pub async fn add_port(
         &self,
         req: AddPortRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let transport = req.transport.unwrap_or_else(|| "tcp".to_string());
@@ -367,8 +373,7 @@ impl NvmeofService {
         let svc_id = req.service_id.unwrap_or(4420);
         let addr_family = req.addr_family.unwrap_or_else(|| "ipv4".to_string());
 
-        let port_id = state.next_port_id;
-        state.next_port_id += 1;
+        let port_id = next_port_id().await;
 
         // Create port in configfs
         let port_path = format!("{NVMET_BASE}/ports/{port_id}");
@@ -395,22 +400,22 @@ impl NvmeofService {
         };
 
         subsys.ports.push(port);
-        let result = subsys.clone();
-        save_state(&state).await?;
 
-        info!("Added port {port_id} to subsystem '{}'", result.nqn);
-        Ok(result)
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
+
+        info!("Added port {port_id} to subsystem '{}'", subsys.nqn);
+        Ok(subsys)
     }
 
     pub async fn remove_port(
         &self,
         req: RemovePortRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let port_idx = subsys
@@ -434,22 +439,22 @@ impl NvmeofService {
         }
 
         subsys.ports.remove(port_idx);
-        let result = subsys.clone();
-        save_state(&state).await?;
 
-        info!("Removed port {} from subsystem '{}'", req.port_id, result.nqn);
-        Ok(result)
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
+
+        info!("Removed port {} from subsystem '{}'", req.port_id, subsys.nqn);
+        Ok(subsys)
     }
 
     pub async fn add_host(
         &self,
         req: AddHostRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         // Create host entry if it doesn't exist
@@ -474,22 +479,21 @@ impl NvmeofService {
             subsys.allowed_hosts.push(req.host_nqn);
         }
 
-        let result = subsys.clone();
-        save_state(&state).await?;
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
 
-        info!("Added allowed host to subsystem '{}'", result.nqn);
-        Ok(result)
+        info!("Added allowed host to subsystem '{}'", subsys.nqn);
+        Ok(subsys)
     }
 
     pub async fn remove_host(
         &self,
         req: RemoveHostRequest,
     ) -> Result<NvmeofSubsystem, NvmeofError> {
-        let mut state = load_state().await;
-        let subsys = state
-            .subsystems
-            .iter_mut()
-            .find(|s| s.id == req.subsystem_id)
+
+        let mut subsys: NvmeofSubsystem = state_dir()
+            .load(&req.subsystem_id)
+            .await
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let link_path = format!(
@@ -499,11 +503,12 @@ impl NvmeofService {
         configfs_unlink(&link_path).await?;
 
         subsys.allowed_hosts.retain(|h| h != &req.host_nqn);
-        let result = subsys.clone();
-        save_state(&state).await?;
 
-        info!("Removed allowed host from subsystem '{}'", result.nqn);
-        Ok(result)
+        state_dir().save(&subsys.id, &subsys).await
+            .map_err(NvmeofError::Io)?;
+
+        info!("Removed allowed host from subsystem '{}'", subsys.nqn);
+        Ok(subsys)
     }
 }
 
@@ -547,18 +552,3 @@ async fn dir_is_empty(path: &str) -> bool {
     }
 }
 
-// ── State persistence ───────────────────────────────────────────
-
-async fn load_state() -> NvmeofState {
-    match tokio::fs::read_to_string(STATE_PATH).await {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => NvmeofState::default(),
-    }
-}
-
-async fn save_state(state: &NvmeofState) -> Result<(), NvmeofError> {
-    tokio::fs::create_dir_all(STATE_DIR).await?;
-    let json = serde_json::to_string_pretty(state).unwrap();
-    tokio::fs::write(STATE_PATH, json).await?;
-    Ok(())
-}

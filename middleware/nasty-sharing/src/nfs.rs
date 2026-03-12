@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -7,8 +8,7 @@ use uuid::Uuid;
 
 const NASTY_EXPORTS_PATH: &str = "/etc/exports.d/nasty.exports";
 const NASTY_EXPORTS_DIR: &str = "/etc/exports.d";
-const STATE_PATH: &str = "/var/lib/nasty/nfs-shares.json";
-const STATE_DIR: &str = "/var/lib/nasty";
+const STATE_DIR: &str = "/var/lib/nasty/shares/nfs";
 
 #[derive(Debug, Error)]
 pub enum NfsError {
@@ -33,6 +33,12 @@ pub struct NfsShare {
     pub comment: Option<String>,
     pub clients: Vec<NfsClient>,
     pub enabled: bool,
+}
+
+impl HasId for NfsShare {
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,10 +70,8 @@ pub struct DeleteNfsShareRequest {
     pub id: String,
 }
 
-/// Persistent state: list of all NFS shares managed by NASty
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct NfsState {
-    shares: Vec<NfsShare>,
+fn state_dir() -> StateDir {
+    StateDir::new(STATE_DIR)
 }
 
 pub struct NfsService;
@@ -79,36 +83,32 @@ impl NfsService {
 
     /// List all NFS shares
     pub async fn list(&self) -> Result<Vec<NfsShare>, NfsError> {
-        let state = load_state().await;
-        Ok(state.shares)
+
+        Ok(state_dir().load_all().await)
     }
 
     /// Get a single share by ID
     pub async fn get(&self, id: &str) -> Result<NfsShare, NfsError> {
-        let state = load_state().await;
-        state
-            .shares
-            .into_iter()
-            .find(|s| s.id == id)
+
+        state_dir()
+            .load::<NfsShare>(id)
+            .await
             .ok_or_else(|| NfsError::NotFound(id.to_string()))
     }
 
     /// Create a new NFS share
     pub async fn create(&self, req: CreateNfsShareRequest) -> Result<NfsShare, NfsError> {
-        // Validate path exists
         if !Path::new(&req.path).exists() {
             return Err(NfsError::PathNotFound(req.path));
         }
-
-        // Validate path is within /mnt/nasty/
         if !req.path.starts_with("/mnt/nasty/") {
             return Err(NfsError::PathNotInPool(req.path));
         }
 
-        let mut state = load_state().await;
 
-        // Check for duplicate path
-        if state.shares.iter().any(|s| s.path == req.path) {
+        let shares: Vec<NfsShare> = state_dir().load_all().await;
+
+        if shares.iter().any(|s| s.path == req.path) {
             return Err(NfsError::AlreadyExists(req.path));
         }
 
@@ -120,9 +120,8 @@ impl NfsService {
             enabled: req.enabled.unwrap_or(true),
         };
 
-        state.shares.push(share.clone());
-        save_state(&state).await?;
-        apply_exports(&state).await?;
+        state_dir().save(&share.id, &share).await?;
+        apply_exports().await?;
 
         info!("Created NFS share '{}' for {}", share.id, share.path);
         Ok(share)
@@ -130,12 +129,10 @@ impl NfsService {
 
     /// Update an existing NFS share
     pub async fn update(&self, req: UpdateNfsShareRequest) -> Result<NfsShare, NfsError> {
-        let mut state = load_state().await;
 
-        let share = state
-            .shares
-            .iter_mut()
-            .find(|s| s.id == req.id)
+        let mut share: NfsShare = state_dir()
+            .load(&req.id)
+            .await
             .ok_or_else(|| NfsError::NotFound(req.id.clone()))?;
 
         if let Some(comment) = req.comment {
@@ -148,55 +145,37 @@ impl NfsService {
             share.enabled = enabled;
         }
 
-        let updated = share.clone();
-        save_state(&state).await?;
-        apply_exports(&state).await?;
+        state_dir().save(&share.id, &share).await?;
+        apply_exports().await?;
 
-        info!("Updated NFS share '{}'", updated.id);
-        Ok(updated)
+        info!("Updated NFS share '{}'", share.id);
+        Ok(share)
     }
 
     /// Delete an NFS share
     pub async fn delete(&self, req: DeleteNfsShareRequest) -> Result<(), NfsError> {
-        let mut state = load_state().await;
-        let len_before = state.shares.len();
-        state.shares.retain(|s| s.id != req.id);
 
-        if state.shares.len() == len_before {
-            return Err(NfsError::NotFound(req.id));
-        }
+        let _: NfsShare = state_dir()
+            .load(&req.id)
+            .await
+            .ok_or_else(|| NfsError::NotFound(req.id.clone()))?;
 
-        save_state(&state).await?;
-        apply_exports(&state).await?;
+        state_dir().remove(&req.id).await?;
+        apply_exports().await?;
 
         info!("Deleted NFS share '{}'", req.id);
         Ok(())
     }
 }
 
-/// Load share state from disk
-async fn load_state() -> NfsState {
-    match tokio::fs::read_to_string(STATE_PATH).await {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => NfsState::default(),
-    }
-}
-
-/// Persist share state to disk
-async fn save_state(state: &NfsState) -> Result<(), NfsError> {
-    tokio::fs::create_dir_all(STATE_DIR).await?;
-    let json = serde_json::to_string_pretty(state).unwrap();
-    tokio::fs::write(STATE_PATH, json).await?;
-    Ok(())
-}
-
 /// Generate /etc/exports.d/nasty.exports and reload NFS
-async fn apply_exports(state: &NfsState) -> Result<(), NfsError> {
+async fn apply_exports() -> Result<(), NfsError> {
     tokio::fs::create_dir_all(NASTY_EXPORTS_DIR).await?;
 
+    let shares: Vec<NfsShare> = state_dir().load_all().await;
     let mut content = String::from("# Managed by NASty — do not edit manually\n\n");
 
-    for share in &state.shares {
+    for share in &shares {
         if !share.enabled {
             continue;
         }
@@ -205,7 +184,6 @@ async fn apply_exports(state: &NfsState) -> Result<(), NfsError> {
             content.push_str(&format!("# {comment}\n"));
         }
 
-        // Format: /path client1(opts) client2(opts)
         let clients: Vec<String> = share
             .clients
             .iter()
@@ -216,14 +194,11 @@ async fn apply_exports(state: &NfsState) -> Result<(), NfsError> {
     }
 
     tokio::fs::write(NASTY_EXPORTS_PATH, &content).await?;
-
-    // Reload NFS exports
     reload_exports().await?;
 
     Ok(())
 }
 
-/// Run `exportfs -ra` to apply changes
 async fn reload_exports() -> Result<(), NfsError> {
     let output = tokio::process::Command::new("exportfs")
         .args(["-ra"])

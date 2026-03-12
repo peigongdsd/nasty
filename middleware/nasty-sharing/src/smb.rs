@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
 
 const NASTY_SMB_CONF_PATH: &str = "/etc/samba/smb.nasty.conf";
-const STATE_PATH: &str = "/var/lib/nasty/smb-shares.json";
-const STATE_DIR: &str = "/var/lib/nasty";
+const STATE_DIR: &str = "/var/lib/nasty/shares/smb";
 
 #[derive(Debug, Error)]
 pub enum SmbError {
@@ -31,18 +31,21 @@ pub enum SmbError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmbShare {
     pub id: String,
-    /// Share name as seen by clients (e.g. "documents")
     pub name: String,
     pub path: String,
     pub comment: Option<String>,
     pub read_only: bool,
     pub browseable: bool,
     pub guest_ok: bool,
-    /// Restrict to these users (empty = all authenticated users)
     pub valid_users: Vec<String>,
-    /// Extra smb.conf parameters for this share
     pub extra_params: HashMap<String, String>,
     pub enabled: bool,
+}
+
+impl HasId for SmbShare {
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,9 +79,8 @@ pub struct DeleteSmbShareRequest {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct SmbState {
-    shares: Vec<SmbShare>,
+fn state_dir() -> StateDir {
+    StateDir::new(STATE_DIR)
 }
 
 pub struct SmbService;
@@ -89,16 +91,15 @@ impl SmbService {
     }
 
     pub async fn list(&self) -> Result<Vec<SmbShare>, SmbError> {
-        let state = load_state().await;
-        Ok(state.shares)
+
+        Ok(state_dir().load_all().await)
     }
 
     pub async fn get(&self, id: &str) -> Result<SmbShare, SmbError> {
-        let state = load_state().await;
-        state
-            .shares
-            .into_iter()
-            .find(|s| s.id == id)
+
+        state_dir()
+            .load::<SmbShare>(id)
+            .await
             .ok_or_else(|| SmbError::NotFound(id.to_string()))
     }
 
@@ -112,9 +113,10 @@ impl SmbService {
             return Err(SmbError::PathNotInPool(req.path));
         }
 
-        let mut state = load_state().await;
 
-        if state.shares.iter().any(|s| s.name == req.name) {
+        let shares: Vec<SmbShare> = state_dir().load_all().await;
+
+        if shares.iter().any(|s| s.name == req.name) {
             return Err(SmbError::NameExists(req.name));
         }
 
@@ -131,34 +133,34 @@ impl SmbService {
             enabled: req.enabled.unwrap_or(true),
         };
 
-        state.shares.push(share.clone());
-        save_state(&state).await?;
-        apply_config(&state).await?;
+        state_dir().save(&share.id, &share).await?;
+        apply_config().await?;
 
         info!("Created SMB share '{}' at {}", share.name, share.path);
         Ok(share)
     }
 
     pub async fn update(&self, req: UpdateSmbShareRequest) -> Result<SmbShare, SmbError> {
-        let mut state = load_state().await;
+        if let Some(ref new_name) = req.name {
+            validate_share_name(new_name)?;
+        }
+
+
+        let mut share: SmbShare = state_dir()
+            .load(&req.id)
+            .await
+            .ok_or_else(|| SmbError::NotFound(req.id.clone()))?;
 
         // Check name uniqueness if changing
         if let Some(ref new_name) = req.name {
-            validate_share_name(new_name)?;
-            if state
-                .shares
+            let shares: Vec<SmbShare> = state_dir().load_all().await;
+            if shares
                 .iter()
                 .any(|s| s.name == *new_name && s.id != req.id)
             {
                 return Err(SmbError::NameExists(new_name.clone()));
             }
         }
-
-        let share = state
-            .shares
-            .iter_mut()
-            .find(|s| s.id == req.id)
-            .ok_or_else(|| SmbError::NotFound(req.id.clone()))?;
 
         if let Some(name) = req.name {
             share.name = name;
@@ -185,25 +187,22 @@ impl SmbService {
             share.enabled = enabled;
         }
 
-        let updated = share.clone();
-        save_state(&state).await?;
-        apply_config(&state).await?;
+        state_dir().save(&share.id, &share).await?;
+        apply_config().await?;
 
-        info!("Updated SMB share '{}'", updated.name);
-        Ok(updated)
+        info!("Updated SMB share '{}'", share.name);
+        Ok(share)
     }
 
     pub async fn delete(&self, req: DeleteSmbShareRequest) -> Result<(), SmbError> {
-        let mut state = load_state().await;
-        let len_before = state.shares.len();
-        state.shares.retain(|s| s.id != req.id);
 
-        if state.shares.len() == len_before {
-            return Err(SmbError::NotFound(req.id));
-        }
+        let _: SmbShare = state_dir()
+            .load(&req.id)
+            .await
+            .ok_or_else(|| SmbError::NotFound(req.id.clone()))?;
 
-        save_state(&state).await?;
-        apply_config(&state).await?;
+        state_dir().remove(&req.id).await?;
+        apply_config().await?;
 
         info!("Deleted SMB share '{}'", req.id);
         Ok(())
@@ -222,28 +221,13 @@ fn validate_share_name(name: &str) -> Result<(), SmbError> {
     Ok(())
 }
 
-async fn load_state() -> SmbState {
-    match tokio::fs::read_to_string(STATE_PATH).await {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => SmbState::default(),
-    }
-}
+/// Generate smb.nasty.conf from all share files and reload samba
+async fn apply_config() -> Result<(), SmbError> {
+    let shares: Vec<SmbShare> = state_dir().load_all().await;
 
-async fn save_state(state: &SmbState) -> Result<(), SmbError> {
-    tokio::fs::create_dir_all(STATE_DIR).await?;
-    let json = serde_json::to_string_pretty(state).unwrap();
-    tokio::fs::write(STATE_PATH, json).await?;
-    Ok(())
-}
-
-/// Generate smb.nasty.conf with share sections and reload samba.
-///
-/// The main /etc/samba/smb.conf should include this file:
-///   include = /etc/samba/smb.nasty.conf
-fn generate_conf(state: &SmbState) -> String {
     let mut conf = String::from("# Managed by NASty — do not edit manually\n\n");
 
-    for share in &state.shares {
+    for share in &shares {
         if !share.enabled {
             continue;
         }
@@ -275,7 +259,6 @@ fn generate_conf(state: &SmbState) -> String {
             ));
         }
 
-        // Sort extra params for deterministic output
         let mut extra: Vec<_> = share.extra_params.iter().collect();
         extra.sort_by_key(|(k, _)| *k);
         for (key, value) in extra {
@@ -285,11 +268,6 @@ fn generate_conf(state: &SmbState) -> String {
         conf.push('\n');
     }
 
-    conf
-}
-
-async fn apply_config(state: &SmbState) -> Result<(), SmbError> {
-    let conf = generate_conf(state);
     tokio::fs::write(NASTY_SMB_CONF_PATH, &conf).await?;
     reload_samba().await?;
     Ok(())

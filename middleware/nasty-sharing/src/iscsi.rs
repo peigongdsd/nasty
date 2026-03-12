@@ -1,12 +1,12 @@
 use std::path::Path;
 
+use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 use uuid::Uuid;
 
-const STATE_PATH: &str = "/var/lib/nasty/iscsi-targets.json";
-const STATE_DIR: &str = "/var/lib/nasty";
+const STATE_DIR: &str = "/var/lib/nasty/shares/iscsi";
 const DEFAULT_IQN_PREFIX: &str = "iqn.2024-01.com.nasty";
 
 #[derive(Debug, Error)]
@@ -60,6 +60,12 @@ pub struct Acl {
     pub initiator_iqn: String,
     pub userid: Option<String>,
     pub password: Option<String>,
+}
+
+impl HasId for IscsiTarget {
+    fn id(&self) -> &str {
+        &self.id
+    }
 }
 
 // ── Requests ────────────────────────────────────────────────────
@@ -118,11 +124,8 @@ pub struct RemoveAclRequest {
     pub initiator_iqn: String,
 }
 
-// ── State ───────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct IscsiState {
-    targets: Vec<IscsiTarget>,
+fn state_dir() -> StateDir {
+    StateDir::new(STATE_DIR)
 }
 
 // ── Service ─────────────────────────────────────────────────────
@@ -135,23 +138,24 @@ impl IscsiService {
     }
 
     pub async fn list(&self) -> Result<Vec<IscsiTarget>, IscsiError> {
-        Ok(load_state().await.targets)
+
+        Ok(state_dir().load_all().await)
     }
 
     pub async fn get(&self, id: &str) -> Result<IscsiTarget, IscsiError> {
-        load_state()
+
+        state_dir()
+            .load::<IscsiTarget>(id)
             .await
-            .targets
-            .into_iter()
-            .find(|t| t.id == id)
             .ok_or_else(|| IscsiError::NotFound(id.to_string()))
     }
 
     pub async fn create(&self, req: CreateTargetRequest) -> Result<IscsiTarget, IscsiError> {
-        let mut state = load_state().await;
+
+        let targets: Vec<IscsiTarget> = state_dir().load_all().await;
         let iqn = format!("{DEFAULT_IQN_PREFIX}:{}", req.name);
 
-        if state.targets.iter().any(|t| t.iqn == iqn) {
+        if targets.iter().any(|t| t.iqn == iqn) {
             return Err(IscsiError::AlreadyExists(iqn));
         }
 
@@ -194,8 +198,7 @@ impl IscsiService {
             enabled: true,
         };
 
-        state.targets.push(target.clone());
-        save_state(&state).await?;
+        state_dir().save(&target.id, &target).await?;
         save_lio_config().await?;
 
         info!("Created iSCSI target {iqn}");
@@ -223,15 +226,11 @@ impl IscsiService {
     }
 
     pub async fn delete(&self, req: DeleteTargetRequest) -> Result<(), IscsiError> {
-        let mut state = load_state().await;
 
-        let idx = state
-            .targets
-            .iter()
-            .position(|t| t.id == req.id)
+        let target: IscsiTarget = state_dir()
+            .load(&req.id)
+            .await
             .ok_or_else(|| IscsiError::NotFound(req.id.clone()))?;
-
-        let target = &state.targets[idx];
 
         // Remove backstores first
         for lun in &target.luns {
@@ -245,8 +244,7 @@ impl IscsiService {
         // Remove the target
         targetcli(&format!("/iscsi delete {}", target.iqn)).await?;
 
-        state.targets.remove(idx);
-        save_state(&state).await?;
+        state_dir().remove(&req.id).await?;
         save_lio_config().await?;
 
         info!("Deleted iSCSI target '{}'", req.id);
@@ -254,12 +252,10 @@ impl IscsiService {
     }
 
     pub async fn add_lun(&self, req: AddLunRequest) -> Result<IscsiTarget, IscsiError> {
-        let mut state = load_state().await;
 
-        let target = state
-            .targets
-            .iter_mut()
-            .find(|t| t.id == req.target_id)
+        let mut target: IscsiTarget = state_dir()
+            .load(&req.target_id)
+            .await
             .ok_or_else(|| IscsiError::NotFound(req.target_id.clone()))?;
 
         let backstore_type = req.backstore_type.unwrap_or_else(|| {
@@ -352,22 +348,19 @@ impl IscsiService {
         };
 
         target.luns.push(lun);
-        let result = target.clone();
 
-        save_state(&state).await?;
+        state_dir().save(&target.id, &target).await?;
         save_lio_config().await?;
 
-        info!("Added LUN {} to target '{}'", result.luns.len() - 1, result.iqn);
-        Ok(result)
+        info!("Added LUN {} to target '{}'", target.luns.len() - 1, target.iqn);
+        Ok(target)
     }
 
     pub async fn remove_lun(&self, req: RemoveLunRequest) -> Result<IscsiTarget, IscsiError> {
-        let mut state = load_state().await;
 
-        let target = state
-            .targets
-            .iter_mut()
-            .find(|t| t.id == req.target_id)
+        let mut target: IscsiTarget = state_dir()
+            .load(&req.target_id)
+            .await
             .ok_or_else(|| IscsiError::NotFound(req.target_id.clone()))?;
 
         let lun_idx = target
@@ -395,32 +388,27 @@ impl IscsiService {
         .await;
 
         target.luns.remove(lun_idx);
-        let result = target.clone();
 
-        save_state(&state).await?;
+        state_dir().save(&target.id, &target).await?;
         save_lio_config().await?;
 
-        info!("Removed LUN {} from target '{}'", req.lun_id, result.iqn);
-        Ok(result)
+        info!("Removed LUN {} from target '{}'", req.lun_id, target.iqn);
+        Ok(target)
     }
 
     pub async fn add_acl(&self, req: AddAclRequest) -> Result<IscsiTarget, IscsiError> {
-        let mut state = load_state().await;
 
-        let target = state
-            .targets
-            .iter_mut()
-            .find(|t| t.id == req.target_id)
+        let mut target: IscsiTarget = state_dir()
+            .load(&req.target_id)
+            .await
             .ok_or_else(|| IscsiError::NotFound(req.target_id.clone()))?;
 
-        // Create ACL
         targetcli(&format!(
             "/iscsi/{}/tpg1/acls create {}",
             target.iqn, req.initiator_iqn
         ))
         .await?;
 
-        // Set CHAP auth if provided
         if let (Some(userid), Some(password)) = (&req.userid, &req.password) {
             targetcli(&format!(
                 "/iscsi/{}/tpg1/acls/{} set auth userid={userid} password={password}",
@@ -429,29 +417,24 @@ impl IscsiService {
             .await?;
         }
 
-        let acl = Acl {
+        target.acls.push(Acl {
             initiator_iqn: req.initiator_iqn,
             userid: req.userid,
             password: req.password,
-        };
+        });
 
-        target.acls.push(acl);
-        let result = target.clone();
-
-        save_state(&state).await?;
+        state_dir().save(&target.id, &target).await?;
         save_lio_config().await?;
 
-        info!("Added ACL to target '{}'", result.iqn);
-        Ok(result)
+        info!("Added ACL to target '{}'", target.iqn);
+        Ok(target)
     }
 
     pub async fn remove_acl(&self, req: RemoveAclRequest) -> Result<IscsiTarget, IscsiError> {
-        let mut state = load_state().await;
 
-        let target = state
-            .targets
-            .iter_mut()
-            .find(|t| t.id == req.target_id)
+        let mut target: IscsiTarget = state_dir()
+            .load(&req.target_id)
+            .await
             .ok_or_else(|| IscsiError::NotFound(req.target_id.clone()))?;
 
         targetcli(&format!(
@@ -461,13 +444,12 @@ impl IscsiService {
         .await?;
 
         target.acls.retain(|a| a.initiator_iqn != req.initiator_iqn);
-        let result = target.clone();
 
-        save_state(&state).await?;
+        state_dir().save(&target.id, &target).await?;
         save_lio_config().await?;
 
-        info!("Removed ACL from target '{}'", result.iqn);
-        Ok(result)
+        info!("Removed ACL from target '{}'", target.iqn);
+        Ok(target)
     }
 }
 
@@ -498,18 +480,3 @@ async fn save_lio_config() -> Result<(), IscsiError> {
     Ok(())
 }
 
-// ── State persistence ───────────────────────────────────────────
-
-async fn load_state() -> IscsiState {
-    match tokio::fs::read_to_string(STATE_PATH).await {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => IscsiState::default(),
-    }
-}
-
-async fn save_state(state: &IscsiState) -> Result<(), IscsiError> {
-    tokio::fs::create_dir_all(STATE_DIR).await?;
-    let json = serde_json::to_string_pretty(state).unwrap();
-    tokio::fs::write(STATE_PATH, json).await?;
-    Ok(())
-}
