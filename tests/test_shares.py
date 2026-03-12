@@ -228,12 +228,6 @@ async def test_nfs(ctx: TestContext):
         os.makedirs(mount_point, exist_ok=True)
         r = run(["mount", "-t", "nfs4", f"{ctx.host}:{sv['path']}", mount_point], check=False)
         if r.returncode != 0:
-            # Some VM environments (e.g. Colima/Lima) don't permit NFS mounts.
-            # Treat "Operation not permitted" as a skip, not a failure.
-            if "Operation not permitted" in r.stderr:
-                warn("NFS mount not supported in this VM — skipping mount/read/write tests")
-                ctx.record("NFS: mount (skipped — VM limitation)", True)
-                return
             ctx.record("NFS: mount", False, r.stderr.strip())
             return
         ctx.record("NFS: mount", True)

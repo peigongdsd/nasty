@@ -192,11 +192,15 @@ async fn apply_exports() -> Result<(), NfsError> {
             .clients
             .iter()
             .map(|c| {
-                let opts = if c.options.contains("fsid=") {
-                    c.options.clone()
-                } else {
-                    format!("{},fsid={fsid}", c.options)
-                };
+                let mut opts = c.options.clone();
+                if !opts.contains("fsid=") {
+                    opts = format!("{opts},fsid={fsid}");
+                }
+                // Default to insecure (allow non-privileged ports) — the
+                // traditional port-check adds no real security on a LAN NAS.
+                if !opts.contains("insecure") && !opts.contains("secure") {
+                    opts = format!("{opts},insecure");
+                }
                 format!("{}({})", c.host, opts)
             })
             .collect();
