@@ -22,6 +22,9 @@ pub struct User {
 pub enum Role {
     Admin,
     ReadOnly,
+    /// Can create/delete/attach subvolumes and snapshots, read pools.
+    /// Cannot destroy pools, manage users, or touch system settings.
+    Operator,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +32,12 @@ pub struct Session {
     pub token: String,
     pub username: String,
     pub role: Role,
+    /// For API tokens: restricts pool visibility to a single pool.
+    #[serde(default)]
+    pub pool: Option<String>,
+    /// For API tokens: only subvolumes with this owner are visible/manageable.
+    #[serde(default)]
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +48,9 @@ pub struct ApiToken {
     pub token: String,
     pub role: Role,
     pub created_at: u64,
+    /// If set, token can only see/manage subvolumes in this pool.
+    #[serde(default)]
+    pub pool: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +59,7 @@ pub struct ApiTokenInfo {
     pub name: String,
     pub role: Role,
     pub created_at: u64,
+    pub pool: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -102,6 +115,8 @@ impl AuthService {
             token: token.clone(),
             username: user.username.clone(),
             role: user.role.clone(),
+            pool: None,
+            owner: None,
         };
 
         state.sessions.push(session);
@@ -127,6 +142,8 @@ impl AuthService {
                 token: t.token.clone(),
                 username: t.name.clone(),
                 role: t.role.clone(),
+                pool: t.pool.clone(),
+                owner: Some(t.name.clone()),
             })
             .ok_or(AuthError::InvalidToken)
     }
@@ -137,6 +154,7 @@ impl AuthService {
         session: &Session,
         name: &str,
         role: Role,
+        pool: Option<String>,
     ) -> Result<ApiToken, AuthError> {
         if session.role != Role::Admin {
             return Err(AuthError::Forbidden);
@@ -160,6 +178,7 @@ impl AuthService {
             token,
             role,
             created_at,
+            pool,
         };
 
         state.api_tokens.push(api_token.clone());
@@ -183,6 +202,7 @@ impl AuthService {
                 name: t.name.clone(),
                 role: t.role.clone(),
                 created_at: t.created_at,
+                pool: t.pool.clone(),
             })
             .collect())
     }

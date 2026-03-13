@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
-	import type { UserInfo, ApiTokenInfo, ApiTokenCreated } from '$lib/types';
+	import type { UserInfo, ApiTokenInfo, ApiTokenCreated, Pool } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -12,6 +12,7 @@
 
 	let users: UserInfo[] = $state([]);
 	let apiTokens: ApiTokenInfo[] = $state([]);
+	let pools: Pool[] = $state([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
 	let showCreateToken = $state(false);
@@ -19,10 +20,11 @@
 	let newUsername = $state('');
 	let newPassword = $state('');
 	let newPasswordConfirm = $state('');
-	let newRole = $state<'admin' | 'readonly'>('readonly');
+	let newRole = $state<'admin' | 'readonly' | 'operator'>('readonly');
 
 	let newTokenName = $state('');
-	let newTokenRole = $state<'admin' | 'readonly'>('readonly');
+	let newTokenRole = $state<'admin' | 'readonly' | 'operator'>('operator');
+	let newTokenPool = $state('');
 	let createdToken = $state<ApiTokenCreated | null>(null);
 	let tokenCopied = $state(false);
 
@@ -39,9 +41,10 @@
 
 	async function refresh() {
 		await withToast(async () => {
-			[users, apiTokens] = await Promise.all([
+			[users, apiTokens, pools] = await Promise.all([
 				client.call<UserInfo[]>('auth.list_users'),
 				client.call<ApiTokenInfo[]>('auth.token.list'),
+				client.call<Pool[]>('pool.list'),
 			]);
 		});
 	}
@@ -99,6 +102,7 @@
 			() => client.call<ApiTokenCreated>('auth.token.create', {
 				name: newTokenName,
 				role: newTokenRole,
+				pool: newTokenPool || null,
 			}),
 			`API token "${newTokenName}" created`
 		);
@@ -106,7 +110,8 @@
 			createdToken = result;
 			showCreateToken = false;
 			newTokenName = '';
-			newTokenRole = 'readonly';
+			newTokenRole = 'operator';
+			newTokenPool = '';
 			await refresh();
 		}
 	}
@@ -164,6 +169,7 @@
 				<select id="new-role" bind:value={newRole} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
 					<option value="readonly">Read Only</option>
 					<option value="admin">Admin</option>
+					<option value="operator">Operator</option>
 				</select>
 			</div>
 			<Button onclick={createUser} disabled={!newUsername || !newPassword || newPassword.length < 8 || newPassword !== newPasswordConfirm}>
@@ -191,8 +197,11 @@
 				<tr class="border-b border-border">
 					<td class="p-3"><strong>{user.username}</strong></td>
 					<td class="p-3">
-						<Badge variant="secondary" class={user.role === 'admin' ? 'bg-blue-950 text-blue-400' : ''}>
-							{user.role === 'admin' ? 'Admin' : 'Read Only'}
+						<Badge variant="secondary" class={
+							user.role === 'admin' ? 'bg-blue-950 text-blue-400' :
+							user.role === 'operator' ? 'bg-amber-950 text-amber-400' : ''
+						}>
+							{user.role === 'admin' ? 'Admin' : user.role === 'operator' ? 'Operator' : 'Read Only'}
 						</Badge>
 					</td>
 					<td class="p-3">
@@ -228,9 +237,20 @@
 			<div class="mb-4">
 				<Label for="token-role">Role</Label>
 				<select id="token-role" bind:value={newTokenRole} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="operator">Operator (subvolumes &amp; snapshots only)</option>
 					<option value="readonly">Read Only</option>
 					<option value="admin">Admin</option>
 				</select>
+			</div>
+			<div class="mb-4">
+				<Label for="token-pool">Pool Restriction</Label>
+				<select id="token-pool" bind:value={newTokenPool} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="">All pools</option>
+					{#each pools as pool}
+						<option value={pool.name}>{pool.name}</option>
+					{/each}
+				</select>
+				<span class="mt-1 block text-xs text-muted-foreground">Restrict this token to a single pool's subvolumes</span>
 			</div>
 			<Button onclick={createToken} disabled={!newTokenName}>Create Token</Button>
 		</CardContent>
@@ -246,6 +266,7 @@
 				<tr>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Name</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Role</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Pool</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Created</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
 				</tr>
@@ -255,10 +276,14 @@
 					<tr class="border-b border-border">
 						<td class="p-3 font-mono text-xs">{token.name}</td>
 						<td class="p-3">
-							<Badge variant="secondary" class={token.role === 'admin' ? 'bg-blue-950 text-blue-400' : ''}>
-								{token.role === 'admin' ? 'Admin' : 'Read Only'}
+							<Badge variant="secondary" class={
+								token.role === 'admin' ? 'bg-blue-950 text-blue-400' :
+								token.role === 'operator' ? 'bg-amber-950 text-amber-400' : ''
+							}>
+								{token.role === 'admin' ? 'Admin' : token.role === 'operator' ? 'Operator' : 'Read Only'}
 							</Badge>
 						</td>
+						<td class="p-3 font-mono text-xs text-muted-foreground">{token.pool ?? '—'}</td>
 						<td class="p-3 text-xs text-muted-foreground">{formatDate(token.created_at)}</td>
 						<td class="p-3">
 							<Button variant="destructive" size="sm" onclick={() => deleteToken(token.id, token.name)}>Revoke</Button>

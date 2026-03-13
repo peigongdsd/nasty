@@ -21,6 +21,8 @@ pub enum SubvolumeError {
     AlreadyExists(String),
     #[error("subvolume not found: {0}")]
     NotFound(String),
+    #[error("access denied")]
+    AccessDenied,
     #[error("volsize is required for block subvolumes")]
     VolsizeRequired,
     #[error("command failed: {0}")]
@@ -49,6 +51,8 @@ pub struct Subvolume {
     pub volsize_bytes: Option<u64>,
     pub block_device: Option<String>,
     pub snapshots: Vec<String>,
+    /// Token name that created this subvolume; None for subvolumes created by human users.
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +74,9 @@ struct SubvolumeMeta {
     volsize_bytes: Option<u64>,
     compression: Option<String>,
     comments: Option<String>,
+    /// Token name that created this subvolume; None for human-created subvolumes.
+    #[serde(default)]
+    owner: Option<String>,
 }
 
 impl SubvolumeMeta {
@@ -157,6 +164,7 @@ impl SubvolumeService {
                     continue;
                 }
             };
+            // owner_filter = None: restore runs as system, not bound to any token
 
             let img_path = format!("{mount_point}/{}/{BLOCK_FILE_NAME}", meta.name);
             if !Path::new(&img_path).exists() {
@@ -189,8 +197,9 @@ impl SubvolumeService {
             .ok_or_else(|| SubvolumeError::PoolNotMounted(pool_name.to_string()))
     }
 
-    /// List subvolumes in a pool
-    pub async fn list(&self, pool_name: &str) -> Result<Vec<Subvolume>, SubvolumeError> {
+    /// List subvolumes in a pool.
+    /// `owner_filter`: if Some, only return subvolumes owned by that token.
+    pub async fn list(&self, pool_name: &str, owner_filter: Option<&str>) -> Result<Vec<Subvolume>, SubvolumeError> {
         let mount_point = self.pool_mount_point(pool_name).await?;
         let state: Vec<SubvolumeMeta> = state_dir().load_all().await;
         let mut subvolumes = Vec::new();
@@ -206,6 +215,18 @@ impl SubvolumeService {
             }
 
             if path.is_dir() && is_subvolume(&path).await {
+                let meta = state
+                    .iter()
+                    .find(|m| m.pool == pool_name && m.name == name);
+
+                // Apply owner filter: operators only see their own subvolumes
+                if let Some(filter) = owner_filter {
+                    match meta {
+                        Some(m) if m.owner.as_deref() == Some(filter) => {}
+                        _ => continue,
+                    }
+                }
+
                 let snapshots = self
                     .list_snapshots_for(pool_name, &name)
                     .await
@@ -214,25 +235,22 @@ impl SubvolumeService {
                 let size = dir_usage(&path).await;
                 let path_str = path.to_string_lossy().to_string();
 
-                let meta = state
-                    .iter()
-                    .find(|m| m.pool == pool_name && m.name == name);
-
-                let (subvolume_type, volsize_bytes, compression, comments) =
+                let (subvolume_type, volsize_bytes, compression, comments, owner) =
                     if let Some(m) = meta {
                         (
                             m.subvolume_type.clone(),
                             m.volsize_bytes,
                             m.compression.clone(),
                             m.comments.clone(),
+                            m.owner.clone(),
                         )
                     } else {
                         // Auto-detect: if vol.img exists, it's a block subvolume
                         let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
                         if Path::new(&img_path).exists() {
-                            (SubvolumeType::Block, file_size(&img_path).await, None, None)
+                            (SubvolumeType::Block, file_size(&img_path).await, None, None, None)
                         } else {
-                            (SubvolumeType::Filesystem, None, None, None)
+                            (SubvolumeType::Filesystem, None, None, None, None)
                         }
                     };
 
@@ -254,6 +272,7 @@ impl SubvolumeService {
                     volsize_bytes,
                     block_device,
                     snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
+                    owner,
                 });
             }
         }
@@ -261,8 +280,10 @@ impl SubvolumeService {
         Ok(subvolumes)
     }
 
-    /// List subvolumes across all mounted pools
-    pub async fn list_all(&self) -> Result<Vec<Subvolume>, SubvolumeError> {
+    /// List subvolumes across all mounted pools.
+    /// `pool_filter`: if Some, only include that pool.
+    /// `owner_filter`: if Some, only include subvolumes owned by that token.
+    pub async fn list_all(&self, pool_filter: Option<&str>, owner_filter: Option<&str>) -> Result<Vec<Subvolume>, SubvolumeError> {
         let pools = self.pools.list().await
             .map_err(|e| SubvolumeError::CommandFailed(e.to_string()))?;
 
@@ -271,7 +292,12 @@ impl SubvolumeService {
             if !pool.mounted {
                 continue;
             }
-            match self.list(&pool.name).await {
+            if let Some(filter) = pool_filter {
+                if pool.name != filter {
+                    continue;
+                }
+            }
+            match self.list(&pool.name, owner_filter).await {
                 Ok(mut subvols) => all.append(&mut subvols),
                 Err(_) => continue,
             }
@@ -279,21 +305,28 @@ impl SubvolumeService {
         Ok(all)
     }
 
-    /// Get a single subvolume
+    /// Get a single subvolume.
+    /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
     pub async fn get(
         &self,
         pool_name: &str,
         name: &str,
+        owner_filter: Option<&str>,
     ) -> Result<Subvolume, SubvolumeError> {
-        let subvolumes = self.list(pool_name).await?;
+        let subvolumes = self.list(pool_name, owner_filter).await?;
         subvolumes
             .into_iter()
             .find(|s| s.name == name)
-            .ok_or_else(|| SubvolumeError::NotFound(name.to_string()))
+            .ok_or_else(|| {
+                // Distinguish "not found" from "exists but not yours"
+                // We return NotFound in both cases to avoid leaking existence
+                SubvolumeError::NotFound(name.to_string())
+            })
     }
 
-    /// Create a new subvolume
-    pub async fn create(&self, req: CreateSubvolumeRequest) -> Result<Subvolume, SubvolumeError> {
+    /// Create a new subvolume.
+    /// `owner`: if Some, records this token name as the subvolume owner.
+    pub async fn create(&self, req: CreateSubvolumeRequest, owner: Option<String>) -> Result<Subvolume, SubvolumeError> {
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let subvol_path = format!("{mount_point}/{}", req.name);
 
@@ -354,15 +387,17 @@ impl SubvolumeService {
             volsize_bytes: req.volsize_bytes,
             compression: req.compression,
             comments: req.comments,
+            owner,
         };
         state_dir().save(&id, &meta).await?;
 
-        self.get(&req.pool, &req.name).await
+        self.get(&req.pool, &req.name, None).await
     }
 
-    /// Delete a subvolume
-    pub async fn delete(&self, req: DeleteSubvolumeRequest) -> Result<(), SubvolumeError> {
-        let subvol = self.get(&req.pool, &req.name).await?;
+    /// Delete a subvolume.
+    /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
+    pub async fn delete(&self, req: DeleteSubvolumeRequest, owner_filter: Option<&str>) -> Result<(), SubvolumeError> {
+        let subvol = self.get(&req.pool, &req.name, owner_filter).await?;
 
         // For block subvolumes: detach loop device first
         if subvol.subvolume_type == SubvolumeType::Block {
@@ -399,13 +434,15 @@ impl SubvolumeService {
         Ok(())
     }
 
-    /// Attach a block subvolume's loop device (e.g. after reboot)
+    /// Attach a block subvolume's loop device (e.g. after reboot).
+    /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
     pub async fn attach(
         &self,
         pool_name: &str,
         name: &str,
+        owner_filter: Option<&str>,
     ) -> Result<Subvolume, SubvolumeError> {
-        let subvol = self.get(pool_name, name).await?;
+        let subvol = self.get(pool_name, name, owner_filter).await?;
         if subvol.subvolume_type != SubvolumeType::Block {
             return Err(SubvolumeError::CommandFailed(
                 "only block subvolumes can be attached".to_string(),
@@ -421,30 +458,37 @@ impl SubvolumeService {
             .await
             .map_err(SubvolumeError::CommandFailed)?;
 
-        self.get(pool_name, name).await
+        self.get(pool_name, name, owner_filter).await
     }
 
-    /// Detach a block subvolume's loop device
+    /// Detach a block subvolume's loop device.
+    /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
     pub async fn detach(
         &self,
         pool_name: &str,
         name: &str,
+        owner_filter: Option<&str>,
     ) -> Result<Subvolume, SubvolumeError> {
-        let subvol = self.get(pool_name, name).await?;
+        let subvol = self.get(pool_name, name, owner_filter).await?;
         if let Some(ref loop_dev) = subvol.block_device {
             info!("Detaching loop device {} for '{}'", loop_dev, name);
             cmd::run_ok("losetup", &["-d", loop_dev])
                 .await
                 .map_err(SubvolumeError::CommandFailed)?;
         }
-        self.get(pool_name, name).await
+        self.get(pool_name, name, owner_filter).await
     }
 
-    /// Create a snapshot of a subvolume
+    /// Create a snapshot of a subvolume.
+    /// `owner_filter`: if Some, verifies the caller owns the parent subvolume.
     pub async fn create_snapshot(
         &self,
         req: CreateSnapshotRequest,
+        owner_filter: Option<&str>,
     ) -> Result<Snapshot, SubvolumeError> {
+        // Verify ownership of the parent subvolume
+        self.get(&req.pool, &req.subvolume, owner_filter).await?;
+
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let source_path = format!("{mount_point}/{}", req.subvolume);
         let snap_dir = format!("{mount_point}/.snapshots/{}", req.subvolume);
@@ -485,11 +529,14 @@ impl SubvolumeService {
         })
     }
 
-    /// Delete a snapshot
+    /// Delete a snapshot.
+    /// `owner_filter`: if Some, verifies the caller owns the parent subvolume.
     pub async fn delete_snapshot(
         &self,
         req: DeleteSnapshotRequest,
+        owner_filter: Option<&str>,
     ) -> Result<(), SubvolumeError> {
+        self.get(&req.pool, &req.subvolume, owner_filter).await?;
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let snap_path = format!(
             "{mount_point}/.snapshots/{}/{}",
@@ -542,10 +589,12 @@ impl SubvolumeService {
         Ok(snapshots)
     }
 
-    /// List all snapshots across all subvolumes in a pool
+    /// List all snapshots across all subvolumes in a pool.
+    /// `owner_filter`: if Some, only returns snapshots whose parent subvolume is owned by that token.
     pub async fn list_snapshots(
         &self,
         pool_name: &str,
+        owner_filter: Option<&str>,
     ) -> Result<Vec<Snapshot>, SubvolumeError> {
         let mount_point = self.pool_mount_point(pool_name).await?;
         let snap_base = format!("{mount_point}/.snapshots");
@@ -554,11 +603,24 @@ impl SubvolumeService {
             return Ok(vec![]);
         }
 
+        // Get owned subvolume names if filter is active
+        let owned: Option<std::collections::HashSet<String>> = if owner_filter.is_some() {
+            let owned_subvols = self.list(pool_name, owner_filter).await.unwrap_or_default();
+            Some(owned_subvols.into_iter().map(|s| s.name).collect())
+        } else {
+            None
+        };
+
         let mut all_snapshots = Vec::new();
         let mut entries = tokio::fs::read_dir(&snap_base).await?;
         while let Some(entry) = entries.next_entry().await? {
             if entry.path().is_dir() {
                 let subvol_name = entry.file_name().to_string_lossy().to_string();
+                if let Some(ref set) = owned {
+                    if !set.contains(&subvol_name) {
+                        continue;
+                    }
+                }
                 let mut snaps = self
                     .list_snapshots_for(pool_name, &subvol_name)
                     .await

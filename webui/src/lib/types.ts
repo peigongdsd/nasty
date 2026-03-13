@@ -103,6 +103,7 @@ export interface Subvolume {
 	volsize_bytes: number | null;
 	block_device: string | null;
 	snapshots: string[];
+	owner: string | null;
 }
 
 export interface Snapshot {
@@ -194,14 +195,15 @@ export interface NvmeofPort {
 
 export interface UserInfo {
 	username: string;
-	role: 'admin' | 'readonly';
+	role: 'admin' | 'readonly' | 'operator';
 }
 
 export interface ApiTokenInfo {
 	id: string;
 	name: string;
-	role: 'admin' | 'readonly';
+	role: 'admin' | 'readonly' | 'operator';
 	created_at: number;
+	pool: string | null;
 }
 
 export interface ApiTokenCreated extends ApiTokenInfo {

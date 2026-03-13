@@ -5,6 +5,16 @@ use tracing::debug;
 use crate::AppState;
 use crate::auth::{Role, Session};
 
+/// Methods an operator token is allowed to call (in addition to all read-only methods)
+fn is_operator_allowed(method: &str) -> bool {
+    is_read_only(method)
+        || matches!(
+            method,
+            "subvolume.create" | "subvolume.delete" | "subvolume.attach" | "subvolume.detach"
+            | "snapshot.create" | "snapshot.delete"
+        )
+}
+
 /// Extract a string param from JSON-RPC params
 fn str_param<'a>(request: &'a Request, key: &str) -> Option<&'a str> {
     request
@@ -73,12 +83,17 @@ pub async fn handle_rpc_request(raw: &str, state: &AppState, session: &Session) 
 
     debug!("RPC call: {} (user: {})", request.method, session.username);
 
-    // Enforce read-only role
-    if session.role == Role::ReadOnly && !is_read_only(&request.method) {
+    // Enforce role permissions
+    let denied = match session.role {
+        Role::Admin => false,
+        Role::ReadOnly => !is_read_only(&request.method),
+        Role::Operator => !is_operator_allowed(&request.method),
+    };
+    if denied {
         let resp = Response::error(
             request.id,
             ErrorCode::InternalError,
-            "Permission denied: read-only user",
+            "Permission denied",
         );
         return serde_json::to_string(&resp).unwrap();
     }
@@ -144,9 +159,9 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "auth.token.create" => {
             #[derive(Deserialize)]
-            struct P { name: String, role: Role }
+            struct P { name: String, role: Role, pool: Option<String> }
             match parse_params::<P>(req) {
-                Ok(p) => match state.auth.create_api_token(session, &p.name, p.role).await {
+                Ok(p) => match state.auth.create_api_token(session, &p.name, p.role, p.pool).await {
                     Ok(t) => ok(req, t),
                     Err(e) => err(req, e),
                 },
@@ -287,14 +302,25 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
 
         // ── Pools ───────────────────────────────────────────────
         "pool.list" => match state.pools.list().await {
-            Ok(v) => ok(req, v),
+            Ok(mut v) => {
+                if let Some(ref pool_name) = session.pool {
+                    v.retain(|p| &p.name == pool_name);
+                }
+                ok(req, v)
+            }
             Err(e) => err(req, e),
         },
         "pool.get" => match require_str(req, "name") {
-            Ok(name) => match state.pools.get(name).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+            Ok(name) => {
+                if session.pool.as_deref().map_or(false, |p| p != name) {
+                    err(req, "access denied")
+                } else {
+                    match state.pools.get(name).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(r) => r,
         },
         "pool.create" => match parse_params(req) {
@@ -403,70 +429,117 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
 
         // ── Subvolumes ──────────────────────────────────────────
-        "subvolume.list_all" => match state.subvolumes.list_all().await {
-            Ok(v) => ok(req, v),
-            Err(e) => err(req, e),
-        },
-        "subvolume.list" => match require_str(req, "pool") {
-            Ok(pool) => match state.subvolumes.list(pool).await {
+        "subvolume.list_all" => {
+            let pool_filter = session.pool.as_deref();
+            let owner_filter = session.owner.as_deref();
+            match state.subvolumes.list_all(pool_filter, owner_filter).await {
                 Ok(v) => ok(req, v),
                 Err(e) => err(req, e),
-            },
+            }
+        }
+        "subvolume.list" => match require_str(req, "pool") {
+            Ok(pool) => {
+                if session.pool.as_deref().map_or(false, |p| p != pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.list(pool, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(r) => r,
         },
         "subvolume.get" => match (require_str(req, "pool"), require_str(req, "name")) {
-            (Ok(pool), Ok(name)) => match state.subvolumes.get(pool, name).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+            (Ok(pool), Ok(name)) => {
+                if session.pool.as_deref().map_or(false, |p| p != pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.get(pool, name, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             (Err(r), _) | (_, Err(r)) => r,
         },
-        "subvolume.create" => match parse_params(req) {
-            Ok(p) => match state.subvolumes.create(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+        "subvolume.create" => match parse_params::<nasty_storage::subvolume::CreateSubvolumeRequest>(req) {
+            Ok(p) => {
+                if session.pool.as_deref().map_or(false, |pool| pool != p.pool) {
+                    err(req, "access denied")
+                } else {
+                    let owner = session.owner.clone();
+                    match state.subvolumes.create(p, owner).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(e) => invalid(req, e),
         },
-        "subvolume.delete" => match parse_params(req) {
-            Ok(p) => match state.subvolumes.delete(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
+        "subvolume.delete" => match parse_params::<nasty_storage::subvolume::DeleteSubvolumeRequest>(req) {
+            Ok(p) => {
+                if session.pool.as_deref().map_or(false, |pool| pool != p.pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.delete(p, session.owner.as_deref()).await {
+                        Ok(()) => ok(req, "ok"),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(e) => invalid(req, e),
         },
         "subvolume.attach" => match (require_str(req, "pool"), require_str(req, "name")) {
-            (Ok(pool), Ok(name)) => match state.subvolumes.attach(pool, name).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+            (Ok(pool), Ok(name)) => {
+                if session.pool.as_deref().map_or(false, |p| p != pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.attach(pool, name, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             (Err(r), _) | (_, Err(r)) => r,
         },
         "subvolume.detach" => match (require_str(req, "pool"), require_str(req, "name")) {
-            (Ok(pool), Ok(name)) => match state.subvolumes.detach(pool, name).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+            (Ok(pool), Ok(name)) => {
+                if session.pool.as_deref().map_or(false, |p| p != pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.detach(pool, name, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             (Err(r), _) | (_, Err(r)) => r,
         },
 
         // ── Snapshots ───────────────────────────────────────────
         "snapshot.list" => match require_str(req, "pool") {
-            Ok(pool) => match state.subvolumes.list_snapshots(pool).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
+            Ok(pool) => {
+                if session.pool.as_deref().map_or(false, |p| p != pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.list_snapshots(pool, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(r) => r,
         },
         "snapshot.create" => match parse_params(req) {
-            Ok(p) => match state.subvolumes.create_snapshot(p).await {
+            Ok(p) => match state.subvolumes.create_snapshot(p, session.owner.as_deref()).await {
                 Ok(v) => ok(req, v),
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
         },
         "snapshot.delete" => match parse_params(req) {
-            Ok(p) => match state.subvolumes.delete_snapshot(p).await {
+            Ok(p) => match state.subvolumes.delete_snapshot(p, session.owner.as_deref()).await {
                 Ok(()) => ok(req, "ok"),
                 Err(e) => err(req, e),
             },
