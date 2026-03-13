@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::cmd;
 
@@ -738,7 +738,8 @@ impl PoolService {
     }
 
     /// Start a data scrub on a pool.
-    /// `bcachefs data scrub start <mountpoint>`
+    /// `bcachefs scrub <mountpoint>`
+    /// Scrub runs synchronously, so we spawn it in the background.
     pub async fn scrub_start(&self, name: &str) -> Result<(), PoolError> {
         let pool = self.get(name).await?;
         if !pool.mounted {
@@ -746,18 +747,21 @@ impl PoolService {
                 "pool must be mounted to start scrub".to_string(),
             ));
         }
-        let mount_point = pool.mount_point.as_ref().unwrap();
+        let mount_point = pool.mount_point.as_ref().unwrap().clone();
 
         info!("Starting scrub on pool '{}'", name);
-        cmd::run_ok("bcachefs", &["data", "scrub", "start", mount_point])
-            .await
-            .map_err(PoolError::CommandFailed)?;
+        tokio::spawn(async move {
+            match cmd::run_ok("bcachefs", &["scrub", &mount_point]).await {
+                Ok(output) => info!("Scrub completed: {}", output),
+                Err(e) => warn!("Scrub failed: {}", e),
+            }
+        });
 
         Ok(())
     }
 
     /// Get scrub status for a pool.
-    /// `bcachefs data scrub status <mountpoint>`
+    /// bcachefs scrub is synchronous — we check if a scrub process is running.
     pub async fn scrub_status(&self, name: &str) -> Result<ScrubStatus, PoolError> {
         let pool = self.get(name).await?;
         if !pool.mounted {
@@ -765,14 +769,17 @@ impl PoolService {
                 "pool must be mounted to check scrub status".to_string(),
             ));
         }
-        let mount_point = pool.mount_point.as_ref().unwrap();
 
-        let raw = cmd::run_ok("bcachefs", &["data", "scrub", "status", mount_point])
+        // Check if a bcachefs scrub process is running for this pool
+        let running = cmd::run_ok("pgrep", &["-f", &format!("bcachefs scrub")])
             .await
-            .unwrap_or_default();
+            .is_ok();
 
-        let running = raw.to_lowercase().contains("running")
-            || raw.to_lowercase().contains("in progress");
+        let raw = if running {
+            "Scrub in progress...".to_string()
+        } else {
+            "No scrub running".to_string()
+        };
 
         Ok(ScrubStatus { running, raw })
     }
