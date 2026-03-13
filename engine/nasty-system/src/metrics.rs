@@ -1,8 +1,7 @@
-//! Lightweight time-series metrics backed by SQLite.
+//! Time-series metrics backed by SQLite.
 //!
-//! Stores per-resource I/O rates (bytes/s) at 5-second intervals.
-//! The middleware writes samples in a background task; the frontend
-//! fetches history on page load so charts are immediately populated.
+//! Stores per-resource I/O rates (bytes/s) at 5-second intervals with 30-day retention.
+//! For longer time ranges, samples are bucketed and averaged to keep response sizes small.
 
 use std::sync::Mutex;
 
@@ -11,7 +10,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 const DB_PATH: &str = "/var/lib/nasty/metrics.db";
-const RETENTION_SECS: i64 = 86400; // 24 hours
+const RETENTION_SECS: i64 = 30 * 24 * 3600; // 30 days
 
 #[derive(Debug, Serialize)]
 pub struct IoSample {
@@ -82,18 +81,22 @@ impl MetricsDb {
         }
     }
 
-    /// Query history for a given kind (net/disk) and optional resource name.
-    /// Returns last `duration_secs` of data. If `name` is None, returns all resources.
+    /// Query history for a given kind and optional resource name.
+    ///
+    /// `range` is one of: "5m", "1h", "1d", "7d", "30d".
+    /// For ranges longer than 5m, samples are bucketed and averaged
+    /// to keep the response to ~360 points per series.
     pub fn query(
         &self,
         kind: &str,
         name: Option<&str>,
-        duration_secs: i64,
+        range: &str,
     ) -> Vec<ResourceHistory> {
-        let since = now_ms() - duration_secs * 1000;
+        let (duration_ms, bucket_ms) = range_to_params(range);
+        let since = now_ms() - duration_ms;
         let conn = self.conn.lock().unwrap();
 
-        // Collect distinct resource names
+        // Collect distinct resource names in range
         let names: Vec<String> = if let Some(n) = name {
             vec![n.to_string()]
         } else {
@@ -107,31 +110,60 @@ impl MetricsDb {
         };
 
         let mut results = Vec::new();
-        let mut stmt = conn
-            .prepare(
-                "SELECT ts, in_rate, out_rate FROM io_samples
-                 WHERE kind = ?1 AND name = ?2 AND ts >= ?3
-                 ORDER BY ts",
-            )
-            .unwrap();
 
-        for n in &names {
-            let samples: Vec<IoSample> = stmt
-                .query_map(rusqlite::params![kind, n, since], |row| {
-                    Ok(IoSample {
-                        ts: row.get(0)?,
-                        in_rate: row.get(1)?,
-                        out_rate: row.get(2)?,
+        if bucket_ms == 0 {
+            // Raw samples — no bucketing
+            let mut stmt = conn
+                .prepare(
+                    "SELECT ts, in_rate, out_rate FROM io_samples
+                     WHERE kind = ?1 AND name = ?2 AND ts >= ?3
+                     ORDER BY ts",
+                )
+                .unwrap();
+
+            for n in &names {
+                let samples: Vec<IoSample> = stmt
+                    .query_map(rusqlite::params![kind, n, since], |row| {
+                        Ok(IoSample {
+                            ts: row.get(0)?,
+                            in_rate: row.get(1)?,
+                            out_rate: row.get(2)?,
+                        })
                     })
-                })
-                .unwrap()
-                .filter_map(|r| r.ok())
-                .collect();
+                    .unwrap()
+                    .filter_map(|r| r.ok())
+                    .collect();
 
-            results.push(ResourceHistory {
-                name: n.clone(),
-                samples,
-            });
+                results.push(ResourceHistory { name: n.clone(), samples });
+            }
+        } else {
+            // Bucketed averages
+            let mut stmt = conn
+                .prepare(
+                    "SELECT (ts / ?4) * ?4 AS bucket,
+                            AVG(in_rate), AVG(out_rate)
+                     FROM io_samples
+                     WHERE kind = ?1 AND name = ?2 AND ts >= ?3
+                     GROUP BY bucket
+                     ORDER BY bucket",
+                )
+                .unwrap();
+
+            for n in &names {
+                let samples: Vec<IoSample> = stmt
+                    .query_map(rusqlite::params![kind, n, since, bucket_ms], |row| {
+                        Ok(IoSample {
+                            ts: row.get(0)?,
+                            in_rate: row.get(1)?,
+                            out_rate: row.get(2)?,
+                        })
+                    })
+                    .unwrap()
+                    .filter_map(|r| r.ok())
+                    .collect();
+
+                results.push(ResourceHistory { name: n.clone(), samples });
+            }
         }
 
         results
@@ -142,6 +174,18 @@ impl MetricsDb {
 pub struct ResourceHistory {
     pub name: String,
     pub samples: Vec<IoSample>,
+}
+
+/// Returns (duration_ms, bucket_ms) for a range string.
+/// bucket_ms == 0 means return raw samples.
+fn range_to_params(range: &str) -> (i64, i64) {
+    match range {
+        "1h"  => (3_600_000,      60_000),   // 1-min buckets  → up to 60 points
+        "1d"  => (86_400_000,    300_000),   // 5-min buckets  → up to 288 points
+        "7d"  => (604_800_000, 1_800_000),   // 30-min buckets → up to 336 points
+        "30d" => (2_592_000_000, 7_200_000), // 2-hr buckets   → up to 360 points
+        _     => (300_000, 0),               // "5m" → raw
+    }
 }
 
 fn now_ms() -> i64 {

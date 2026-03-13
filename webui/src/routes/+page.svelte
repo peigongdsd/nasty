@@ -17,6 +17,7 @@
 	let settings: Settings | null = $state(null);
 	let alerts: ActiveAlert[] = $state([]);
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
+	let metricsRange = $state<'5m' | '1h' | '1d' | '7d' | '30d'>('5m');
 
 	let prevDiskIo: DiskIoStats[] = $state([]);
 	let prevNetIo: NetIfStats[] = $state([]);
@@ -58,15 +59,23 @@
 			prevNetIo = stats.network;
 			prevSampleTime = Date.now();
 		}
+		await loadMetrics();
+	}
 
-		// Load persisted metrics history so charts render immediately
+	async function loadMetrics() {
 		try {
 			const [netHist, diskHist, cpuHist, memHist] = await Promise.all([
-				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'net', duration_secs: 300 }),
-				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'disk', duration_secs: 300 }),
-				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'cpu', duration_secs: 300 }),
-				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'mem', duration_secs: 300 }),
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'net', range: metricsRange }),
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'disk', range: metricsRange }),
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'cpu', range: metricsRange }),
+				client.call<ResourceHistory[]>('system.metrics.history', { kind: 'mem', range: metricsRange }),
 			]);
+
+			netHistory.clear();
+			diskHistory.clear();
+			cpuHistory.clear();
+			memHistory.clear();
+
 			for (const rh of netHist) {
 				for (const s of rh.samples) {
 					netHistory.push(rh.name, new Date(s.ts), s.in_rate, s.out_rate);
@@ -87,7 +96,6 @@
 					memHistory.push('mem', new Date(s.ts), s.in_rate, 0);
 				}
 			}
-			// Seed the $state sample maps/arrays so charts render
 			if (stats) {
 				netSamples = new Map(
 					stats.network.map(n => [n.name, [...netHistory.getSamples(n.name)]])
@@ -101,6 +109,11 @@
 		} catch {
 			// Metrics history not available yet, charts will populate over time
 		}
+	}
+
+	async function changeRange(r: typeof metricsRange) {
+		metricsRange = r;
+		await loadMetrics();
 	}
 
 	async function refreshStats() {
@@ -118,11 +131,11 @@
 						const readRate = Math.max(0, (curr.read_bytes - prev.read_bytes) / elapsed);
 						const writeRate = Math.max(0, (curr.write_bytes - prev.write_bytes) / elapsed);
 						dRates.set(curr.name, { readRate, writeRate });
-						diskHistory.push(curr.name, sampleTime, readRate, writeRate);
+						if (metricsRange === '5m') diskHistory.push(curr.name, sampleTime, readRate, writeRate);
 					}
 				}
 				diskIoRates = dRates;
-				diskSamples = new Map(
+				if (metricsRange === '5m') diskSamples = new Map(
 					newStats.disk_io.map(d => [d.name, [...diskHistory.getSamples(d.name)]])
 				);
 
@@ -133,24 +146,28 @@
 						const rxRate = Math.max(0, (curr.rx_bytes - prev.rx_bytes) / elapsed);
 						const txRate = Math.max(0, (curr.tx_bytes - prev.tx_bytes) / elapsed);
 						nRates.set(curr.name, { rxRate, txRate });
-						netHistory.push(curr.name, sampleTime, rxRate, txRate);
+						if (metricsRange === '5m') netHistory.push(curr.name, sampleTime, rxRate, txRate);
 					}
 				}
 				netIoRates = nRates;
-				netSamples = new Map(
+				if (metricsRange === '5m') netSamples = new Map(
 					newStats.network.map(n => [n.name, [...netHistory.getSamples(n.name)]])
 				);
 
 				// CPU and memory
 				const cpuPct = Math.min(100, (newStats.cpu.load_1 / newStats.cpu.count) * 100);
-				cpuHistory.push('cpu', sampleTime, cpuPct, 0);
-				cpuChartSamples = [...cpuHistory.getSamples('cpu')];
+				if (metricsRange === '5m') {
+					cpuHistory.push('cpu', sampleTime, cpuPct, 0);
+					cpuChartSamples = [...cpuHistory.getSamples('cpu')];
+				}
 
 				const memPct = newStats.memory.total_bytes > 0
 					? (newStats.memory.used_bytes / newStats.memory.total_bytes) * 100
 					: 0;
-				memHistory.push('mem', sampleTime, memPct, 0);
-				memChartSamples = [...memHistory.getSamples('mem')];
+				if (metricsRange === '5m') {
+					memHistory.push('mem', sampleTime, memPct, 0);
+					memChartSamples = [...memHistory.getSamples('mem')];
+				}
 			}
 
 			prevDiskIo = newStats.disk_io;
@@ -345,6 +362,17 @@
 
 <!-- Network & Disk I/O -->
 {#if stats}
+	<div class="mb-3 flex items-center justify-between">
+		<span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">I/O History</span>
+		<div class="flex gap-1">
+			{#each (['5m', '1h', '1d', '7d', '30d'] as const) as r}
+				<button
+					onclick={() => changeRange(r)}
+					class="rounded px-2 py-0.5 text-xs font-medium transition-colors {metricsRange === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				>{r}</button>
+			{/each}
+		</div>
+	</div>
 	<div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
 		{#if stats.network.length > 0}
 			<Card>

@@ -183,11 +183,8 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         "system.metrics.history" => {
             let kind = str_param(req, "kind").unwrap_or("net");
             let name = str_param(req, "name");
-            let duration = req.params.as_ref()
-                .and_then(|p| p.get("duration_secs"))
-                .and_then(|v| v.as_i64())
-                .unwrap_or(300); // default 5 minutes
-            ok(req, state.metrics.query(kind, name, duration))
+            let range = str_param(req, "range").unwrap_or("5m");
+            ok(req, state.metrics.query(kind, name, range))
         }
         "system.disks" => {
             if state.settings.get().await.smart_enabled {

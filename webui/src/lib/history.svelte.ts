@@ -1,16 +1,11 @@
 /**
  * Rolling history buffer for dashboard time-series charts.
- * Stores the last N samples of per-resource rates (bytes/s).
- * In the future this will be backed by a time-series DB.
+ * Stores per-resource rates (bytes/s).
+ * For the 5m range this acts as a rolling 60-sample buffer;
+ * for longer ranges it holds the full bucketed history loaded from the server.
  */
 
-const MAX_SAMPLES = 60; // 5 min at 5s interval
-
-export interface Sample {
-	time: Date;
-	/** Keyed by resource name (interface/disk), values are rates in bytes/s */
-	[key: string]: number | Date;
-}
+const MAX_SAMPLES = 400; // enough for any bucketed range (max ~360 points)
 
 export interface IoRateHistory {
 	/** Per-resource history: resource name -> array of {time, in, out} */
@@ -56,6 +51,9 @@ export function createIoHistory() {
 		},
 		getSamples(name: string) {
 			return history.resources.get(name) ?? [];
+		},
+		clear() {
+			history = createHistory();
 		},
 	};
 }
