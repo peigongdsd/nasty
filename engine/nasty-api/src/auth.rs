@@ -143,7 +143,9 @@ impl AuthService {
                 username: t.name.clone(),
                 role: t.role.clone(),
                 pool: t.pool.clone(),
-                owner: Some(t.name.clone()),
+                // Subvolume-level isolation only applies to operator tokens.
+                // Admin tokens (even pool-scoped ones) see all subvolumes in their pool.
+                owner: if t.role == Role::Operator { Some(t.name.clone()) } else { None },
             })
             .ok_or(AuthError::InvalidToken)
     }
