@@ -266,6 +266,17 @@
 
 <!-- Resource gauges -->
 {#if stats}
+	<div class="mb-3 flex items-center justify-between">
+		<span class="text-sm font-semibold">History</span>
+		<div class="flex rounded-md border border-border">
+			{#each (['5m', '1h', '1d', '7d', '30d'] as const) as r}
+				<button
+					onclick={() => changeRange(r)}
+					class="px-3 py-1 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md {metricsRange === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+				>{r}</button>
+			{/each}
+		</div>
+	</div>
 	<div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-{pools.length > 0 ? '4' : '2'}">
 		<Card>
 			<CardHeader class="pb-2">
@@ -362,17 +373,6 @@
 
 <!-- Network & Disk I/O -->
 {#if stats}
-	<div class="mb-3 flex items-center justify-between">
-		<span class="text-sm font-semibold">I/O History</span>
-		<div class="flex rounded-md border border-border">
-			{#each (['5m', '1h', '1d', '7d', '30d'] as const) as r}
-				<button
-					onclick={() => changeRange(r)}
-					class="px-3 py-1 text-xs font-medium transition-colors first:rounded-l-md last:rounded-r-md {metricsRange === r ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
-				>{r}</button>
-			{/each}
-		</div>
-	</div>
 	<div class="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
 		{#if stats.network.length > 0}
 			<Card>
