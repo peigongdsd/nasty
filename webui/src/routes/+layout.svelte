@@ -6,7 +6,7 @@
 	import Toasts from '$lib/components/Toasts.svelte';
 	import type { AuthResult } from '$lib/rpc';
 	import favicon from '$lib/assets/favicon.svg';
-	import logo from '$lib/assets/nasty.svg';
+	import logo from '$lib/assets/nasty-white.svg';
 	import '../app.css';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
