@@ -11,7 +11,23 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Separator } from '$lib/components/ui/separator';
+	import {
+		LayoutDashboard,
+		Database,
+		Layers,
+		FolderOpen,
+		Share2,
+		Server,
+		HardDrive,
+		Bell,
+		Settings,
+		RefreshCw,
+		Terminal,
+		ShieldCheck,
+		Network,
+		Cpu,
+		Zap,
+	} from '@lucide/svelte';
 
 	let { children } = $props();
 	let connected = $state(false);
@@ -77,20 +93,20 @@
 	}
 
 	const nav = [
-		{ href: '/', label: 'Dashboard' },
-		{ href: '/pools', label: 'Storage Pools' },
-		{ href: '/subvolumes', label: 'Subvolumes' },
-		{ href: '/shares/nfs', label: 'NFS' },
-		{ href: '/shares/smb', label: 'SMB' },
-		{ href: '/shares/iscsi', label: 'iSCSI' },
-		{ href: '/shares/nvmeof', label: 'NVMe-oF' },
-		{ href: '/disks', label: 'S.M.A.R.T.' },
-		{ href: '/alerts', label: 'Alerts' },
-		{ href: '/services', label: 'Services' },
-		{ href: '/update', label: 'Update' },
-		{ href: '/terminal', label: 'Terminal' },
-		{ href: '/users', label: 'Users' },
-		{ href: '/settings', label: 'Settings' },
+		{ href: '/',              label: 'Dashboard',      icon: LayoutDashboard },
+		{ href: '/pools',         label: 'Storage Pools',  icon: Database },
+		{ href: '/subvolumes',    label: 'Subvolumes',     icon: Layers },
+		{ href: '/shares/nfs',    label: 'NFS',            icon: FolderOpen },
+		{ href: '/shares/smb',    label: 'SMB',            icon: Share2 },
+		{ href: '/shares/iscsi',  label: 'iSCSI',          icon: Server },
+		{ href: '/shares/nvmeof', label: 'NVMe-oF',        icon: Zap },
+		{ href: '/disks',         label: 'S.M.A.R.T.',     icon: HardDrive },
+		{ href: '/alerts',        label: 'Alerts',          icon: Bell },
+		{ href: '/services',      label: 'Services',        icon: Network },
+		{ href: '/update',        label: 'Update',          icon: RefreshCw },
+		{ href: '/terminal',      label: 'Terminal',        icon: Terminal },
+		{ href: '/users',         label: 'Access Control',  icon: ShieldCheck },
+		{ href: '/settings',      label: 'Settings',        icon: Settings },
 	];
 </script>
 
@@ -130,7 +146,11 @@
 			</div>
 			<nav class="flex flex-1 flex-col">
 				{#each nav as item}
-					<a href={item.href} class="px-4 py-2 text-sm text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground">{item.label}</a>
+					{@const Icon = item.icon}
+					<a href={item.href} class="flex items-center gap-2.5 px-4 py-2 text-sm text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-accent-foreground">
+						<Icon size={15} class="shrink-0" />
+						{item.label}
+					</a>
 				{/each}
 			</nav>
 			<div class="border-t border-border px-4 pt-3">
