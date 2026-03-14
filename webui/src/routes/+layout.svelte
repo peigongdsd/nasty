@@ -103,7 +103,7 @@
 {#if showLogin}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="w-[340px] rounded-xl border border-border bg-card p-8">
-			<img src={logo} alt="NASty" class="mb-1 h-16" />
+			<img src={logo} alt="NASty" class="mb-4 h-24" />
 			<p class="mb-6 text-sm text-muted-foreground">Sign in to manage your storage</p>
 			{#if loginError}
 				<p class="mb-4 text-sm text-destructive">{loginError}</p>
@@ -125,7 +125,7 @@
 	<div class="flex min-h-screen">
 		<aside class="flex w-[200px] shrink-0 flex-col border-r border-border bg-card py-4">
 			<div class="mb-2 border-b border-border px-4 pb-4">
-				<img src={logo} alt="NASty" class="h-10" />
+				<img src={logo} alt="NASty" class="h-20" />
 			</div>
 			<nav class="flex flex-1 flex-col">
 				{#each nav as item}
