@@ -138,7 +138,7 @@ cd {LOCAL_REPO}
 HW_CFG="nixos/hardware-configuration.nix"
 [ -f "$HW_CFG" ] && cp "$HW_CFG" /tmp/nasty-hw-config.nix
 
-git remote set-url origin "{repo_url}"
+git remote set-url origin "{repo_url}" 2>/dev/null || git remote add origin "{repo_url}"
 GIT_TERMINAL_PROMPT=0 git fetch origin
 git reset --hard origin/main
 

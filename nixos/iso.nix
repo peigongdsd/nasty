@@ -169,6 +169,7 @@ in
       # Flakes require a git repo to resolve paths
       cd /mnt/etc/nixos
       git init -q
+      git remote add origin https://github.com/nasty-project/nasty.git
       git add .
 
       echo "==> Installing NASty..."
