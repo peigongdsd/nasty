@@ -103,7 +103,7 @@
 {#if showLogin}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="w-[340px] rounded-xl border border-border bg-card p-8">
-			<img src={logo} alt="NASty" class="mb-4 h-48" />
+			<img src={logo} alt="NASty" class="mb-4 h-48 mx-auto" />
 			<p class="mb-6 text-sm text-muted-foreground">Sign in to manage your storage</p>
 			{#if loginError}
 				<p class="mb-4 text-sm text-destructive">{loginError}</p>
