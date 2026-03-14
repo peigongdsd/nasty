@@ -1,4 +1,4 @@
-{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, ... }:
+{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", ... }:
 
 let
   cfg = config.services.nasty;
@@ -151,8 +151,11 @@ in {
   config = mkIf cfg.enable {
 
     # ── Required kernel support ────────────────────────────────
-
+    # bcachefs was removed from mainline in kernel 6.18 and is now
+    # an out-of-tree DKMS module.  nixpkgs ships it as
+    # linuxPackages.bcachefs, versioned to match the running kernel.
     boot.supportedFilesystems = [ "bcachefs" ];
+    boot.extraModulePackages = [ config.boot.kernelPackages.bcachefs ];
 
     # ── Boot splash ────────────────────────────────────────────
     boot.plymouth = {
@@ -271,7 +274,7 @@ in {
     # ── System packages ────────────────────────────────────────
 
     environment.systemPackages = with pkgs; [
-      nasty-bcachefs-tools
+      bcachefs-tools
       util-linux        # lsblk, blkid, wipefs
       smartmontools     # smartctl for disk health
       htop
@@ -355,7 +358,7 @@ in {
       path = with pkgs; [
         bashInteractive  # bash for terminal
         util-linux       # lsblk, blkid, wipefs, mount, umount
-        nasty-bcachefs-tools   # bcachefs
+        bcachefs-tools   # bcachefs
         smartmontools    # smartctl
         iproute2         # ip (for network addresses)
         kmod             # modprobe (for iSCSI/NVMe-oF kernel modules)

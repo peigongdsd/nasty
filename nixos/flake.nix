@@ -3,11 +3,18 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    bcachefs-tools.url = "github:koverstreet/bcachefs-tools";
-    bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
+
+    # ── bcachefs override (optional) ──────────────────────────────
+    # Uncomment to track upstream HEAD instead of nixpkgs bcachefs.
+    # Do this when nixpkgs lags behind and you need newer features.
+    # When re-commented the system falls back to pure nixpkgs — no
+    # other changes needed anywhere else.
+    #
+    # bcachefs-tools.url = "github:koverstreet/bcachefs-tools";
+    # bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
+  outputs = { self, nixpkgs, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
 
@@ -43,12 +50,11 @@
     mkNixosConfigs = system: let
       nasty-engine = mkEngine system;
       nasty-webui = mkWebui system;
-      nasty-bcachefs-tools = bcachefs-tools.packages.${system}.bcachefs-tools;
     in {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
         modules = [
           ./modules/nasty.nix
           ./configuration.nix
@@ -58,7 +64,7 @@
       # ISO image for installation
       nasty-iso = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
         modules = [
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
           ./iso.nix
@@ -68,7 +74,7 @@
       # QEMU VM for testing
       nasty-vm = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
         modules = [
           ./modules/nasty.nix
           ./configuration.nix
