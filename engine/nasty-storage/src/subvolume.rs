@@ -605,6 +605,18 @@ impl SubvolumeService {
             return Err(SubvolumeError::AlreadyExists(req.name.clone()));
         }
 
+        // For block subvolumes, flush all pending I/O before snapshotting.
+        // Initiators (iSCSI, NVMe-oF) may have dirty data in their page cache
+        // that hasn't been written to the backing loop device yet. A sync ensures
+        // the snapshot captures a consistent state.
+        let subvol = self.get(&req.pool, &req.subvolume, owner_filter).await?;
+        if subvol.subvolume_type == SubvolumeType::Block {
+            if let Some(ref loop_dev) = subvol.block_device {
+                info!("Flushing block device {} before snapshot", loop_dev);
+                let _ = cmd::run_ok("blockdev", &["--flushbufs", loop_dev]).await;
+            }
+        }
+
         info!(
             "Creating snapshot '{}' of subvolume '{}/{}'",
             req.name, req.pool, req.subvolume
