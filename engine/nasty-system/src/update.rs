@@ -66,7 +66,7 @@ impl UpdateService {
             Ok(sha) => sha,
             Err(_) => {
                 let url = match read_github_token().await {
-                    Some(t) => format!("https://{}@github.com/nasty-project/nasty.git", t),
+                    Some(t) => format!("https://x-access-token:{}@github.com/nasty-project/nasty.git", t),
                     None => REPO_URL.to_string(),
                 };
                 check_via_git_ls_remote(&url).await?
@@ -118,7 +118,7 @@ impl UpdateService {
         // 2. Rebuild from local flake (which has hardware-configuration.nix)
         let token = read_github_token().await;
         let repo_url = if let Some(ref t) = token {
-            format!("https://{}@github.com/nasty-project/nasty.git", t)
+            format!("https://x-access-token:{}@github.com/nasty-project/nasty.git", t)
         } else {
             REPO_URL.to_string()
         };
@@ -139,7 +139,7 @@ HW_CFG="nixos/hardware-configuration.nix"
 [ -f "$HW_CFG" ] && cp "$HW_CFG" /tmp/nasty-hw-config.nix
 
 git remote set-url origin "{repo_url}"
-git fetch origin
+GIT_TERMINAL_PROMPT=0 git fetch origin
 git reset --hard origin/main
 
 # Restore hardware config
@@ -450,6 +450,7 @@ async fn check_via_github_api() -> Result<String, UpdateError> {
 async fn check_via_git_ls_remote(url: &str) -> Result<String, UpdateError> {
     let output = tokio::process::Command::new("git")
         .args(["ls-remote", url, "refs/heads/main"])
+        .env("GIT_TERMINAL_PROMPT", "0")  // fail fast instead of hanging on password prompt
         .output()
         .await
         .map_err(|e| UpdateError::CommandFailed(format!("git ls-remote: {e}")))?;
