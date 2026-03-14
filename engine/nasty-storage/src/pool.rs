@@ -106,6 +106,20 @@ pub struct DestroyPoolRequest {
     pub force: Option<bool>,
 }
 
+/// Update runtime-mutable filesystem options on a mounted pool.
+/// Options are written directly to sysfs (/sys/fs/bcachefs/<uuid>/options/).
+#[derive(Debug, Deserialize)]
+pub struct UpdatePoolOptionsRequest {
+    pub name: String,
+    pub compression: Option<String>,
+    pub background_compression: Option<String>,
+    pub foreground_target: Option<String>,
+    pub background_target: Option<String>,
+    pub promote_target: Option<String>,
+    pub metadata_target: Option<String>,
+    pub error_action: Option<String>,
+}
+
 /// Add a device to an existing pool.
 #[derive(Debug, Deserialize)]
 pub struct DeviceAddRequest {
@@ -454,6 +468,50 @@ impl PoolService {
         save_pool_mounted(name).await;
 
         self.get(name).await
+    }
+
+    /// Update runtime-mutable options on a mounted pool via sysfs.
+    pub async fn update_options(&self, req: UpdatePoolOptionsRequest) -> Result<Pool, PoolError> {
+        let pool = self.get(&req.name).await?;
+        if !pool.mounted {
+            return Err(PoolError::CommandFailed(
+                "pool must be mounted to update options".to_string(),
+            ));
+        }
+        let uuid = &pool.uuid;
+        let base = format!("/sys/fs/bcachefs/{uuid}/options");
+
+        async fn write_opt(base: &str, name: &str, value: &str) -> Result<(), PoolError> {
+            let path = format!("{base}/{name}");
+            let v = if value.is_empty() { "none" } else { value };
+            tokio::fs::write(&path, v).await.map_err(|e| {
+                PoolError::CommandFailed(format!("failed to set {name}: {e}"))
+            })
+        }
+
+        if let Some(ref v) = req.compression {
+            write_opt(&base, "compression", v).await?;
+        }
+        if let Some(ref v) = req.background_compression {
+            write_opt(&base, "background_compression", v).await?;
+        }
+        if let Some(ref v) = req.foreground_target {
+            write_opt(&base, "foreground_target", v).await?;
+        }
+        if let Some(ref v) = req.background_target {
+            write_opt(&base, "background_target", v).await?;
+        }
+        if let Some(ref v) = req.promote_target {
+            write_opt(&base, "promote_target", v).await?;
+        }
+        if let Some(ref v) = req.metadata_target {
+            write_opt(&base, "metadata_target", v).await?;
+        }
+        if let Some(ref v) = req.error_action {
+            write_opt(&base, "errors", v).await?;
+        }
+
+        self.get(&req.name).await
     }
 
     /// Unmount a pool

@@ -27,6 +27,9 @@
 	let showPartitions = $state(false);
 
 	let expandedPool: string | null = $state(null);
+	let editOptionsPool: string | null = $state(null);
+	let editCompression = $state('');
+	let editBgCompression = $state('');
 	let addDevicePool: string | null = $state(null);
 	let addDevicePath = $state('');
 	let addDeviceLabel = $state('');
@@ -162,6 +165,29 @@
 			() => client.call('pool.device.offline', { pool: poolName, device: devicePath }),
 			`Device ${devicePath} offline`
 		);
+		await refresh();
+	}
+
+	function openEditOptions(pool: Pool) {
+		if (editOptionsPool === pool.name) {
+			editOptionsPool = null;
+			return;
+		}
+		editOptionsPool = pool.name;
+		editCompression = pool.options.compression ?? '';
+		editBgCompression = pool.options.background_compression ?? '';
+	}
+
+	async function saveOptions(poolName: string) {
+		await withToast(
+			() => client.call('pool.options.update', {
+				name: poolName,
+				compression: editCompression || 'none',
+				background_compression: editBgCompression || 'none',
+			}),
+			`Options updated for "${poolName}"`
+		);
+		editOptionsPool = null;
 		await refresh();
 	}
 
@@ -337,6 +363,9 @@
 							{expandedPool === pool.name ? 'Hide Devices' : `Devices (${pool.devices.length})`}
 						</Button>
 						{#if pool.mounted}
+							<Button variant="secondary" size="sm" onclick={() => openEditOptions(pool)}>
+								{editOptionsPool === pool.name ? 'Hide Options' : 'Options'}
+							</Button>
 							<Button variant="secondary" size="sm" onclick={() => toggleHealth(pool.name)}>
 								{healthPool === pool.name ? 'Hide Health' : 'Health'}
 							</Button>
@@ -361,7 +390,37 @@
 					</div>
 				{/if}
 
-				{#if healthPool === pool.name}
+				{#if editOptionsPool === pool.name}
+				<div class="mt-4 border-t border-border pt-4">
+					<h4 class="mb-3 text-xs uppercase tracking-wide text-muted-foreground">Edit Options</h4>
+					<div class="flex flex-wrap gap-4">
+						<div>
+							<label for="edit-compression-{pool.name}" class="mb-1 block text-xs text-muted-foreground">Compression</label>
+							<select id="edit-compression-{pool.name}" bind:value={editCompression} class="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+								<option value="">None</option>
+								<option value="lz4">LZ4</option>
+								<option value="zstd">Zstd</option>
+								<option value="gzip">Gzip</option>
+							</select>
+						</div>
+						<div>
+							<label for="edit-bg-compression-{pool.name}" class="mb-1 block text-xs text-muted-foreground">Background Compression</label>
+							<select id="edit-bg-compression-{pool.name}" bind:value={editBgCompression} class="h-9 rounded-md border border-input bg-transparent px-3 text-sm">
+								<option value="">None</option>
+								<option value="lz4">LZ4</option>
+								<option value="zstd">Zstd</option>
+								<option value="gzip">Gzip</option>
+							</select>
+						</div>
+					</div>
+					<div class="mt-3 flex gap-2">
+						<Button size="sm" onclick={() => saveOptions(pool.name)}>Save</Button>
+						<Button variant="secondary" size="sm" onclick={() => editOptionsPool = null}>Cancel</Button>
+					</div>
+				</div>
+			{/if}
+
+			{#if healthPool === pool.name}
 					<div class="mt-4 border-t border-border pt-4">
 						{#if healthLoading}
 							<p class="text-sm text-muted-foreground">Loading health data...</p>

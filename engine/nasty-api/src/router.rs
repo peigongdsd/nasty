@@ -358,6 +358,13 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
         },
+        "pool.options.update" => match parse_params(req) {
+            Ok(p) => match state.pools.update_options(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
         "pool.device.add" => match parse_params(req) {
             Ok(p) => match state.pools.device_add(p).await {
                 Ok(v) => ok(req, v),
