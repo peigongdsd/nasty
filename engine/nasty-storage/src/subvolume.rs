@@ -605,18 +605,12 @@ impl SubvolumeService {
             return Err(SubvolumeError::AlreadyExists(req.name.clone()));
         }
 
-        let mut args = vec!["subvolume", "snapshot"];
-        if req.read_only != Some(false) {
-            args.push("-r");
-        }
-        args.push(&source_path);
-        args.push(&snap_path);
-
         info!(
             "Creating snapshot '{}' of subvolume '{}/{}'",
             req.name, req.pool, req.subvolume
         );
-        cmd::run_ok("bcachefs", &args)
+        // Snapshots are always read-only; use snapshot.clone for writable copies
+        cmd::run_ok("bcachefs", &["subvolume", "snapshot", "-r", &source_path, &snap_path])
             .await
             .map_err(SubvolumeError::CommandFailed)?;
 
@@ -625,7 +619,7 @@ impl SubvolumeService {
             subvolume: req.subvolume,
             pool: req.pool,
             path: snap_path,
-            read_only: req.read_only.unwrap_or(true),
+            read_only: true,
         })
     }
 
@@ -748,8 +742,8 @@ impl SubvolumeService {
             ));
         }
 
-        // Verify ownership of the parent subvolume
-        self.get(&req.pool, &req.subvolume, owner_filter).await?;
+        // Verify ownership of the parent subvolume and inherit its type
+        let parent = self.get(&req.pool, &req.subvolume, owner_filter).await?;
 
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let snap_path = snap_path(&mount_point, &req.subvolume, &req.snapshot);
@@ -771,15 +765,15 @@ impl SubvolumeService {
             .await
             .map_err(SubvolumeError::CommandFailed)?;
 
-        // Save metadata for the new subvolume (inherits Filesystem type; no volsize)
+        // Save metadata for the new subvolume, inheriting the parent's type and size
         let id = SubvolumeMeta::make_id(&req.pool, &req.new_name);
         let meta = SubvolumeMeta {
             id: id.clone(),
             name: req.new_name.clone(),
             pool: req.pool.clone(),
-            subvolume_type: SubvolumeType::Filesystem,
-            volsize_bytes: None,
-            compression: None,
+            subvolume_type: parent.subvolume_type,
+            volsize_bytes: parent.volsize_bytes,
+            compression: parent.compression,
             comments: None,
             owner: owner_filter.map(|s| s.to_string()),
         };

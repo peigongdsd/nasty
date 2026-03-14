@@ -30,7 +30,6 @@ async def test_snapshots(ctx: TestContext):
             "pool": ctx.pool,
             "subvolume": sv_name,
             "name": ro_snap,
-            "read_only": True,
         })
         ctx.record("snapshots: create read-only", True)
     except Exception as e:
@@ -51,40 +50,10 @@ async def test_snapshots(ctx: TestContext):
         else:
             ctx.record("snapshots: read_only flag true", False, "snapshot not found in list")
 
-    # ── 2. Writable snapshot ─────────────────────────────────────
-
-    rw_snap = f"snap-rw-{tag}"
-    info(f"Creating writable snapshot '{rw_snap}'...")
-    try:
-        snap_rw = await ctx.client.call("snapshot.create", {
-            "pool": ctx.pool,
-            "subvolume": sv_name,
-            "name": rw_snap,
-            "read_only": False,
-        })
-        ctx.record("snapshots: create writable", True)
-    except Exception as e:
-        ctx.record("snapshots: create writable", False, str(e))
-        snap_rw = None
-
-    if snap_rw is not None:
-        info("Verifying read_only=False in snapshot.list...")
-        all_snaps = await ctx.client.call("snapshot.list", {"pool": ctx.pool})
-        match_rw = next(
-            (s for s in all_snaps if s["name"] == rw_snap and s["subvolume"] == sv_name),
-            None,
-        )
-        if match_rw:
-            is_rw = match_rw.get("read_only") is False
-            ctx.record("snapshots: read_only flag false", is_rw,
-                       "" if is_rw else f"read_only={match_rw.get('read_only')!r}")
-        else:
-            ctx.record("snapshots: read_only flag false", False, "snapshot not found in list")
-
-    # ── 3. Clone snapshot → new writable subvolume ───────────────
+    # ── 2. Clone snapshot → new writable subvolume ───────────────
 
     clone_name = f"test-snap-clone-{tag}"
-    if snap is not None:  # need a snapshot to clone; use the ro one
+    if snap is not None:
         info(f"Cloning '{ro_snap}' → new subvolume '{clone_name}'...")
         try:
             cloned = await ctx.client.call("snapshot.clone", {
@@ -114,15 +83,14 @@ async def test_snapshots(ctx: TestContext):
     # ── Cleanup ──────────────────────────────────────────────────
 
     if not ctx.skip_delete:
-        for snap_name in [ro_snap, rw_snap]:
-            try:
-                await ctx.client.call("snapshot.delete", {
-                    "pool": ctx.pool,
-                    "subvolume": sv_name,
-                    "name": snap_name,
-                })
-            except Exception:
-                pass
+        try:
+            await ctx.client.call("snapshot.delete", {
+                "pool": ctx.pool,
+                "subvolume": sv_name,
+                "name": ro_snap,
+            })
+        except Exception:
+            pass
         try:
             await ctx.client.call("subvolume.delete", {"pool": ctx.pool, "name": sv_name})
         except Exception:
