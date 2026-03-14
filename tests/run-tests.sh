@@ -2,7 +2,7 @@
 #
 # NASty Integration Test Runner
 #
-# Runs test_shares.py inside the Colima Linux VM so that NFS/SMB/iSCSI/NVMe-oF
+# Runs the test suite inside the Colima Linux VM so that NFS/SMB/iSCSI/NVMe-oF
 # client operations work from macOS. The VM connects to the NASty appliance
 # over the network, exercising the full stack including networking.
 #
@@ -10,16 +10,15 @@
 #   - Colima installed and running: colima start
 #
 # Usage:
-#   ./tests/run-tests.sh --host <nasty-ip> [--pool <pool>] [--password <pw>]
-#   ./tests/run-tests.sh --host 10.10.10.46
-#   ./tests/run-tests.sh --host 10.10.10.46 --pool tank --skip-nvmeof
+#   ./tests/run-tests.sh --host <nasty-ip> [options]
+#   ./tests/run-tests.sh --host 10.10.10.50
+#   ./tests/run-tests.sh --host 10.10.10.50 --pool tank --skip-nvmeof
 #
-# All arguments after the script name are forwarded to test_shares.py.
+# All arguments after the script name are forwarded to run_tests.py.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEST_SCRIPT="$SCRIPT_DIR/test_shares.py"
 
 # ── Colours ─────────────────────────────────────────────────────
 GREEN="\033[92m"
@@ -27,7 +26,6 @@ RED="\033[91m"
 CYAN="\033[96m"
 YELLOW="\033[93m"
 RESET="\033[0m"
-BOLD="\033[1m"
 
 info()  { echo -e "${CYAN}→${RESET} $1"; }
 ok()    { echo -e "  ${GREEN}✓${RESET} $1"; }
@@ -46,8 +44,8 @@ if ! colima status &>/dev/null; then
     exit 1
 fi
 
-if [[ ! -f "$TEST_SCRIPT" ]]; then
-    fail "Test script not found: $TEST_SCRIPT"
+if [[ ! -f "$SCRIPT_DIR/run_tests.py" ]]; then
+    fail "run_tests.py not found in $SCRIPT_DIR"
     exit 1
 fi
 
@@ -55,7 +53,7 @@ fi
 if [[ "$*" != *"--host"* ]]; then
     echo -e "${RED}Usage:${RESET} $0 --host <nasty-ip> [options]"
     echo ""
-    echo "Options (forwarded to test_shares.py):"
+    echo "Options (forwarded to run_tests.py):"
     echo "  --host HOST        NASty appliance IP (required)"
     echo "  --port PORT        WebUI HTTPS port (default 443)"
     echo "  --password PW      Admin password (default 'admin')"
@@ -132,20 +130,26 @@ else
     '
 fi
 
-# ── Copy test script & run ───────────────────────────────────────
+# ── Copy test suite & run ────────────────────────────────────────
 
-info "Copying test script to VM..."
-# Use limactl to copy files into the VM (colima uses lima under the hood)
-COLIMA_INSTANCE="colima"
-cat "$TEST_SCRIPT" | colima ssh -- bash -c 'cat > /tmp/test_shares.py'
-ok "Test script copied"
+info "Copying test suite to VM..."
+tar -C "$SCRIPT_DIR" -czf - \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    --exclude='run-tests.sh' \
+    . | colima ssh -- bash -c '
+        rm -rf /tmp/nasty-tests
+        mkdir /tmp/nasty-tests
+        tar -C /tmp/nasty-tests -xzf -
+    '
+ok "Test suite copied"
 
 info "Running tests inside Colima VM..."
 echo ""
 
-# Run the test with all arguments forwarded
 # The VM needs root for mount/iscsi/nvme operations
-colima ssh -- sudo /tmp/nasty-test-venv/bin/python3 /tmp/test_shares.py "$@"
+colima ssh -- sudo bash -c \
+    "cd /tmp/nasty-tests && /tmp/nasty-test-venv/bin/python3 run_tests.py $*"
 EXIT_CODE=$?
 
 exit $EXIT_CODE
