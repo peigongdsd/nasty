@@ -57,8 +57,13 @@ Window.SetBackgroundBottomColor(0.07, 0.07, 0.09);
 
 logo_image = Image("nasty.png");
 logo_sprite = Sprite(logo_image);
-logo_sprite.SetX(Window.GetWidth()  / 2 - logo_image.GetWidth()  / 2);
-logo_sprite.SetY(Window.GetHeight() / 2 - logo_image.GetHeight() / 2);
+
+# Position the logo in the refresh callback so Window dimensions are known.
+fun refresh_callback() {
+    logo_sprite.SetX(Window.GetWidth()  / 2 - logo_image.GetWidth()  / 2);
+    logo_sprite.SetY(Window.GetHeight() / 2 - logo_image.GetHeight() / 2);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
 EOF
     '';
   };
