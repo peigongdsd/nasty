@@ -853,9 +853,14 @@ async fn bcachefs_list_all(mount_point: &str) -> BcachefsInfo {
     let mut snapshot_flags = std::collections::HashMap::new();
 
     for entry in entries {
-        if entry.snapshot_parent.is_some() {
-            let read_only = entry.flags.as_deref() == Some("ro");
-            snapshot_flags.insert(entry.path, read_only);
+        let is_ro = entry.flags.as_deref() == Some("ro");
+        if entry.snapshot_parent.is_some() && is_ro {
+            // Read-only snapshot
+            snapshot_flags.insert(entry.path, true);
+        } else if entry.snapshot_parent.is_some() {
+            // Writable clone (bcachefs subvolume snapshot without -r):
+            // has snapshot_parent but is not ro — treat as a regular subvolume
+            subvol_paths.insert(entry.path);
         } else {
             subvol_paths.insert(entry.path);
         }
