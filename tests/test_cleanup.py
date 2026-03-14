@@ -9,11 +9,15 @@ async def delete_leftovers(client, pool_name: str):
 
     subvolumes = await client.call("subvolume.list", {"pool": pool_name})
     test_svs = [sv for sv in subvolumes if sv["name"].startswith(TEST_PREFIX)]
-    if not test_svs:
-        info("No test subvolumes found.")
-        return
-
     test_paths = {sv["path"] for sv in test_svs}
+
+    def _share_name(proto, share):
+        """Return the human-readable name/identifier for a share object."""
+        if proto == "iSCSI":
+            return share.get("iqn", "").rsplit(":", 1)[-1]
+        if proto == "NVMe-oF":
+            return share.get("nqn", "").rsplit(":", 1)[-1]
+        return share.get("name", "")
 
     for proto, list_method, delete_method, path_key in [
         ("NFS",     "share.nfs.list",    "share.nfs.delete",    "path"),
@@ -26,10 +30,11 @@ async def delete_leftovers(client, pool_name: str):
             for share in shares:
                 match = (
                     share.get("path") in test_paths if path_key
-                    else share.get("name", "").startswith(TEST_PREFIX)
+                    else _share_name(proto, share).startswith(TEST_PREFIX)
                 )
                 if match:
-                    info(f"Deleting {proto} share '{share.get('name') or share['id']}'...")
+                    label = _share_name(proto, share) or share["id"]
+                    info(f"Deleting {proto} share '{label}'...")
                     await client.call(delete_method, {"id": share["id"]})
                     ok("Deleted")
         except Exception as e:

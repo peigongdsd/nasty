@@ -58,6 +58,8 @@ if [[ "$*" != *"--host"* ]]; then
     echo "  --port PORT        WebUI HTTPS port (default 443)"
     echo "  --password PW      Admin password (default 'admin')"
     echo "  --pool POOL        Pool name (auto-detected if omitted)"
+    echo "  --skip-subvolume   Skip subvolume lifecycle/properties/block tests"
+    echo "  --skip-snapshots   Skip snapshot read_only and clone tests"
     echo "  --skip-nfs         Skip NFS tests"
     echo "  --skip-smb         Skip SMB tests"
     echo "  --skip-iscsi       Skip iSCSI tests"
@@ -137,7 +139,7 @@ tar -C "$SCRIPT_DIR" -czf - \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     --exclude='run-tests.sh' \
-    . | colima ssh -- bash -c '
+    . | colima ssh -- sudo bash -c '
         rm -rf /tmp/nasty-tests
         mkdir /tmp/nasty-tests
         tar -C /tmp/nasty-tests -xzf -

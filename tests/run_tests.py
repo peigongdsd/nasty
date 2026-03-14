@@ -23,6 +23,8 @@ from test_nfs import test_nfs
 from test_smb import test_smb
 from test_iscsi import test_iscsi
 from test_nvmeof import test_nvmeof
+from test_subvolume import test_subvolume
+from test_snapshots import test_snapshots
 from test_cleanup import delete_leftovers
 
 
@@ -57,10 +59,12 @@ async def main():
     parser.add_argument("--port",        type=int, default=443, help="WebUI HTTPS port (default 443)")
     parser.add_argument("--password",    default="admin",     help="Admin password (default 'admin')")
     parser.add_argument("--pool",        default=None,        help="Pool name (auto-detected if omitted)")
-    parser.add_argument("--skip-nfs",    action="store_true")
-    parser.add_argument("--skip-smb",    action="store_true")
-    parser.add_argument("--skip-iscsi",  action="store_true")
-    parser.add_argument("--skip-nvmeof", action="store_true")
+    parser.add_argument("--skip-nfs",       action="store_true")
+    parser.add_argument("--skip-smb",       action="store_true")
+    parser.add_argument("--skip-iscsi",     action="store_true")
+    parser.add_argument("--skip-nvmeof",    action="store_true")
+    parser.add_argument("--skip-subvolume", action="store_true")
+    parser.add_argument("--skip-snapshots", action="store_true")
     parser.add_argument("--skip-delete", action="store_true",
                         help="Skip server-side deletions (leave subvolumes/shares behind)")
     parser.add_argument("--delete-only", action="store_true",
@@ -118,6 +122,12 @@ async def main():
 
     try:
         await test_setup(ctx)
+
+        if not args.skip_subvolume: await test_subvolume(ctx)
+        else:                       warn("Subvolume: skipped")
+
+        if not args.skip_snapshots: await test_snapshots(ctx)
+        else:                       warn("Snapshots: skipped")
 
         if not args.skip_nfs:    await test_nfs(ctx)
         else:                    warn("NFS: skipped")
