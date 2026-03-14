@@ -60,6 +60,7 @@ if [[ "$*" != *"--host"* ]]; then
     echo "  --pool POOL        Pool name (auto-detected if omitted)"
     echo "  --skip-subvolume   Skip subvolume lifecycle/properties/block tests"
     echo "  --skip-snapshots   Skip snapshot read_only and clone tests"
+    echo "  --skip-storage     Skip compression and snapshot integrity tests"
     echo "  --skip-nfs         Skip NFS tests"
     echo "  --skip-smb         Skip SMB tests"
     echo "  --skip-iscsi       Skip iSCSI tests"

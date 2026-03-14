@@ -25,6 +25,7 @@ from test_iscsi import test_iscsi
 from test_nvmeof import test_nvmeof
 from test_subvolume import test_subvolume
 from test_snapshots import test_snapshots
+from test_storage import test_storage
 from test_cleanup import delete_leftovers
 
 
@@ -65,6 +66,7 @@ async def main():
     parser.add_argument("--skip-nvmeof",    action="store_true")
     parser.add_argument("--skip-subvolume", action="store_true")
     parser.add_argument("--skip-snapshots", action="store_true")
+    parser.add_argument("--skip-storage",   action="store_true")
     parser.add_argument("--skip-delete", action="store_true",
                         help="Skip server-side deletions (leave subvolumes/shares behind)")
     parser.add_argument("--delete-only", action="store_true",
@@ -128,6 +130,9 @@ async def main():
 
         if not args.skip_snapshots: await test_snapshots(ctx)
         else:                       warn("Snapshots: skipped")
+
+        if not args.skip_storage:   await test_storage(ctx)
+        else:                       warn("Storage: skipped")
 
         if not args.skip_nfs:    await test_nfs(ctx)
         else:                    warn("NFS: skipped")
