@@ -17,9 +17,14 @@ async def test_smb(ctx: TestContext):
     sv_names     = [f"test-smb{i}-{ctx.tag}"        for i in range(1, N + 1)]
     share_names  = [f"tsmb{i}{ctx.tag}"              for i in range(1, N + 1)]
     mount_points = [f"/tmp/nasty-test-smb{i}-{ctx.tag}" for i in range(1, N + 1)]
-    share_ids    = [None] * N
-    svs          = [None] * N
-    mounted      = [False] * N
+    share_ids        = [None] * N
+    svs              = [None] * N
+    mounted          = [False] * N
+    clone_names      = [f"test-smb{i+1}-clone-{ctx.tag}" for i in range(N)]
+    clone_share_names = [f"tsmb{i+1}clone{ctx.tag}" for i in range(N)]
+    clone_share_ids  = [None] * N
+    clone_mounts     = [f"/tmp/nasty-test-smb{i+1}-clone-{ctx.tag}" for i in range(N)]
+    clone_mounted    = [False] * N
 
     try:
         # ── Create subvolumes + shares ────────────────────────────
@@ -106,6 +111,62 @@ async def test_smb(ctx: TestContext):
                 ctx.record(f"SMB[{i+1}]: snapshot {j+1} listed", found,
                            "" if found else f"'{snap_names[i][j]}' not found")
 
+        # ── Clone ─────────────────────────────────────────────────
+        await asyncio.sleep(1)
+
+        for i in range(N):
+            label = f"SMB[{i+1}] clone"
+            info(f"Cloning '{snap_names[i][0]}' → '{clone_names[i]}'...")
+            try:
+                clone = await ctx.client.call("snapshot.clone", {
+                    "pool": ctx.pool,
+                    "subvolume": sv_names[i],
+                    "snapshot": snap_names[i][0],
+                    "new_name": clone_names[i],
+                })
+                ctx.record(f"{label}: created", True)
+            except Exception as e:
+                ctx.record(f"{label}: created", False, str(e))
+                continue
+
+            try:
+                share = await ctx.client.call("share.smb.create", {
+                    "name": clone_share_names[i],
+                    "path": clone["path"],
+                    "guest_ok": True,
+                    "browseable": True,
+                })
+                clone_share_ids[i] = share["id"]
+            except Exception as e:
+                ctx.record(f"{label}: read/verify", False, f"share create: {e}")
+                continue
+
+        await asyncio.sleep(3)
+
+        for i in range(N):
+            if clone_share_ids[i] is None:
+                continue
+            label = f"SMB[{i+1}] clone"
+            os.makedirs(clone_mounts[i], exist_ok=True)
+            r = run(
+                ["mount", "-t", "cifs", f"//{ctx.host}/{clone_share_names[i]}", clone_mounts[i],
+                 "-o", "guest,vers=3.0"],
+                check=False,
+            )
+            if r.returncode != 0:
+                ctx.record(f"{label}: read/verify", False, f"mount: {r.stderr.strip()}")
+                continue
+            clone_mounted[i] = True
+
+            expected = f"nasty-smb-test{i+1}-{ctx.tag}"
+            try:
+                with open(os.path.join(clone_mounts[i], "testfile.txt")) as f:
+                    got = f.read()
+                ctx.record(f"{label}: read/verify", got == expected,
+                           "" if got == expected else f"expected '{expected}', got '{got}'")
+            except Exception as e:
+                ctx.record(f"{label}: read/verify", False, str(e))
+
         if not ctx.skip_delete:
             for i in range(N):
                 for j in range(S):
@@ -121,11 +182,24 @@ async def test_smb(ctx: TestContext):
         ctx.record("SMB: test", False, str(e))
     finally:
         for i in range(N):
+            if clone_mounted[i]:
+                run(["umount", clone_mounts[i]], check=False)
+            if os.path.isdir(clone_mounts[i]):
+                os.rmdir(clone_mounts[i])
             if mounted[i]:
                 run(["umount", mount_points[i]], check=False)
             if os.path.isdir(mount_points[i]):
                 os.rmdir(mount_points[i])
             if not ctx.skip_delete:
+                if clone_share_ids[i]:
+                    try:
+                        await ctx.client.call("share.smb.delete", {"id": clone_share_ids[i]})
+                    except Exception:
+                        pass
+                try:
+                    await ctx.client.call("subvolume.delete", {"pool": ctx.pool, "name": clone_names[i]})
+                except Exception:
+                    pass
                 if share_ids[i]:
                     try:
                         await ctx.client.call("share.smb.delete", {"id": share_ids[i]})
