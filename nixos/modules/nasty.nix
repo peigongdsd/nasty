@@ -52,15 +52,13 @@ ScriptFile=@PLYMOUTH_THEME_PATH@/nasty.script
 EOF
 
       cat > "$themeDir/nasty.script" << 'EOF'
-bg_image = Rectangle(Window.GetWidth(), Window.GetHeight(), 0.07, 0.07, 0.09, 1.0);
-bg_sprite = Sprite();
-bg_sprite.SetImage(bg_image);
-bg_sprite.SetZ(-100);
+Window.SetBackgroundTopColor(0.07, 0.07, 0.09);
+Window.SetBackgroundBottomColor(0.07, 0.07, 0.09);
 
-logo.image = Image("nasty.png");
-logo.sprite = Sprite(logo.image);
-logo.sprite.SetX(Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2);
-logo.sprite.SetY(Window.GetHeight() / 2 - logo.image.GetHeight() / 2);
+logo_image = Image("nasty.png");
+logo_sprite = Sprite(logo_image);
+logo_sprite.SetX(Window.GetWidth()  / 2 - logo_image.GetWidth()  / 2);
+logo_sprite.SetY(Window.GetHeight() / 2 - logo_image.GetHeight() / 2);
 EOF
     '';
   };
@@ -163,11 +161,8 @@ in {
     # intercept boot messages. Without this Plymouth starts after systemd
     # is already printing to the console.
     boot.initrd.systemd.enable = true;
-    # Load GPU drivers early so Plymouth has a framebuffer to draw on.
-    # Only virtio_gpu here so it claims card0 (Plymouth's default device).
-    # simpledrm is intentionally omitted — when present it consumes card0
-    # even without a usable EFI framebuffer, pushing virtio_gpu to card1.
-    boot.initrd.kernelModules = [ "virtio_gpu" ];
+    # No extra GPU modules needed — the Bochs VGA (QEMU 1234:1111) is
+    # handled by a built-in kernel driver, and /dev/fb0 is created early.
 
     # Enable flakes for nixos-rebuild --flake
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
