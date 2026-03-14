@@ -90,6 +90,26 @@ export interface BlockDevice {
 	mount_point: string | null;
 	fs_type: string | null;
 	in_use: boolean;
+	rotational: boolean;
+	/** "nvme" | "ssd" | "hdd" */
+	device_class: string;
+}
+
+export type TieringProfileId = 'single' | 'write_cache' | 'full_tiering';
+
+export interface TieringProfile {
+	id: TieringProfileId;
+	name: string;
+	tagline: string;
+	description: string;
+	available: boolean;
+	recommended: boolean;
+	foreground_target: string | null;
+	metadata_target: string | null;
+	background_target: string | null;
+	promote_target: string | null;
+	/** Maps device path → label to assign */
+	device_labels: Record<string, string>;
 }
 
 export type SubvolumeType = 'filesystem' | 'block';

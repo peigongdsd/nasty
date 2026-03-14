@@ -94,6 +94,11 @@ pub struct CreatePoolRequest {
     pub encryption: Option<bool>,
     /// Filesystem-wide label (used as default when no per-device labels set).
     pub label: Option<String>,
+    /// Tiering targets set at format time.
+    pub foreground_target: Option<String>,
+    pub metadata_target: Option<String>,
+    pub background_target: Option<String>,
+    pub promote_target: Option<String>,
 }
 
 fn default_replicas() -> u32 {
@@ -345,6 +350,19 @@ impl PoolService {
             args.push("--encrypted".to_string());
         }
 
+        if let Some(ref t) = req.foreground_target {
+            args.push(format!("--foreground_target={t}"));
+        }
+        if let Some(ref t) = req.metadata_target {
+            args.push(format!("--metadata_target={t}"));
+        }
+        if let Some(ref t) = req.background_target {
+            args.push(format!("--background_target={t}"));
+        }
+        if let Some(ref t) = req.promote_target {
+            args.push(format!("--promote_target={t}"));
+        }
+
         // Per-device options go immediately before each device path
         let default_label = req.label.as_deref().unwrap_or(&req.name);
         for dev in &req.devices {
@@ -538,7 +556,7 @@ impl PoolService {
             .flat_map(|p| p.devices.iter().map(|d| d.path.clone()))
             .collect();
 
-        let output = cmd::run_ok("lsblk", &["-Jbno", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"])
+        let output = cmd::run_ok("lsblk", &["-Jbno", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,ROTA"])
             .await
             .map_err(PoolError::CommandFailed)?;
 
@@ -547,6 +565,17 @@ impl PoolService {
 
         let mut devices = Vec::new();
         if let Some(blockdevices) = parsed.get("blockdevices").and_then(|v| v.as_array()) {
+            fn classify(name: &str, rota: bool) -> (bool, String) {
+                if name.starts_with("nvme") {
+                    return (false, "nvme".to_string());
+                }
+                if rota {
+                    (true, "hdd".to_string())
+                } else {
+                    (false, "ssd".to_string())
+                }
+            }
+
             fn collect_devices(
                 devs: &[serde_json::Value],
                 pool_devices: &std::collections::HashSet<String>,
@@ -561,6 +590,14 @@ impl PoolService {
                         .unwrap_or(0);
                     let mountpoint = dev.get("mountpoint").and_then(|v| v.as_str()).map(String::from);
                     let fstype = dev.get("fstype").and_then(|v| v.as_str()).map(String::from);
+                    let rota = dev.get("rota")
+                        .and_then(|v| {
+                            v.as_bool()
+                                .or_else(|| v.as_str().map(|s| s == "1"))
+                                .or_else(|| v.as_u64().map(|n| n == 1))
+                        })
+                        .unwrap_or(false);
+                    let (rotational, device_class) = classify(name, rota);
 
                     if dev_type == "disk" || dev_type == "part" {
                         let path = format!("/dev/{name}");
@@ -573,6 +610,8 @@ impl PoolService {
                             mount_point: mountpoint,
                             fs_type: fstype,
                             in_use: has_mount || in_pool,
+                            rotational,
+                            device_class,
                         });
                     }
 
@@ -906,6 +945,10 @@ pub struct BlockDevice {
     pub mount_point: Option<String>,
     pub fs_type: Option<String>,
     pub in_use: bool,
+    /// Whether the underlying disk spins (false for NVMe/SSD, true for HDD).
+    pub rotational: bool,
+    /// Device speed class: "nvme", "ssd", or "hdd".
+    pub device_class: String,
 }
 
 /// Read per-device info (labels, durability) for a mounted bcachefs filesystem.

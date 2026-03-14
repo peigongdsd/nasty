@@ -146,6 +146,24 @@ in
 
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
+
+      # Strip any /mnt/nasty/ pool mount entries from the generated config.
+      # Pool mounts are managed at runtime by the engine; if left in
+      # hardware-configuration.nix they will block boot after pool destruction.
+      awk '
+        /fileSystems\."\/mnt\/nasty\// { skip=1; depth=0 }
+        skip {
+          for (i=1; i<=length($0); i++) {
+            c = substr($0, i, 1)
+            if (c == "{") depth++
+            if (c == "}") { depth--; if (depth <= 0) { skip=0; break } }
+          }
+          next
+        }
+        !skip
+      ' /tmp/hw-config/hardware-configuration.nix > /tmp/hw-clean.nix \
+        && mv /tmp/hw-clean.nix /tmp/hw-config/hardware-configuration.nix
+
       cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/nixos/hardware-configuration.nix
 
       # Flakes require a git repo to resolve paths

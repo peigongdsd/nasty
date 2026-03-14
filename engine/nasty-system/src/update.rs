@@ -98,6 +98,11 @@ impl UpdateService {
             return Err(UpdateError::AlreadyRunning);
         }
 
+        // Sanitize hardware-configuration.nix before updating.
+        // If the user ever ran nixos-generate-config while pools were mounted,
+        // those fileSystems entries would block boot after pool destruction.
+        sanitize_hardware_config().await;
+
         // Clean up any previous update unit
         let _ = tokio::process::Command::new("systemctl")
             .args(["reset-failed", UPDATE_UNIT])
@@ -351,6 +356,56 @@ echo "==> Update complete!"
             reboot_required: is_reboot_required().await,
         }
     }
+}
+
+/// Remove any `fileSystems."/mnt/nasty/..."` blocks from hardware-configuration.nix.
+///
+/// Pool mounts are managed at runtime by the engine. If a user ran
+/// `nixos-generate-config` while pools were mounted, those entries end up in
+/// hardware-configuration.nix and will block boot after the pool is destroyed
+/// (systemd waits forever for a device UUID that no longer exists).
+async fn sanitize_hardware_config() {
+    let path = format!("{LOCAL_REPO}/nixos/hardware-configuration.nix");
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let sanitized = strip_pool_mounts(&content);
+    if sanitized != content {
+        info!("Removed pool mount entries from hardware-configuration.nix to prevent boot failure");
+        let _ = tokio::fs::write(&path, sanitized).await;
+    }
+}
+
+fn strip_pool_mounts(content: &str) -> String {
+    let mut result = String::with_capacity(content.len());
+    let mut skip = false;
+    let mut depth = 0i32;
+    for line in content.lines() {
+        if !skip && line.trim_start().starts_with("fileSystems.\"/mnt/nasty/") {
+            skip = true;
+            depth = 0;
+        }
+        if skip {
+            for c in line.chars() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth <= 0 {
+                            skip = false;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
 }
 
 /// TODO: Remove once repo is public — only needed for private repo access.

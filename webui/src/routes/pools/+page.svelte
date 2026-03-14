@@ -3,25 +3,22 @@
 	import { getClient } from '$lib/client';
 	import { formatBytes, formatPercent } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
-	import type { Pool, BlockDevice, DeviceState, FsUsage, ScrubStatus, ReconcileStatus } from '$lib/types';
+	import type { Pool, BlockDevice, DeviceState, FsUsage, ScrubStatus, ReconcileStatus, TieringProfile, TieringProfileId } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 
-	interface SelectedDevice {
-		path: string;
-		label: string;
-	}
-
 	let pools: Pool[] = $state([]);
 	let devices: BlockDevice[] = $state([]);
-	let showCreate = $state(false);
+	let wizardStep: 0 | 1 | 2 | 3 = $state(0); // 0=hidden, 1=name+devices, 2=profile, 3=review
 	let loading = $state(true);
 
+	// Wizard state
 	let newName = $state('tank');
-	let selectedDevices: SelectedDevice[] = $state([]);
+	let selectedPaths: string[] = $state([]);
+	let wizardProfile: TieringProfileId = $state('single');
 	let replicas = $state(1);
 	let compression = $state('');
 	let showPartitions = $state(false);
@@ -63,26 +60,142 @@
 		});
 	}
 
+	// ── Tiering profile logic ────────────────────────────────────
+
+	function selectedDeviceObjects(): BlockDevice[] {
+		return selectedPaths
+			.map(p => devices.find(d => d.path === p))
+			.filter(Boolean) as BlockDevice[];
+	}
+
+	function buildProfiles(): TieringProfile[] {
+		const sel = selectedDeviceObjects();
+		const hasNvme = sel.some(d => d.device_class === 'nvme');
+		const hasSsd  = sel.some(d => d.device_class === 'ssd');
+		const hasHdd  = sel.some(d => d.device_class === 'hdd');
+		const hasFast = hasNvme || hasSsd;
+		const hasSlow = hasHdd;
+		const has3Tiers = hasNvme && (hasSsd || hasHdd);
+
+		// Single label for single-tier: use pool name as group
+		const singleLabels: Record<string, string> = {};
+		sel.forEach(d => { singleLabels[d.path] = newName; });
+
+		// Write-cache labels: fast = nvme/ssd → "fast", hdd → "slow"
+		const wcLabels: Record<string, string> = {};
+		sel.forEach(d => { wcLabels[d.path] = d.device_class === 'hdd' ? 'slow' : 'fast'; });
+
+		// Full-tier labels by device class
+		const ftLabels: Record<string, string> = {};
+		sel.forEach(d => { ftLabels[d.path] = d.device_class; });
+
+		// Full-tier targets
+		let ftFg: string | null = null;
+		let ftMeta: string | null = null;
+		let ftBg: string | null = null;
+		let ftPromote: string | null = null;
+		if (hasNvme) {
+			ftFg = 'nvme'; ftMeta = 'nvme';
+			if (hasHdd) { ftBg = 'hdd'; if (hasSsd) ftPromote = 'ssd'; }
+			else if (hasSsd) { ftBg = 'ssd'; }
+		}
+
+		const recommended = hasNvme && (hasSsd || hasHdd) ? 'full_tiering'
+			: hasFast && hasSlow ? 'write_cache'
+			: 'single';
+
+		return [
+			{
+				id: 'single',
+				name: 'Single Tier',
+				tagline: 'Simple — all devices in one pool',
+				description: 'All devices are treated as equal peers. bcachefs stripes data across them based on capacity. No performance tiers.',
+				available: true,
+				recommended: recommended === 'single',
+				foreground_target: null,
+				metadata_target: null,
+				background_target: null,
+				promote_target: null,
+				device_labels: singleLabels,
+			},
+			{
+				id: 'write_cache',
+				name: 'Write Cache + Cold Storage',
+				tagline: 'Writes land on fast devices, cold data migrates to slow',
+				description: 'Writes go to the fast tier first (NVMe/SSD). Over time, background I/O migrates cold data to the slow tier (HDD), freeing fast space for new writes.',
+				available: hasFast && hasSlow,
+				recommended: recommended === 'write_cache',
+				foreground_target: 'fast',
+				metadata_target: 'fast',
+				background_target: 'slow',
+				promote_target: null,
+				device_labels: wcLabels,
+			},
+			{
+				id: 'full_tiering',
+				name: 'Full Tiering',
+				tagline: 'NVMe writes, SSD read cache, HDD cold storage',
+				description: `NVMe handles all writes and metadata. Hot reads are served from the SSD read cache. Cold data moves to HDD in the background. Maximum performance with large capacity.${!has3Tiers ? ' (You can add SSD devices later to enable the read-cache tier.)' : ''}`,
+				available: has3Tiers,
+				recommended: recommended === 'full_tiering',
+				foreground_target: ftFg,
+				metadata_target: ftMeta,
+				background_target: ftBg,
+				promote_target: ftPromote,
+				device_labels: ftLabels,
+			},
+		];
+	}
+
+	function activeProfile(): TieringProfile {
+		return buildProfiles().find(p => p.id === wizardProfile) ?? buildProfiles()[0];
+	}
+
 	async function createPool() {
-		if (!newName || selectedDevices.length === 0) return;
+		if (!newName || selectedPaths.length === 0) return;
+		const profile = activeProfile();
 		const ok = await withToast(
 			() => client.call('pool.create', {
 				name: newName,
-				devices: selectedDevices.map(d => ({
-					path: d.path,
-					label: d.label || undefined,
+				devices: selectedPaths.map(path => ({
+					path,
+					label: profile.device_labels[path] || undefined,
 				})),
 				replicas,
 				compression: compression || undefined,
+				foreground_target: profile.foreground_target || undefined,
+				metadata_target: profile.metadata_target || undefined,
+				background_target: profile.background_target || undefined,
+				promote_target: profile.promote_target || undefined,
 			}),
 			`Pool "${newName}" created`
 		);
 		if (ok !== undefined) {
-			showCreate = false;
+			wizardStep = 0;
 			newName = 'tank';
-			selectedDevices = [];
+			selectedPaths = [];
+			wizardProfile = 'single';
 			await refresh();
 		}
+	}
+
+	function openWizard() {
+		newName = 'tank';
+		selectedPaths = [];
+		wizardProfile = 'single';
+		replicas = 1;
+		compression = '';
+		showPartitions = false;
+		wizardStep = 1;
+	}
+
+	function wizardNext() {
+		if (wizardStep === 1) {
+			// Auto-select recommended profile
+			const rec = buildProfiles().find(p => p.recommended && p.available);
+			if (rec) wizardProfile = rec.id;
+		}
+		wizardStep = (wizardStep + 1) as 1 | 2 | 3;
 	}
 
 	async function destroyPool(name: string) {
@@ -225,25 +338,13 @@
 		await refreshHealth(poolName);
 	}
 
-	function isSelected(path: string): boolean {
-		return selectedDevices.some(d => d.path === path);
-	}
-
 	function toggleDevice(path: string) {
-		if (isSelected(path)) {
-			selectedDevices = selectedDevices.filter(d => d.path !== path);
+		if (selectedPaths.includes(path)) {
+			selectedPaths = selectedPaths.filter(p => p !== path);
 		} else {
-			selectedDevices = [...selectedDevices, { path, label: '' }];
+			selectedPaths = [...selectedPaths, path];
 		}
-		if (selectedDevices.length <= 1) {
-			replicas = 1;
-		}
-	}
-
-	function setDeviceLabel(path: string, label: string) {
-		selectedDevices = selectedDevices.map(d =>
-			d.path === path ? { ...d, label } : d
-		);
+		if (selectedPaths.length <= 1) replicas = 1;
 	}
 
 	function availableDevices(): BlockDevice[] {
@@ -263,79 +364,250 @@
 			default: return 'bg-secondary text-muted-foreground';
 		}
 	}
+
+	function classColor(cls: string): string {
+		switch (cls) {
+			case 'nvme': return 'bg-violet-950 text-violet-300';
+			case 'ssd':  return 'bg-blue-950 text-blue-300';
+			case 'hdd':  return 'bg-amber-950 text-amber-300';
+			default:     return 'bg-secondary text-muted-foreground';
+		}
+	}
 </script>
 
 <h1 class="mb-4 text-2xl font-bold">Storage Pools</h1>
 
 <div class="mb-4">
-	<Button onclick={() => showCreate = !showCreate}>
-		{showCreate ? 'Cancel' : 'Create Pool'}
+	<Button onclick={() => wizardStep === 0 ? openWizard() : (wizardStep = 0)}>
+		{wizardStep !== 0 ? 'Cancel' : 'Create Pool'}
 	</Button>
 </div>
 
-{#if showCreate}
-	<Card class="mb-6 max-w-lg">
+{#if wizardStep !== 0}
+	<Card class="mb-6 max-w-2xl">
 		<CardContent class="pt-6">
-			<h3 class="mb-4 text-lg font-semibold">Create Pool</h3>
-			<div class="mb-4">
-				<Label for="pool-name">Name</Label>
-				<Input id="pool-name" bind:value={newName} class="mt-1" />
-			</div>
-			<div class="mb-4">
-				<div class="mb-1 flex items-center justify-between">
-					<Label>Devices</Label>
-					<label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-						<input type="checkbox" bind:checked={showPartitions} class="h-3.5 w-3.5" />
-						Show partitions
-					</label>
-				</div>
-				{#if availableDevices().length === 0}
-					<p class="text-sm text-muted-foreground">No available devices</p>
-				{:else}
-					{#each availableDevices() as dev}
-						<div class="mb-1">
-							<label class="flex cursor-pointer items-center gap-2 py-1 text-sm">
-								<input type="checkbox" checked={isSelected(dev.path)} onchange={() => toggleDevice(dev.path)} class="h-4 w-4" />
-								{dev.path} ({formatBytes(dev.size_bytes)}) {dev.dev_type === 'part' ? '[part]' : ''} {dev.fs_type ? `[${dev.fs_type}]` : ''}
-							</label>
-							{#if isSelected(dev.path)}
-								<Input
-									class="ml-6 text-xs"
-									placeholder="label (e.g. ssd.fast)"
-									value={selectedDevices.find(d => d.path === dev.path)?.label ?? ''}
-									oninput={(e) => setDeviceLabel(dev.path, (e.target as HTMLInputElement).value)}
-								/>
-							{/if}
+			<!-- Step indicator -->
+			<div class="mb-6 flex items-center gap-0">
+				{#each [['1', 'Devices'], ['2', 'Tiering'], ['3', 'Review']] as [num, label], i}
+					<div class="flex items-center">
+						<div class="flex items-center gap-2">
+							<div class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold
+								{wizardStep > i + 1 ? 'bg-primary text-primary-foreground' :
+								 wizardStep === i + 1 ? 'bg-primary text-primary-foreground' :
+								 'bg-secondary text-muted-foreground'}">
+								{num}
+							</div>
+							<span class="text-xs {wizardStep === i + 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}">{label}</span>
 						</div>
-					{/each}
-				{/if}
-				{#if selectedDevices.length > 1}
-					<span class="mt-1 block text-xs text-muted-foreground">Labels enable tiered storage (e.g. "ssd" and "hdd" groups)</span>
-				{/if}
+						{#if i < 2}
+							<div class="mx-3 h-px w-8 bg-border"></div>
+						{/if}
+					</div>
+				{/each}
 			</div>
-			<div class="mb-4 flex gap-4">
-				<div class="flex-1">
-					<Label for="replicas">Replicas</Label>
-					<select id="replicas" bind:value={replicas} disabled={selectedDevices.length <= 1} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-						<option value={1}>1 (no redundancy)</option>
-						<option value={2}>2 (mirrored)</option>
-						<option value={3}>3</option>
-					</select>
-					{#if selectedDevices.length <= 1}
-						<span class="text-xs text-muted-foreground">Requires multiple devices</span>
+
+			<!-- Step 1: Name + Devices -->
+			{#if wizardStep === 1}
+				<div class="mb-4">
+					<Label for="pool-name">Pool Name</Label>
+					<Input id="pool-name" bind:value={newName} class="mt-1 max-w-xs" />
+				</div>
+				<div class="mb-4">
+					<div class="mb-2 flex items-center justify-between">
+						<Label>Select Devices</Label>
+						<label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+							<input type="checkbox" bind:checked={showPartitions} class="h-3.5 w-3.5" />
+							Show partitions
+						</label>
+					</div>
+					{#if availableDevices().length === 0}
+						<p class="text-sm text-muted-foreground">No available devices</p>
+					{:else}
+						<div class="space-y-1.5">
+							{#each availableDevices() as dev}
+								<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm
+									{selectedPaths.includes(dev.path) ? 'border-primary bg-primary/5' : 'hover:bg-secondary/50'}">
+									<input type="checkbox" checked={selectedPaths.includes(dev.path)}
+										onchange={() => toggleDevice(dev.path)} class="h-4 w-4 shrink-0" />
+									<span class="font-mono text-xs shrink-0">{dev.path}</span>
+									<span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">
+										{dev.device_class}
+									</span>
+									<span class="text-muted-foreground">{formatBytes(dev.size_bytes)}</span>
+									{#if dev.fs_type}
+										<span class="text-xs text-muted-foreground">[{dev.fs_type}]</span>
+									{/if}
+								</label>
+							{/each}
+						</div>
 					{/if}
 				</div>
-				<div class="flex-1">
-					<Label for="compression">Compression</Label>
-					<select id="compression" bind:value={compression} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-						<option value="">None</option>
-						<option value="lz4">LZ4</option>
-						<option value="zstd">Zstd</option>
-						<option value="gzip">Gzip</option>
-					</select>
+				<div class="flex gap-2">
+					<Button onclick={wizardNext} disabled={!newName || selectedPaths.length === 0}>
+						Next: Choose Tiering →
+					</Button>
 				</div>
-			</div>
-			<Button onclick={createPool} disabled={!newName || selectedDevices.length === 0}>Create</Button>
+
+			<!-- Step 2: Tiering Profile -->
+			{:else if wizardStep === 2}
+				{@const profiles = buildProfiles()}
+				<div class="mb-4 space-y-3">
+					{#each profiles as profile}
+						<button
+							disabled={!profile.available}
+							onclick={() => { if (profile.available) wizardProfile = profile.id; }}
+							class="w-full rounded-lg border-2 px-4 py-3 text-left transition-colors
+								{!profile.available ? 'cursor-not-allowed border-border opacity-40' :
+								 wizardProfile === profile.id ? 'border-primary bg-primary/5' :
+								 'border-border hover:border-primary/50 hover:bg-secondary/30'}">
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-2">
+									<div class="h-4 w-4 rounded-full border-2 flex items-center justify-center
+										{wizardProfile === profile.id && profile.available ? 'border-primary' : 'border-muted-foreground'}">
+										{#if wizardProfile === profile.id && profile.available}
+											<div class="h-2 w-2 rounded-full bg-primary"></div>
+										{/if}
+									</div>
+									<span class="font-semibold text-sm">{profile.name}</span>
+									{#if profile.recommended && profile.available}
+										<span class="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold text-primary uppercase">recommended</span>
+									{/if}
+								</div>
+							</div>
+							<p class="mt-1 ml-6 text-xs text-muted-foreground">{profile.tagline}</p>
+							{#if wizardProfile === profile.id && profile.available}
+								<p class="mt-2 ml-6 text-xs text-foreground/80">{profile.description}</p>
+								<!-- Tier diagram -->
+								<div class="mt-3 ml-6">
+									{#if profile.id === 'single'}
+										<div class="flex flex-wrap gap-2">
+											{#each selectedDeviceObjects() as dev}
+												<div class="flex items-center gap-1.5 rounded border border-border px-2 py-1">
+													<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
+													<span class="font-mono text-[10px] text-muted-foreground">{dev.path}</span>
+												</div>
+											{/each}
+										</div>
+									{:else if profile.id === 'write_cache'}
+										<div class="flex items-start gap-6">
+											<div>
+												<div class="mb-1 text-[10px] text-muted-foreground uppercase tracking-wide">Fast (writes + metadata)</div>
+												<div class="flex flex-col gap-1">
+													{#each selectedDeviceObjects().filter(d => d.device_class !== 'hdd') as dev}
+														<div class="flex items-center gap-1.5 rounded border border-blue-800/50 bg-blue-950/30 px-2 py-1">
+															<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
+															<span class="font-mono text-[10px] text-muted-foreground">{dev.path}</span>
+														</div>
+													{/each}
+												</div>
+											</div>
+											<div class="mt-4 text-muted-foreground">→</div>
+											<div>
+												<div class="mb-1 text-[10px] text-muted-foreground uppercase tracking-wide">Slow (cold data)</div>
+												<div class="flex flex-col gap-1">
+													{#each selectedDeviceObjects().filter(d => d.device_class === 'hdd') as dev}
+														<div class="flex items-center gap-1.5 rounded border border-amber-800/50 bg-amber-950/30 px-2 py-1">
+															<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
+															<span class="font-mono text-[10px] text-muted-foreground">{dev.path}</span>
+														</div>
+													{/each}
+												</div>
+											</div>
+										</div>
+									{:else if profile.id === 'full_tiering'}
+										<div class="flex items-start gap-4">
+											{#each [['nvme', 'Writes + Metadata', 'border-violet-800/50 bg-violet-950/30'],
+											         ['ssd', 'Read Cache', 'border-blue-800/50 bg-blue-950/30'],
+											         ['hdd', 'Cold Storage', 'border-amber-800/50 bg-amber-950/30']] as [cls, role, colors]}
+												{@const devs = selectedDeviceObjects().filter(d => d.device_class === cls)}
+												{#if devs.length > 0}
+													<div>
+														<div class="mb-1 text-[10px] text-muted-foreground uppercase tracking-wide">{role}</div>
+														<div class="flex flex-col gap-1">
+															{#each devs as dev}
+																<div class="flex items-center gap-1.5 rounded border {colors} px-2 py-1">
+																	<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(cls)}">{cls}</span>
+																	<span class="font-mono text-[10px] text-muted-foreground">{dev.path}</span>
+																</div>
+															{/each}
+														</div>
+													</div>
+												{/if}
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</button>
+					{/each}
+				</div>
+				<div class="flex gap-2">
+					<Button variant="secondary" onclick={() => wizardStep = 1}>← Back</Button>
+					<Button onclick={wizardNext}>Next: Review →</Button>
+				</div>
+
+			<!-- Step 3: Review + Options -->
+			{:else if wizardStep === 3}
+				{@const profile = activeProfile()}
+				<div class="mb-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+					<span class="text-muted-foreground">Name</span>
+					<span class="font-mono">{newName}</span>
+					<span class="text-muted-foreground">Devices</span>
+					<div class="flex flex-wrap gap-1.5">
+						{#each selectedDeviceObjects() as dev}
+							<span class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs">
+								<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
+								<span class="font-mono">{dev.path}</span>
+								<span class="text-muted-foreground">→ {profile.device_labels[dev.path] ?? newName}</span>
+							</span>
+						{/each}
+					</div>
+					<span class="text-muted-foreground">Tiering</span>
+					<span>{profile.name}</span>
+					{#if profile.foreground_target}
+						<span class="text-muted-foreground">FG Target</span><span>{profile.foreground_target}</span>
+					{/if}
+					{#if profile.metadata_target}
+						<span class="text-muted-foreground">Meta Target</span><span>{profile.metadata_target}</span>
+					{/if}
+					{#if profile.background_target}
+						<span class="text-muted-foreground">BG Target</span><span>{profile.background_target}</span>
+					{/if}
+					{#if profile.promote_target}
+						<span class="text-muted-foreground">Promote Target</span><span>{profile.promote_target}</span>
+					{/if}
+				</div>
+
+				<div class="mb-5 flex gap-4">
+					<div class="flex-1">
+						<Label for="replicas">Replicas</Label>
+						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1}
+							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+							<option value={1}>1 (no redundancy)</option>
+							<option value={2}>2 (mirrored)</option>
+							<option value={3}>3</option>
+						</select>
+						{#if selectedPaths.length <= 1}
+							<span class="text-xs text-muted-foreground">Requires multiple devices</span>
+						{/if}
+					</div>
+					<div class="flex-1">
+						<Label for="compression">Compression</Label>
+						<select id="compression" bind:value={compression}
+							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+							<option value="">None</option>
+							<option value="lz4">LZ4</option>
+							<option value="zstd">Zstd</option>
+							<option value="gzip">Gzip</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="flex gap-2">
+					<Button variant="secondary" onclick={() => wizardStep = 2}>← Back</Button>
+					<Button onclick={createPool}>Create Pool</Button>
+				</div>
+			{/if}
 		</CardContent>
 	</Card>
 {/if}
