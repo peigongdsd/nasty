@@ -24,7 +24,7 @@
       pname = "nasty-webui";
       version = "0.1.0";
       src = ../webui;
-      npmDepsHash = "sha256-iJGQS+6MUXlK3q5b2OtSRr6S3R+3ZCC8TaxjSM+TYGQ=";
+      npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # placeholder — run nixos-rebuild to get correct hash from error output
       buildPhase = ''
         npm run prepare
         npm run build
