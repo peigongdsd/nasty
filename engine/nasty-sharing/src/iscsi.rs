@@ -232,18 +232,18 @@ impl IscsiService {
             .await
             .ok_or_else(|| IscsiError::NotFound(req.id.clone()))?;
 
-        // Remove backstores first
-        for lun in &target.luns {
-            let bs_path = format!(
-                "/backstores/{}/{}",
-                lun.backstore_type, lun.backstore_name
-            );
-            let _ = targetcli(&format!("{bs_path} delete")).await;
-        }
-
-        // Remove the target from configfs (best-effort — may already be gone after reboot)
+        // Remove the target first — this releases all LUN mappings.
+        // Backstores cannot be deleted while a target still references them.
         if let Err(e) = targetcli(&format!("/iscsi delete {}", target.iqn)).await {
             tracing::warn!("targetcli delete failed (may already be gone): {e}");
+        }
+
+        // Now remove backstores (loop devices are released here)
+        for lun in &target.luns {
+            let _ = targetcli(&format!(
+                "/backstores/{} delete {}",
+                lun.backstore_type, lun.backstore_name
+            )).await;
         }
 
         state_dir().remove(&req.id).await?;
@@ -384,7 +384,7 @@ impl IscsiService {
 
         // Remove backstore
         let _ = targetcli(&format!(
-            "/backstores/{}/{} delete",
+            "/backstores/{} delete {}",
             lun.backstore_type, lun.backstore_name
         ))
         .await;
