@@ -139,16 +139,41 @@ in {
     # Version file for update system
     environment.etc."nasty-version".text = nasty-version;
 
+    # Apply hostname saved in settings.json on every boot.
+    systemd.services.nasty-apply-hostname = {
+      description = "Apply NASty saved hostname";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "nasty-engine.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = pkgs.writeShellScript "nasty-apply-hostname" ''
+          SETTINGS=/var/lib/nasty/settings.json
+          if [ -f "$SETTINGS" ]; then
+            NAME=$(${pkgs.jq}/bin/jq -r '.hostname // ""' "$SETTINGS" 2>/dev/null)
+            [ -n "$NAME" ] && ${pkgs.systemd}/bin/hostnamectl set-hostname "$NAME"
+          fi
+        '';
+      };
+    };
+
     # ── WebUI terminal welcome ──────────────────────────────────
 
     environment.etc."nasty/terminal-rc".text = ''
       # Source system-wide bashrc to get correct PATH for all tools
       [ -f /etc/bashrc ] && source /etc/bashrc
 
-      cat /etc/nasty/motd
+      echo ""
+      echo "  Welcome to NASty!  |  $(hostname)  |  $(date '+%Y-%m-%d %H:%M %Z')"
+      echo ""
+      echo "  Type 'debug' to show the bcachefs debugging cheatsheet."
+      echo ""
+
+      debug() { cat /etc/nasty/debug-cheatsheet; }
+      export -f debug
     '';
 
-    environment.etc."nasty/motd".text = ''
+    environment.etc."nasty/debug-cheatsheet".text = ''
 
       ╔══════════════════════════════════════════════════════╗
       ║              NASty Debugging Cheat Sheet             ║

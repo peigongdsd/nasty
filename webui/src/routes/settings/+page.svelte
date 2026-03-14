@@ -9,6 +9,8 @@
 	let info: SystemInfo | null = $state(null);
 	let timezones: string[] = $state([]);
 	let saving = $state(false);
+	let savingHostname = $state(false);
+	let hostnameInput = $state('');
 
 	const client = getClient();
 
@@ -19,8 +21,19 @@
 				client.call<SystemInfo>('system.info'),
 				client.call<string[]>('system.settings.timezones'),
 			]);
+			hostnameInput = settings.hostname ?? info.hostname;
 		});
 	});
+
+	async function saveHostname() {
+		savingHostname = true;
+		await withToast(
+			() => client.call('system.settings.update', { hostname: hostnameInput }),
+			'Hostname updated'
+		);
+		info = await client.call<SystemInfo>('system.info');
+		savingHostname = false;
+	}
 
 	async function saveTimezone() {
 		if (!settings) return;
@@ -49,6 +62,31 @@
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
 	<div class="max-w-xl space-y-8">
+
+		<!-- System -->
+		<section class="rounded-lg border border-border p-6">
+			<h2 class="mb-4 text-lg font-semibold">System</h2>
+
+			<div class="mb-4">
+				<div class="mb-1 text-sm text-muted-foreground">Current Hostname</div>
+				<div class="text-sm font-medium">{info?.hostname ?? '—'}</div>
+			</div>
+
+			<div class="mb-4">
+				<label for="hostname" class="mb-1 block text-sm text-muted-foreground">Set Hostname</label>
+				<input
+					id="hostname"
+					type="text"
+					bind:value={hostnameInput}
+					class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+					placeholder="nasty"
+				/>
+			</div>
+
+			<Button onclick={saveHostname} disabled={savingHostname}>
+				{savingHostname ? 'Saving...' : 'Apply Hostname'}
+			</Button>
+		</section>
 
 		<!-- Date & Time -->
 		<section class="rounded-lg border border-border p-6">

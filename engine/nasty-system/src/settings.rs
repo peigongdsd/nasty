@@ -11,6 +11,7 @@ pub struct Settings {
     pub smart_enabled: bool,
     #[serde(default = "default_timezone")]
     pub timezone: String,
+    pub hostname: Option<String>,
 }
 
 fn default_timezone() -> String {
@@ -22,6 +23,7 @@ impl Default for Settings {
         Self {
             smart_enabled: false,
             timezone: default_timezone(),
+            hostname: None,
         }
     }
 }
@@ -31,6 +33,7 @@ pub struct SettingsUpdate {
     #[serde(default)]
     pub smart_enabled: Option<bool>,
     pub timezone: Option<String>,
+    pub hostname: Option<String>,
 }
 
 pub struct SettingsService {
@@ -58,6 +61,10 @@ impl SettingsService {
             apply_timezone(&tz).await?;
             settings.timezone = tz;
         }
+        if let Some(name) = update.hostname {
+            apply_hostname(&name).await?;
+            settings.hostname = Some(name);
+        }
         save(&settings).await.map_err(|e| e.to_string())?;
         Ok(settings.clone())
     }
@@ -71,6 +78,19 @@ pub async fn list_timezones() -> Result<Vec<String>, String> {
         .map_err(|e| format!("timedatectl: {e}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(stdout.lines().map(|s| s.to_string()).collect())
+}
+
+async fn apply_hostname(name: &str) -> Result<(), String> {
+    let output = tokio::process::Command::new("hostnamectl")
+        .args(["set-hostname", name])
+        .output()
+        .await
+        .map_err(|e| format!("hostnamectl: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("failed to set hostname: {stderr}"));
+    }
+    Ok(())
 }
 
 async fn apply_timezone(tz: &str) -> Result<(), String> {

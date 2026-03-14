@@ -313,6 +313,7 @@ export interface ProtocolStatus {
 export interface Settings {
 	smart_enabled: boolean;
 	timezone: string;
+	hostname: string | null;
 }
 
 export interface AlertRule {
