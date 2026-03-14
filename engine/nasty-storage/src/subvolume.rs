@@ -258,82 +258,67 @@ impl SubvolumeService {
         let state: Vec<SubvolumeMeta> = state_dir().load_all().await;
         let mut subvolumes = Vec::new();
 
-        let subvol_dir = subvolumes_dir(&mount_point);
-        tokio::fs::create_dir_all(&subvol_dir).await?;
-        let mut entries = tokio::fs::read_dir(&subvol_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
+        // Ensure the subvolumes directory exists
+        tokio::fs::create_dir_all(&subvolumes_dir(&mount_point)).await?;
 
-            // Snapshot siblings use '@' naming — skip them here
-            if name.contains('@') {
-                continue;
+        // Ask bcachefs which paths are real subvolumes (filters out plain dirs)
+        let known = bcachefs_subvol_paths(&mount_point).await;
+        let svdir_prefix = format!("{SUBVOLUMES_DIR}/");
+
+        for rel_path in known.iter().filter(|p| p.starts_with(&svdir_prefix) && !p.contains('@')) {
+            let name = &rel_path[svdir_prefix.len()..];
+            let path_str = format!("{mount_point}/{rel_path}");
+            let path = Path::new(&path_str);
+
+            let meta = state.iter().find(|m| m.pool == pool_name && m.name == name);
+
+            // Apply owner filter: operators only see their own subvolumes
+            if let Some(filter) = owner_filter {
+                match meta {
+                    Some(m) if m.owner.as_deref() == Some(filter) => {}
+                    _ => continue,
+                }
             }
 
-            if path.is_dir() && is_subvolume(&path).await {
-                let meta = state
-                    .iter()
-                    .find(|m| m.pool == pool_name && m.name == name);
+            let snapshots = self.list_snapshots_for(pool_name, name).await.unwrap_or_default();
+            let size = dir_usage(path).await;
 
-                // Apply owner filter: operators only see their own subvolumes
-                if let Some(filter) = owner_filter {
-                    match meta {
-                        Some(m) if m.owner.as_deref() == Some(filter) => {}
-                        _ => continue,
-                    }
-                }
-
-                let snapshots = self
-                    .list_snapshots_for(pool_name, &name)
-                    .await
-                    .unwrap_or_default();
-
-                let size = dir_usage(&path).await;
-                let path_str = path.to_string_lossy().to_string();
-
-                let (subvolume_type, volsize_bytes, compression, comments, owner) =
-                    if let Some(m) = meta {
-                        (
-                            m.subvolume_type.clone(),
-                            m.volsize_bytes,
-                            m.compression.clone(),
-                            m.comments.clone(),
-                            m.owner.clone(),
-                        )
-                    } else {
-                        // Auto-detect: if vol.img exists, it's a block subvolume
-                        let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
-                        if Path::new(&img_path).exists() {
-                            (SubvolumeType::Block, file_size(&img_path).await, None, None, None)
-                        } else {
-                            (SubvolumeType::Filesystem, None, None, None, None)
-                        }
-                    };
-
-                let block_device = if subvolume_type == SubvolumeType::Block {
-                    let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
-                    find_loop_device(&img_path).await
+            let (subvolume_type, volsize_bytes, compression, comments, owner) =
+                if let Some(m) = meta {
+                    (m.subvolume_type.clone(), m.volsize_bytes, m.compression.clone(), m.comments.clone(), m.owner.clone())
                 } else {
-                    None
+                    // Auto-detect: if vol.img exists, it's a block subvolume
+                    let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
+                    if Path::new(&img_path).exists() {
+                        (SubvolumeType::Block, file_size(&img_path).await, None, None, None)
+                    } else {
+                        (SubvolumeType::Filesystem, None, None, None, None)
+                    }
                 };
 
-                let properties = read_xattrs(&path);
+            let block_device = if subvolume_type == SubvolumeType::Block {
+                let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
+                find_loop_device(&img_path).await
+            } else {
+                None
+            };
 
-                subvolumes.push(Subvolume {
-                    name,
-                    pool: pool_name.to_string(),
-                    subvolume_type,
-                    path: path_str,
-                    used_bytes: size,
-                    compression,
-                    comments,
-                    volsize_bytes,
-                    block_device,
-                    snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
-                    owner,
-                    properties,
-                });
-            }
+            let properties = read_xattrs(path);
+
+            subvolumes.push(Subvolume {
+                name: name.to_string(),
+                pool: pool_name.to_string(),
+                subvolume_type,
+                path: path_str,
+                used_bytes: size,
+                compression,
+                comments,
+                volsize_bytes,
+                block_device,
+                snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
+                owner,
+                properties,
+            });
         }
 
         Ok(subvolumes)
@@ -618,36 +603,30 @@ impl SubvolumeService {
         Ok(())
     }
 
-    /// List snapshots for a specific subvolume.
-    /// Scans the subvolumes/ directory for sibling entries named `<subvol>@<snap>`.
+    /// List snapshots for a specific subvolume using `bcachefs subvolume list-snapshots`.
     pub async fn list_snapshots_for(
         &self,
         pool_name: &str,
         subvol_name: &str,
     ) -> Result<Vec<Snapshot>, SubvolumeError> {
         let mount_point = self.pool_mount_point(pool_name).await?;
-        let subvol_dir = subvolumes_dir(&mount_point);
-        let prefix = format!("{subvol_name}@");
+        let subvol_path = subvol_path(&mount_point, subvol_name);
 
-        if !Path::new(&subvol_dir).exists() {
+        if !Path::new(&subvol_path).exists() {
             return Ok(vec![]);
         }
 
-        let mut snapshots = Vec::new();
-        let mut entries = tokio::fs::read_dir(&subvol_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with(&prefix) && entry.path().is_dir() {
-                let snap_name = name[prefix.len()..].to_string();
-                snapshots.push(Snapshot {
-                    name: snap_name,
-                    subvolume: subvol_name.to_string(),
-                    pool: pool_name.to_string(),
-                    path: entry.path().to_string_lossy().to_string(),
-                    read_only: false, // TODO: detect from bcachefs attributes
-                });
-            }
-        }
+        let snapshots = bcachefs_snapshot_names(&subvol_path)
+            .await
+            .into_iter()
+            .map(|snap_name| Snapshot {
+                path: snap_path(&mount_point, subvol_name, &snap_name),
+                name: snap_name,
+                subvolume: subvol_name.to_string(),
+                pool: pool_name.to_string(),
+                read_only: false, // TODO: not exposed by list-snapshots output
+            })
+            .collect();
 
         Ok(snapshots)
     }
@@ -833,12 +812,40 @@ fn read_xattrs(path: &Path) -> HashMap<String, String> {
     map
 }
 
-/// Check if a directory is a bcachefs subvolume.
-/// For now we treat all direct children dirs of the mount as subvolumes.
-async fn is_subvolume(path: &Path) -> bool {
-    // TODO: use `bcachefs subvolume list` or check xattrs to distinguish
-    // real subvolumes from regular directories.
-    path.is_dir()
+/// Run `bcachefs subvolume list <mount_point>` and return the set of
+/// relative paths (e.g. "subvolumes/foo") that are real bcachefs subvolumes.
+/// Returns an empty set if the command fails (kernel ioctl not supported, etc.).
+async fn bcachefs_subvol_paths(mount_point: &str) -> std::collections::HashSet<String> {
+    let Ok(output) = cmd::run_ok("bcachefs", &["subvolume", "list", mount_point]).await else {
+        return std::collections::HashSet::new();
+    };
+    // Output: header line then "path  ID  date  time  flags  size" rows
+    output
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+        .collect()
+}
+
+/// Run `bcachefs subvolume list-snapshots <subvol_path>` and return snapshot names.
+/// Output is a tree; snapshot entries contain '@'. Returns empty vec on error.
+async fn bcachefs_snapshot_names(subvol_path: &str) -> Vec<String> {
+    let Ok(output) = cmd::run_ok("bcachefs", &["subvolume", "list-snapshots", subvol_path]).await else {
+        return vec![];
+    };
+    let mut names = Vec::new();
+    for line in output.lines().skip(1) {
+        // Each line looks like: "├── /subvolumes/foo@snapname [0B]"
+        // Find the path (starts with '/') and strip the trailing " [size]"
+        if let Some(slash) = line.find('/') {
+            let rest = &line[slash..];
+            let path = rest[..rest.rfind('[').unwrap_or(rest.len())].trim_end();
+            if let Some(at) = path.rfind('@') {
+                names.push(path[at + 1..].to_string());
+            }
+        }
+    }
+    names
 }
 
 /// Get disk usage for a directory using `du`
