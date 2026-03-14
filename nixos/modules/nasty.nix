@@ -164,9 +164,10 @@ in {
     # is already printing to the console.
     boot.initrd.systemd.enable = true;
     # Load GPU drivers early so Plymouth has a framebuffer to draw on.
-    # virtio_gpu covers QEMU/KVM VMs; simpledrm covers physical hardware
-    # with UEFI GOP (covers most x86 systems without vendor-specific drivers).
-    boot.initrd.kernelModules = [ "virtio_gpu" "simpledrm" ];
+    # bochs-drm: primary QEMU/KVM VGA (most common VM display) → card0
+    # virtio_gpu: virtio-vga display
+    # simpledrm: physical hardware with UEFI GOP
+    boot.initrd.kernelModules = [ "bochs-drm" "virtio_gpu" "simpledrm" ];
 
     # Enable flakes for nixos-rebuild --flake
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
@@ -281,6 +282,7 @@ in {
       strace            # syscall tracing
       dool              # system resource stats (dstat successor)
       netcat-gnu        # share output with devs: cmd | nc termbin.com 9999
+      pciutils          # lspci for hardware identification
     ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
       ++ lib.optionals cfg.smb.enable [ samba ]
       ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
