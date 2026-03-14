@@ -47,9 +47,21 @@
     nasty-version = self.shortRev or self.dirtyShortRev or "dev";
 
     mkNixosConfigs = system: let
+      pkgs = mkPkgs system;
       nasty-engine = mkEngine system;
       nasty-webui = mkWebui system;
-      nasty-bcachefs-tools = bcachefs-tools.packages.${system}.bcachefs-tools;
+      # Override nixpkgs' bcachefs-tools with HEAD source from the flake input.
+      # Using the nixpkgs package as the base preserves the `dkms` output and
+      # `passthru.kernelModule` that the NixOS bcachefs module needs to build
+      # the out-of-tree DKMS kernel module automatically via boot.bcachefs.package.
+      # importCargoLock reads Cargo.lock directly — no pre-computed vendor hash needed.
+      nasty-bcachefs-tools = pkgs.bcachefs-tools.overrideAttrs (old: {
+        version = "1.36.0+${bcachefs-tools.shortRev}";
+        src = bcachefs-tools;
+        cargoDeps = pkgs.rustPlatform.importCargoLock {
+          lockFile = "${bcachefs-tools}/Cargo.lock";
+        };
+      });
     in {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
