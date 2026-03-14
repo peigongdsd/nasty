@@ -146,9 +146,9 @@ in {
          dool -dny 1
 
        share findings with devs
-         dmesg | wormhole-rs send -
-         perf script | wormhole-rs send -
-         journalctl -u nasty-engine | wormhole-rs send -
+         dmesg | nc termbin.com 9999
+         perf script | nc termbin.com 9999
+         journalctl -u nasty-engine | nc termbin.com 9999
 
     '';
 
@@ -172,7 +172,7 @@ in {
       lsof              # open file handles
       strace            # syscall tracing
       dool              # system resource stats (dstat successor)
-      magic-wormhole-rs # share files/output with devs: wormhole-rs send
+      netcat-gnu        # share output with devs: cmd | nc termbin.com 9999
     ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
       ++ lib.optionals cfg.smb.enable [ samba ]
       ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
