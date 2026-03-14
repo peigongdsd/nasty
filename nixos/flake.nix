@@ -5,16 +5,15 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     # ── bcachefs override (optional) ──────────────────────────────
-    # Uncomment to track upstream HEAD instead of nixpkgs bcachefs.
-    # Do this when nixpkgs lags behind and you need newer features.
-    # When re-commented the system falls back to pure nixpkgs — no
-    # other changes needed anywhere else.
-    #
-    # bcachefs-tools.url = "github:koverstreet/bcachefs-tools";
-    # bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
+    # Tracking upstream HEAD for newer subcommands not yet in a release
+    # (bcachefs subvolume list / list-snapshots added after v1.36.1).
+    # To revert to pure nixpkgs: comment out these two lines.
+    # No other changes needed — bcachefs.nix defaults to pkgs.bcachefs-tools.
+    bcachefs-tools.url = "github:koverstreet/bcachefs-tools";
+    bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, ... }: let
+  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
 
@@ -50,12 +49,14 @@
     mkNixosConfigs = system: let
       nasty-engine = mkEngine system;
       nasty-webui = mkWebui system;
+      nasty-bcachefs-tools = bcachefs-tools.packages.${system}.bcachefs-tools;
     in {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/bcachefs.nix
           ./modules/nasty.nix
           ./configuration.nix
         ];
@@ -64,8 +65,9 @@
       # ISO image for installation
       nasty-iso = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/bcachefs.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
           ./iso.nix
         ];
@@ -74,8 +76,9 @@
       # QEMU VM for testing
       nasty-vm = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/bcachefs.nix
           ./modules/nasty.nix
           ./configuration.nix
           ./vm.nix
