@@ -157,6 +157,13 @@ pub struct CloneSnapshotRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResizeSubvolumeRequest {
+    pub pool: String,
+    pub name: String,
+    pub volsize_bytes: u64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SetPropertiesRequest {
     pub pool: String,
     pub name: String,
@@ -535,6 +542,45 @@ impl SubvolumeService {
                 .map_err(SubvolumeError::CommandFailed)?;
         }
         self.get(pool_name, name, owner_filter).await
+    }
+
+    /// Resize a block subvolume's underlying sparse image.
+    /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
+    pub async fn resize(
+        &self,
+        req: ResizeSubvolumeRequest,
+        owner_filter: Option<&str>,
+    ) -> Result<Subvolume, SubvolumeError> {
+        let subvol = self.get(&req.pool, &req.name, owner_filter).await?;
+        if subvol.subvolume_type != SubvolumeType::Block {
+            return Err(SubvolumeError::CommandFailed(
+                "only block subvolumes can be resized".to_string(),
+            ));
+        }
+
+        let img_path = format!("{}/{}", subvol.path, BLOCK_FILE_NAME);
+        info!(
+            "Resizing block subvolume '{}' to {} bytes",
+            req.name, req.volsize_bytes
+        );
+        cmd::run_ok("truncate", &["-s", &req.volsize_bytes.to_string(), &img_path])
+            .await
+            .map_err(SubvolumeError::CommandFailed)?;
+
+        // If loop device is attached, inform the kernel of the new size
+        if let Some(ref loop_dev) = subvol.block_device {
+            info!("Updating loop device {} capacity for '{}'", loop_dev, req.name);
+            let _ = cmd::run_ok("losetup", &["--set-capacity", loop_dev]).await;
+        }
+
+        // Update stored metadata
+        let id = SubvolumeMeta::make_id(&req.pool, &req.name);
+        if let Some(mut meta) = state_dir().load::<SubvolumeMeta>(&id).await {
+            meta.volsize_bytes = Some(req.volsize_bytes);
+            state_dir().save(&id, &meta).await?;
+        }
+
+        self.get(&req.pool, &req.name, owner_filter).await
     }
 
     /// Create a snapshot of a subvolume.

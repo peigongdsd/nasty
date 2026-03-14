@@ -158,6 +158,53 @@ async def test_subvolume(ctx: TestContext):
     except Exception as e:
         ctx.record("block attach/detach: re-attach", False, str(e))
 
+    # ── 4. Block subvolume resize ─────────────────────────────────
+
+    resize_sv = f"test-sv-resize-{tag}"
+    initial_size = 32 * 1024 * 1024   # 32 MiB
+    new_size     = 64 * 1024 * 1024   # 64 MiB
+    info(f"Creating block subvolume '{resize_sv}' ({initial_size // (1024*1024)} MiB) for resize test...")
+    try:
+        sv = await ctx.client.call("subvolume.create", {
+            "pool": ctx.pool,
+            "name": resize_sv,
+            "subvolume_type": "block",
+            "volsize_bytes": initial_size,
+        })
+        ctx.record("block resize: create", sv.get("volsize_bytes") == initial_size,
+                   "" if sv.get("volsize_bytes") == initial_size
+                   else f"expected {initial_size}, got {sv.get('volsize_bytes')}")
+    except Exception as e:
+        ctx.record("block resize: create", False, str(e))
+        goto_cleanup = True
+    else:
+        goto_cleanup = False
+
+    if not goto_cleanup:
+        info(f"Resizing '{resize_sv}' to {new_size // (1024*1024)} MiB...")
+        try:
+            resized = await ctx.client.call("subvolume.resize", {
+                "pool": ctx.pool,
+                "name": resize_sv,
+                "volsize_bytes": new_size,
+            })
+            ctx.record("block resize: volsize_bytes updated",
+                       resized.get("volsize_bytes") == new_size,
+                       "" if resized.get("volsize_bytes") == new_size
+                       else f"expected {new_size}, got {resized.get('volsize_bytes')}")
+        except Exception as e:
+            ctx.record("block resize: volsize_bytes updated", False, str(e))
+
+    if not ctx.skip_delete:
+        try:
+            await ctx.client.call("subvolume.detach", {"pool": ctx.pool, "name": resize_sv})
+        except Exception:
+            pass
+        try:
+            await ctx.client.call("subvolume.delete", {"pool": ctx.pool, "name": resize_sv})
+        except Exception:
+            pass
+
     if not ctx.skip_delete:
         try:
             await ctx.client.call("subvolume.detach", {"pool": ctx.pool, "name": block_sv})
