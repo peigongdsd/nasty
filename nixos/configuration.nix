@@ -1,4 +1,4 @@
-{ config, pkgs, nasty-engine, nasty-webui ? null, ... }:
+{ config, lib, pkgs, nasty-engine, nasty-webui ? null, ... }:
 
 {
   imports = [
@@ -9,6 +9,11 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # Restrict /boot (EFI) partition to root-only access.
+  # nixos-generate-config defaults to fmask=0022 (world-readable), which causes
+  # systemd-boot to warn that the random seed file is a security hole.
+  fileSystems."/boot".options = lib.mkForce [ "fmask=0077" "dmask=0077" ];
 
   networking.hostName = "nasty";
 
