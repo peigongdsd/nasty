@@ -159,6 +159,10 @@ in {
     };
     boot.kernelParams = [ "quiet" "splash" ];
     boot.initrd.verbose = false;
+    # Load GPU drivers early so Plymouth has a framebuffer to draw on.
+    # virtio_gpu covers QEMU/KVM VMs; simpledrm covers physical hardware
+    # with UEFI GOP (covers most x86 systems without vendor-specific drivers).
+    boot.initrd.kernelModules = [ "virtio_gpu" "simpledrm" ];
 
     # Enable flakes for nixos-rebuild --flake
     nix.settings.experimental-features = [ "nix-command" "flakes" ];
