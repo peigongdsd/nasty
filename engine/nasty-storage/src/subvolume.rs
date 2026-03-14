@@ -560,7 +560,7 @@ impl SubvolumeService {
         }
 
         let mut args = vec!["subvolume", "snapshot"];
-        if req.read_only == Some(true) {
+        if req.read_only != Some(false) {
             args.push("-r");
         }
         args.push(&source_path);
@@ -579,7 +579,7 @@ impl SubvolumeService {
             subvolume: req.subvolume,
             pool: req.pool,
             path: snap_path,
-            read_only: req.read_only.unwrap_or(false),
+            read_only: req.read_only.unwrap_or(true),
         })
     }
 
