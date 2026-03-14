@@ -26,6 +26,9 @@ struct TerminalAuth {
     cols: u16,
     #[serde(default = "default_rows")]
     rows: u16,
+    /// Optional command to run instead of bash. First element is the executable,
+    /// rest are arguments. Session exits when the command finishes.
+    cmd: Option<Vec<String>>,
 }
 
 fn default_cols() -> u16 {
@@ -74,8 +77,15 @@ async fn handle_terminal(mut socket: WebSocket, state: Arc<AppState>) {
         }
     };
 
-    let mut cmd = CommandBuilder::new("bash");
-    cmd.args(["--rcfile", "/etc/nasty/terminal-rc"]);
+    let mut cmd = if let Some(ref argv) = auth.cmd {
+        let mut c = CommandBuilder::new(&argv[0]);
+        c.args(&argv[1..]);
+        c
+    } else {
+        let mut c = CommandBuilder::new("bash");
+        c.args(["--rcfile", "/etc/nasty/terminal-rc"]);
+        c
+    };
     cmd.env("TERM", "xterm-256color");
 
     let mut child = match pair.slave.spawn_command(cmd) {
@@ -188,6 +198,7 @@ struct TerminalAuthResult {
     username: String,
     cols: u16,
     rows: u16,
+    cmd: Option<Vec<String>>,
 }
 
 async fn wait_for_terminal_auth(
@@ -232,6 +243,7 @@ async fn wait_for_terminal_auth(
                 username: session.username,
                 cols: auth.cols,
                 rows: auth.rows,
+                cmd: auth.cmd,
             })
         }
         Err(_) => {

@@ -914,49 +914,10 @@ impl PoolService {
         Ok(raw)
     }
 
-    /// One-shot snapshot of `bcachefs fs top <mount>` — btree ops by process.
-    /// Runs for ~2 s via `timeout` to capture at least one sampling interval.
-    pub async fn bcachefs_top(&self, name: &str) -> Result<String, PoolError> {
-        let pool = self.get(name).await?;
-        if !pool.mounted {
-            return Err(PoolError::CommandFailed(
-                "pool must be mounted".to_string(),
-            ));
-        }
-        let mount_point = pool.mount_point.as_ref().unwrap();
-        // timeout(1) returns exit 124 when it kills the process — that's expected.
-        let output = tokio::process::Command::new("timeout")
-            .args(["2", "bcachefs", "fs", "top", mount_point])
-            .env("TERM", "dumb")
-            .output()
-            .await
-            .map_err(|e| PoolError::CommandFailed(e.to_string()))?;
-        let raw = String::from_utf8_lossy(&output.stdout);
-        Ok(strip_ansi(raw.as_ref()))
-    }
-
-    /// One-shot snapshot of `bcachefs fs timestats <mount>` — operation latency stats.
-    /// Runs for ~2 s via `timeout` to capture one statistics window.
-    pub async fn bcachefs_timestats(&self, name: &str) -> Result<String, PoolError> {
-        let pool = self.get(name).await?;
-        if !pool.mounted {
-            return Err(PoolError::CommandFailed(
-                "pool must be mounted".to_string(),
-            ));
-        }
-        let mount_point = pool.mount_point.as_ref().unwrap();
-        let output = tokio::process::Command::new("timeout")
-            .args(["2", "bcachefs", "fs", "timestats", mount_point])
-            .env("TERM", "dumb")
-            .output()
-            .await
-            .map_err(|e| PoolError::CommandFailed(e.to_string()))?;
-        let raw = String::from_utf8_lossy(&output.stdout);
-        Ok(strip_ansi(raw.as_ref()))
-    }
 }
 
-/// Strip ANSI escape sequences from terminal output (e.g. from bcachefs fs top/timestats).
+/// Strip ANSI escape sequences (used for bcachefs raw text output).
+#[allow(dead_code)]
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
