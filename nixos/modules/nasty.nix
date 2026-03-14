@@ -40,20 +40,20 @@ let
 
       cp ${nasty-logo-png} "$themeDir/nasty.png"
 
-      cat > "$themeDir/nasty.plymouth" << 'EOF'
+      cat > "$themeDir/nasty.plymouth" << EOF
 [Plymouth Theme]
 Name=nasty
 Description=NASty NAS System
 ModuleName=script
 
 [script]
-ImageDir=@PLYMOUTH_THEME_PATH@
-ScriptFile=@PLYMOUTH_THEME_PATH@/nasty.script
+ImageDir=$themeDir
+ScriptFile=$themeDir/nasty.script
 EOF
 
       cat > "$themeDir/nasty.script" << 'EOF'
-Window.SetBackgroundTopColor(0.0, 0.2, 0.6);
-Window.SetBackgroundBottomColor(0.0, 0.1, 0.4);
+Window.SetBackgroundTopColor(0.07, 0.07, 0.09);
+Window.SetBackgroundBottomColor(0.07, 0.07, 0.09);
 
 logo_image = Image("nasty.png");
 logo_sprite = Sprite(logo_image);
@@ -161,7 +161,7 @@ in {
       themePackages = [ nasty-plymouth-theme ];
     };
     # Plymouth NixOS module adds "splash" automatically; we only add "quiet".
-    boot.kernelParams = [ "quiet" "plymouth:debug" ];
+    boot.kernelParams = [ "quiet" ];
     boot.initrd.verbose = false;
     # Systemd in initrd: required for Plymouth to start early enough to
     # intercept boot messages. Without this Plymouth starts after systemd
