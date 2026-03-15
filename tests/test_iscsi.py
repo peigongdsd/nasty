@@ -148,6 +148,11 @@ async def test_iscsi(ctx: TestContext):
         if ctx.remount:
             return
 
+        # ── Flush before snapshotting ─────────────────────────────
+        for i in range(N):
+            if mounted[i]:
+                run(["sync", "-f", mount_points[i]], check=False)
+
         # ── Snapshots ─────────────────────────────────────────────
         snap_names = [[f"snap-iscsi{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]
         for i in range(N):
