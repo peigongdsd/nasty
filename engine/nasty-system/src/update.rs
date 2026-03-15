@@ -2,7 +2,10 @@ use serde::Serialize;
 use thiserror::Error;
 use tracing::info;
 
-const VERSION_PATH: &str = "/etc/nasty-version";
+/// Primary version path — writable by the update script, not managed by NixOS.
+const VERSION_PATH: &str = "/var/lib/nasty/version";
+/// Fallback version path — baked in by NixOS at build time (may be a local SHA).
+const VERSION_PATH_FALLBACK: &str = "/etc/nasty-version";
 const UPDATE_UNIT: &str = "nasty-update";
 const LOCAL_FLAKE: &str = "/etc/nixos/nixos#nasty";
 const REPO_URL: &str = "https://github.com/nasty-project/nasty.git";
@@ -151,14 +154,11 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
 echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {LOCAL_FLAKE}
 
-# Write the upstream SHA as the installed version.
-# The flake bakes the local HEAD (which includes the hw-config commit) into
-# /etc/nasty-version, but the update checker compares against origin/main.
-# Overwrite the NixOS-managed symlink with the real upstream SHA so the two
-# always agree after a successful update.
-UPSTREAM_SHA=$(git rev-parse --short origin/main)
-rm -f {VERSION_PATH}
-echo "$UPSTREAM_SHA" > {VERSION_PATH}
+# Write the upstream SHA to the writable version path.
+# The flake bakes the local hw-config commit SHA into /etc/nasty-version, which
+# never matches origin/main. Writing the real upstream SHA to /var/lib/nasty/version
+# lets the engine report the correct version and stop showing false update prompts.
+git rev-parse --short origin/main > {VERSION_PATH}
 
 echo "==> Update complete!"
 "#
@@ -484,10 +484,18 @@ async fn check_via_git_ls_remote(token: Option<&str>) -> Result<String, UpdateEr
 }
 
 async fn read_current_version() -> String {
-    tokio::fs::read_to_string(VERSION_PATH)
-        .await
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "dev".to_string())
+    // Prefer the writable version written by the update script (contains the real
+    // upstream SHA). Fall back to the NixOS-baked /etc/nasty-version which may
+    // contain a local hw-config commit SHA and is therefore less reliable.
+    for path in &[VERSION_PATH, VERSION_PATH_FALLBACK] {
+        if let Ok(s) = tokio::fs::read_to_string(path).await {
+            let s = s.trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
+        }
+    }
+    "dev".to_string()
 }
 
 /// Check if the booted kernel differs from the activated system's kernel.
