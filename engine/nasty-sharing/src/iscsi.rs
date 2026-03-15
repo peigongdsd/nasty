@@ -3,7 +3,7 @@ use std::path::Path;
 use nasty_common::{HasId, StateDir};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 const STATE_DIR: &str = "/var/lib/nasty/shares/iscsi";
@@ -135,6 +135,34 @@ pub struct IscsiService;
 impl IscsiService {
     pub fn new() -> Self {
         Self
+    }
+
+    /// Update persisted device paths after a reboot where loop device numbers changed.
+    /// `dev_map` maps subvolume_name → current loop device (e.g. "vol1" → "/dev/loop0").
+    /// The subvolume name is extracted from the IQN suffix after the last ':'.
+    /// Also patches /etc/target/saveconfig.json so target.service loads with correct paths.
+    pub async fn remap_device_paths(&self, dev_map: &std::collections::HashMap<String, String>) {
+        let mut targets: Vec<IscsiTarget> = state_dir().load_all().await;
+        for target in &mut targets {
+            let name = target.iqn.rsplit(':').next().unwrap_or("").to_string();
+            let Some(new_dev) = dev_map.get(&name) else { continue };
+            let mut changed = false;
+            for lun in &mut target.luns {
+                if &lun.backstore_path != new_dev {
+                    info!(
+                        "Remapping iSCSI '{}' lun{} {} → {}",
+                        target.iqn, lun.lun_id, lun.backstore_path, new_dev
+                    );
+                    lun.backstore_path = new_dev.clone();
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = state_dir().save(&target.id, target).await;
+            }
+        }
+        // Patch saveconfig.json so target.service picks up the corrected device on boot.
+        patch_saveconfig(dev_map).await;
     }
 
     pub async fn list(&self) -> Result<Vec<IscsiTarget>, IscsiError> {
@@ -480,5 +508,46 @@ async fn targetcli(cmd: &str) -> Result<String, IscsiError> {
 async fn save_lio_config() -> Result<(), IscsiError> {
     targetcli("saveconfig").await?;
     Ok(())
+}
+
+/// Patch /etc/target/saveconfig.json to fix stale loop device paths.
+/// storage_objects entries look like: {"dev": "/dev/loop2", "name": "nasty_<subvol>_lun0", ...}
+/// We match by name containing the subvolume name and update the "dev" field.
+async fn patch_saveconfig(dev_map: &std::collections::HashMap<String, String>) {
+    const SAVECONFIG: &str = "/etc/target/saveconfig.json";
+    let text = match tokio::fs::read_to_string(SAVECONFIG).await {
+        Ok(t) => t,
+        Err(_) => return, // file doesn't exist yet (iSCSI never used)
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => { warn!("Failed to parse {SAVECONFIG}: {e}"); return; }
+    };
+    let Some(objects) = json.get_mut("storage_objects").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    let mut changed = false;
+    for obj in objects.iter_mut() {
+        let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // backstore names follow "nasty_<subvol_name>_lun<n>" convention
+        for (subvol_name, new_dev) in dev_map {
+            let expected_prefix = format!("nasty_{subvol_name}_");
+            if name.starts_with(&expected_prefix) {
+                if let Some(dev_field) = obj.get("dev").and_then(|v| v.as_str()) {
+                    if dev_field != new_dev {
+                        info!("Patching saveconfig.json backstore '{name}' {} → {new_dev}", dev_field);
+                        obj["dev"] = serde_json::Value::String(new_dev.clone());
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    if changed {
+        match serde_json::to_string_pretty(&json) {
+            Ok(out) => { let _ = tokio::fs::write(SAVECONFIG, out).await; }
+            Err(e) => warn!("Failed to serialize patched saveconfig.json: {e}"),
+        }
+    }
 }
 

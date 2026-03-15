@@ -302,6 +302,31 @@ impl NvmeofService {
         info!("NVMe-oF restore complete");
     }
 
+    /// Update persisted device paths after a reboot where loop device numbers changed.
+    /// `dev_map` maps subvolume_name → current loop device (e.g. "tank-vol" → "/dev/loop0").
+    /// The subvolume name is extracted from the NQN suffix after the last ':'.
+    pub async fn remap_device_paths(&self, dev_map: &std::collections::HashMap<String, String>) {
+        let mut subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
+        for subsys in &mut subsystems {
+            let name = subsys.nqn.rsplit(':').next().unwrap_or("").to_string();
+            let Some(new_dev) = dev_map.get(&name) else { continue };
+            let mut changed = false;
+            for ns in &mut subsys.namespaces {
+                if &ns.device_path != new_dev {
+                    info!(
+                        "Remapping NVMe-oF '{}' ns{} {} → {}",
+                        subsys.nqn, ns.nsid, ns.device_path, new_dev
+                    );
+                    ns.device_path = new_dev.clone();
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = state_dir().save(&subsys.id, subsys).await;
+            }
+        }
+    }
+
     pub async fn list(&self) -> Result<Vec<NvmeofSubsystem>, NvmeofError> {
 
         Ok(state_dir().load_all().await)

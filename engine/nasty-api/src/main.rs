@@ -86,7 +86,14 @@ async fn main() -> anyhow::Result<()> {
     // 3. Start enabled protocols (services + kernel modules)
     // 4. Restore NVMe-oF configfs (volatile, needs modules from step 3)
     state.pools.restore_mounts().await;
-    state.subvolumes.restore_block_devices().await;
+    // Re-attach loop devices and get the current name→device mapping.
+    // Loop device numbers change across reboots, so NVMe-oF and iSCSI state
+    // files must be patched before their respective restore steps run.
+    let dev_map = state.subvolumes.restore_block_devices().await;
+    if !dev_map.is_empty() {
+        state.nvmeof.remap_device_paths(&dev_map).await;
+        state.iscsi.remap_device_paths(&dev_map).await;
+    }
     state.protocols.restore().await;
     state.nvmeof.restore().await;
 

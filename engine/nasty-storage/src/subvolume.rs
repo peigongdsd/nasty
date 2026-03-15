@@ -200,16 +200,21 @@ impl SubvolumeService {
     }
 
     /// Re-attach loop devices for block subvolumes after pools are mounted.
-    pub async fn restore_block_devices(&self) {
+    /// Re-attach loop devices for all block subvolumes after a reboot.
+    /// Returns a map of subvolume_name → current loop device path so callers
+    /// can patch NVMe-oF / iSCSI state files before those services start.
+    pub async fn restore_block_devices(&self) -> std::collections::HashMap<String, String> {
         let metas: Vec<SubvolumeMeta> = state_dir().load_all().await;
         let block_metas: Vec<_> = metas
             .iter()
             .filter(|m| m.subvolume_type == SubvolumeType::Block)
             .collect();
 
+        let mut dev_map = std::collections::HashMap::new();
+
         if block_metas.is_empty() {
             info!("No block subvolumes to restore");
-            return;
+            return dev_map;
         }
 
         for meta in block_metas {
@@ -223,7 +228,6 @@ impl SubvolumeService {
                     continue;
                 }
             };
-            // owner_filter = None: restore runs as system, not bound to any token
 
             let img_path = format!("{}/{BLOCK_FILE_NAME}", subvol_path(&mount_point, &meta.name));
             if !Path::new(&img_path).exists() {
@@ -231,17 +235,28 @@ impl SubvolumeService {
                 continue;
             }
 
-            // Already attached?
-            if find_loop_device(&img_path).await.is_some() {
+            // Use existing loop device if already attached (engine restart, not reboot)
+            let loop_dev = if let Some(existing) = find_loop_device(&img_path).await {
                 info!("Loop device already attached for {}/{}", meta.pool, meta.name);
-                continue;
-            }
+                existing
+            } else {
+                match cmd::run_ok("losetup", &["--find", "--show", &img_path]).await {
+                    Ok(dev) => {
+                        let dev = dev.trim().to_string();
+                        info!("Attached {} for block subvolume {}/{}", dev, meta.pool, meta.name);
+                        dev
+                    }
+                    Err(e) => {
+                        warn!("Failed to attach loop device for {}/{}: {e}", meta.pool, meta.name);
+                        continue;
+                    }
+                }
+            };
 
-            match cmd::run_ok("losetup", &["--find", "--show", &img_path]).await {
-                Ok(dev) => info!("Attached {} for block subvolume {}/{}", dev.trim(), meta.pool, meta.name),
-                Err(e) => warn!("Failed to attach loop device for {}/{}: {e}", meta.pool, meta.name),
-            }
+            dev_map.insert(meta.name.clone(), loop_dev);
         }
+
+        dev_map
     }
 
     /// Get the mount point for a pool, or error if not mounted
