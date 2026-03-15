@@ -148,35 +148,31 @@
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
 	<Card class="mb-6">
-		<CardContent class="pt-6">
-			<div class="mb-4 flex items-center justify-between">
+		<CardContent class="py-5">
+			<!-- Version + status row -->
+			<div class="mb-5 flex items-center gap-8">
 				<div>
-					<div class="text-sm text-muted-foreground">Current Version</div>
-					<div class="font-mono text-lg font-semibold">
-						{info?.current_version ?? 'unknown'}
-					</div>
+					<div class="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed</div>
+					<div class="font-mono text-xl font-semibold">{info?.current_version ?? 'unknown'}</div>
 				</div>
 				{#if info?.latest_version}
-					<div class="text-right">
-						<div class="text-sm text-muted-foreground">Latest Available</div>
-						<div class="font-mono text-lg font-semibold">
-							{info.latest_version}
-						</div>
+					<div class="text-lg text-muted-foreground/30">→</div>
+					<div>
+						<div class="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Available</div>
+						<div class="font-mono text-xl font-semibold {info.update_available ? 'text-blue-400' : ''}">{info.latest_version}</div>
 					</div>
 				{/if}
+				<div class="flex items-end pb-0.5">
+					{#if info?.update_available === true}
+						<Badge variant="default">Update available</Badge>
+					{:else if info?.update_available === false}
+						<Badge variant="secondary">Up to date</Badge>
+					{/if}
+				</div>
 			</div>
 
-			{#if info?.update_available === true}
-				<div class="mb-4">
-					<Badge variant="default">Update available</Badge>
-				</div>
-			{:else if info?.update_available === false}
-				<div class="mb-4">
-					<Badge variant="secondary">Up to date</Badge>
-				</div>
-			{/if}
-
-			<div class="flex gap-3">
+			<!-- Actions -->
+			<div class="flex gap-2">
 				<Button size="sm" onclick={checkForUpdates} disabled={checking || status?.state === 'running'}>
 					{checking ? 'Checking...' : 'Check for Updates'}
 				</Button>
@@ -187,7 +183,7 @@
 						onclick={() => requestAction('update')}
 						disabled={status?.state === 'running'}
 					>
-						{confirmAction === 'update' ? 'Confirm Update?' : 'Update Now'}
+						{confirmAction === 'update' ? 'Confirm?' : 'Update Now'}
 					</Button>
 				{/if}
 				<Button
@@ -196,7 +192,7 @@
 					onclick={() => requestAction('rollback')}
 					disabled={status?.state === 'running'}
 				>
-					{confirmAction === 'rollback' ? 'Confirm Rollback?' : 'Rollback'}
+					{confirmAction === 'rollback' ? 'Confirm?' : 'Rollback'}
 				</Button>
 			</div>
 		</CardContent>
@@ -204,17 +200,15 @@
 
 	{#if status && status.state !== 'idle'}
 		<Card>
-			<CardContent class="pt-6">
-				<div class="mb-3 flex items-center gap-3">
-					<span class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-						Update Status
-					</span>
+			<CardContent class="py-5">
+				<div class="mb-3 flex items-center gap-2">
+					<span class="text-sm font-medium text-muted-foreground">Update log</span>
 					<Badge variant={
 						status.state === 'running' ? 'default' :
 						status.state === 'success' ? 'secondary' :
 						'destructive'
 					}>
-						{status.state === 'running' ? 'In Progress...' :
+						{status.state === 'running' ? 'In progress' :
 						 status.state === 'success' ? 'Complete' :
 						 'Failed'}
 					</Badge>
