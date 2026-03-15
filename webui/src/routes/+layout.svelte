@@ -226,29 +226,29 @@
 		<div class="flex flex-1 flex-col overflow-hidden">
 			<!-- Top bar -->
 			<header class="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-				<div class="flex items-center gap-2 text-sm">
-					<svelte:component this={currentNav.icon} size={15} class="text-muted-foreground" />
+				<div class="flex items-center gap-2 text-base">
+					<svelte:component this={currentNav.icon} size={17} class="text-muted-foreground" />
 					<span class="font-medium">{currentNav.label}</span>
 				</div>
 
-				<div class="flex items-center gap-2">
+				<div class="flex items-center gap-2.5">
 					{#if powering}
-						<span class="text-xs text-amber-500">Shutting down…</span>
+						<span class="text-sm text-amber-500">Shutting down…</span>
 					{/if}
 
 					<!-- Profile button -->
 					<div class="relative">
 						<button
 							onclick={() => { profileOpen = !profileOpen; powerOpen = false; }}
-							class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+							class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
 						>
-							<User size={13} />
+							<User size={15} />
 							{authInfo?.username ?? ''}
 						</button>
 						{#if profileOpen}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-lg"
+								class="absolute right-0 top-10 z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-lg"
 								onmouseleave={() => profileOpen = false}
 							>
 								{#if authInfo}
@@ -273,15 +273,15 @@
 						<button
 							onclick={() => { powerOpen = !powerOpen; profileOpen = false; }}
 							disabled={powering}
-							class="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+							class="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
 						>
-							<Power size={13} />
+							<Power size={15} />
 							Power
 						</button>
 						{#if powerOpen}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-lg"
+								class="absolute right-0 top-10 z-50 min-w-[160px] rounded-lg border border-border bg-card shadow-lg"
 								onmouseleave={() => powerOpen = false}
 							>
 								<button
