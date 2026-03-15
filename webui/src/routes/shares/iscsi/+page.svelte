@@ -301,7 +301,7 @@
 									{:else}
 										<div class="space-y-1">
 											{#each target.luns as lun}
-												<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
+												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<div class="text-sm">
 														<span class="font-mono text-xs font-semibold">LUN {lun.lun_id}</span>
 														<span class="ml-2 text-muted-foreground">{lun.backstore_path}</span>
@@ -349,7 +349,7 @@
 									{:else}
 										<div class="space-y-1">
 											{#each target.acls as acl}
-												<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
+												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<div class="text-sm">
 														<span class="font-mono text-xs">{acl.initiator_iqn}</span>
 														{#if acl.userid}<span class="ml-2 text-xs text-muted-foreground">CHAP: {acl.userid}</span>{/if}

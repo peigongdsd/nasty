@@ -328,7 +328,7 @@
 									{:else}
 										<div class="space-y-1">
 											{#each subsys.namespaces as ns}
-												<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
+												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<div class="text-sm">
 														<span class="font-mono text-xs font-semibold">NSID {ns.nsid}</span>
 														<span class="ml-2 text-muted-foreground">{ns.device_path}</span>
@@ -421,7 +421,7 @@
 									{:else}
 										<div class="space-y-1">
 											{#each subsys.allowed_hosts as hostNqn}
-												<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
+												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<span class="font-mono text-xs">{hostNqn}</span>
 													<Button variant="destructive" size="xs" onclick={() => removeHost(subsys.id, hostNqn)}>Remove</Button>
 												</div>
