@@ -221,7 +221,7 @@
 				<SortTh label="Path" active={sortKey === 'path'} dir={sortDir} onclick={() => toggleSort('path')} />
 				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Access</th>
 				<SortTh label="Status" active={sortKey === 'status'} dir={sortDir} onclick={() => toggleSort('status')} />
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 			</tr>
 		</thead>
 		<tbody>

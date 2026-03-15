@@ -193,7 +193,7 @@
 			<tr>
 				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Username</th>
 				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Role</th>
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -284,7 +284,7 @@
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Pool</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Created</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Expires</th>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 				</tr>
 			</thead>
 			<tbody>

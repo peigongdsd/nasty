@@ -9,7 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { ChevronsUpDown, ChevronUp, ChevronDown } from '@lucide/svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let targets: IscsiTarget[] = $state([]);
 	let blockSubvolumes: Subvolume[] = $state([]);
@@ -159,12 +159,10 @@
 	}
 
 	let search = $state('');
-	let sortDir = $state<'asc' | 'desc' | null>(null);
+	let sortDir = $state<'asc' | 'desc'>('asc');
 
 	function toggleSort() {
-		if (sortDir === null) sortDir = 'asc';
-		else if (sortDir === 'asc') sortDir = 'desc';
-		else sortDir = null;
+		sortDir = sortDir === 'asc' ? 'desc' : 'asc';
 	}
 
 	const filtered = $derived(
@@ -176,7 +174,6 @@
 	);
 
 	const sorted = $derived.by(() => {
-		if (!sortDir) return filtered;
 		return [...filtered].sort((a, b) => {
 			const cmp = a.iqn.localeCompare(b.iqn);
 			return sortDir === 'asc' ? cmp : -cmp;
@@ -216,12 +213,6 @@
 		{showCreate ? 'Cancel' : 'Create Target'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
-	{#if targets.length > 1}
-		<button class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onclick={toggleSort}>
-			Sort by IQN
-			{#if sortDir === 'asc'}<ChevronUp size={13} />{:else if sortDir === 'desc'}<ChevronDown size={13} />{:else}<ChevronsUpDown size={13} class="opacity-30" />{/if}
-		</button>
-	{/if}
 </div>
 
 {#if showCreate}
@@ -258,9 +249,9 @@
 	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">IQN</th>
+				<SortTh label="IQN" active={true} dir={sortDir} onclick={toggleSort} />
 				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Summary</th>
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 			</tr>
 		</thead>
 		<tbody>

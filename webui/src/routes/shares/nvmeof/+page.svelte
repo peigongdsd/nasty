@@ -9,7 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Card, CardContent } from '$lib/components/ui/card';
-	import { ChevronsUpDown, ChevronUp, ChevronDown } from '@lucide/svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let subsystems: NvmeofSubsystem[] = $state([]);
 	let blockSubvolumes: Subvolume[] = $state([]);
@@ -193,12 +193,10 @@
 	}
 
 	let search = $state('');
-	let sortDir = $state<'asc' | 'desc' | null>(null);
+	let sortDir = $state<'asc' | 'desc'>('asc');
 
 	function toggleSort() {
-		if (sortDir === null) sortDir = 'asc';
-		else if (sortDir === 'asc') sortDir = 'desc';
-		else sortDir = null;
+		sortDir = sortDir === 'asc' ? 'desc' : 'asc';
 	}
 
 	const filtered = $derived(
@@ -208,7 +206,6 @@
 	);
 
 	const sorted = $derived.by(() => {
-		if (!sortDir) return filtered;
 		return [...filtered].sort((a, b) => {
 			const cmp = a.nqn.localeCompare(b.nqn);
 			return sortDir === 'asc' ? cmp : -cmp;
@@ -248,12 +245,6 @@
 		{showCreate ? 'Cancel' : 'Create Share'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
-	{#if subsystems.length > 1}
-		<button class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" onclick={toggleSort}>
-			Sort by NQN
-			{#if sortDir === 'asc'}<ChevronUp size={13} />{:else if sortDir === 'desc'}<ChevronDown size={13} />{:else}<ChevronsUpDown size={13} class="opacity-30" />{/if}
-		</button>
-	{/if}
 </div>
 
 {#if showCreate}
@@ -300,9 +291,9 @@
 	<table class="w-full text-sm">
 		<thead>
 			<tr>
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">NQN</th>
+				<SortTh label="NQN" active={true} dir={sortDir} onclick={toggleSort} />
 				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Summary</th>
-				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Actions</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
