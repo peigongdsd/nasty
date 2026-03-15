@@ -71,6 +71,10 @@ async def main():
                         help="Skip server-side deletions (leave subvolumes/shares behind)")
     parser.add_argument("--delete-only", action="store_true",
                         help="Delete all test-* leftovers from a prior --skip-delete run, then exit")
+    parser.add_argument("--tag", default=None,
+                        help="Reuse a specific tag from a prior run (e.g. from --skip-delete)")
+    parser.add_argument("--remount", action="store_true",
+                        help="Skip creation/writes, mount existing shares and verify data only (use with --tag)")
     args = parser.parse_args()
 
     if os.geteuid() != 0:
@@ -118,20 +122,27 @@ async def main():
             await client.close()
         return
 
-    ctx = TestContext(client, args.host, pool_name, skip_delete=args.skip_delete)
-    if args.skip_delete:
+    ctx = TestContext(client, args.host, pool_name, skip_delete=args.skip_delete,
+                     tag=args.tag, remount=args.remount)
+
+    info(f"Test tag: {ctx.tag}  (reuse with --tag {ctx.tag} --remount)")
+    if args.remount:
+        if not args.tag:
+            warn("--remount without --tag: using freshly generated tag (nothing will be found)")
+        warn("--remount: skipping creation, mounting existing shares only")
+    elif args.skip_delete:
         warn("--skip-delete: subvolumes and shares will NOT be deleted after tests")
 
     try:
         await test_setup(ctx)
 
-        if not args.skip_subvolume: await test_subvolume(ctx)
+        if not args.skip_subvolume and not args.remount: await test_subvolume(ctx)
         else:                       warn("Subvolume: skipped")
 
-        if not args.skip_snapshots: await test_snapshots(ctx)
+        if not args.skip_snapshots and not args.remount: await test_snapshots(ctx)
         else:                       warn("Snapshots: skipped")
 
-        if not args.skip_storage:   await test_storage(ctx)
+        if not args.skip_storage and not args.remount:   await test_storage(ctx)
         else:                       warn("Storage: skipped")
 
         if not args.skip_nfs:    await test_nfs(ctx)

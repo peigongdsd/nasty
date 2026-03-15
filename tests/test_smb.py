@@ -27,29 +27,30 @@ async def test_smb(ctx: TestContext):
     clone_mounted    = [False] * N
 
     try:
-        # ── Create subvolumes + shares ────────────────────────────
-        for i in range(N):
-            label = f"SMB[{i+1}]"
-            info(f"Creating filesystem subvolume '{sv_names[i]}'...")
-            svs[i] = await ctx.client.call("subvolume.create", {
-                "pool": ctx.pool,
-                "name": sv_names[i],
-                "subvolume_type": "filesystem",
-            })
-            ctx.record(f"{label}: subvolume created", True)
+        if not ctx.remount:
+            # ── Create subvolumes + shares ────────────────────────
+            for i in range(N):
+                label = f"SMB[{i+1}]"
+                info(f"Creating filesystem subvolume '{sv_names[i]}'...")
+                svs[i] = await ctx.client.call("subvolume.create", {
+                    "pool": ctx.pool,
+                    "name": sv_names[i],
+                    "subvolume_type": "filesystem",
+                })
+                ctx.record(f"{label}: subvolume created", True)
 
-            info(f"Creating SMB share '{share_names[i]}'...")
-            share = await ctx.client.call("share.smb.create", {
-                "name": share_names[i],
-                "path": svs[i]["path"],
-                "guest_ok": True,
-                "browseable": True,
-            })
-            share_ids[i] = share["id"]
-            ctx.record(f"{label}: share created", True)
+                info(f"Creating SMB share '{share_names[i]}'...")
+                share = await ctx.client.call("share.smb.create", {
+                    "name": share_names[i],
+                    "path": svs[i]["path"],
+                    "guest_ok": True,
+                    "browseable": True,
+                })
+                share_ids[i] = share["id"]
+                ctx.record(f"{label}: share created", True)
 
-        # Pause for Samba to reload config
-        await asyncio.sleep(3)
+            # Pause for Samba to reload config
+            await asyncio.sleep(3)
 
         # ── Mount ─────────────────────────────────────────────────
         for i in range(N):
@@ -68,13 +69,14 @@ async def test_smb(ctx: TestContext):
                 ctx.record(f"{label}: mount", True)
 
         # ── Write ─────────────────────────────────────────────────
-        for i in range(N):
-            if not mounted[i]:
-                continue
-            test_data = f"nasty-smb-test{i+1}-{ctx.tag}"
-            with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
-                f.write(test_data)
-            ctx.record(f"SMB[{i+1}]: write", True)
+        if not ctx.remount:
+            for i in range(N):
+                if not mounted[i]:
+                    continue
+                test_data = f"nasty-smb-test{i+1}-{ctx.tag}"
+                with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
+                    f.write(test_data)
+                ctx.record(f"SMB[{i+1}]: write", True)
 
         # ── Read/verify ───────────────────────────────────────────
         for i in range(N):
@@ -85,6 +87,9 @@ async def test_smb(ctx: TestContext):
                 got = f.read()
             ctx.record(f"SMB[{i+1}]: read/verify", got == expected,
                        "" if got == expected else f"expected '{expected}', got '{got}'")
+
+        if ctx.remount:
+            return
 
         # ── Snapshots ─────────────────────────────────────────────
         snap_names = [[f"snap-smb{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]

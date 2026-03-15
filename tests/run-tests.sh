@@ -67,6 +67,8 @@ if [[ "$*" != *"--host"* ]]; then
     echo "  --skip-nvmeof      Skip NVMe-oF tests"
     echo "  --skip-delete      Leave subvolumes/shares behind after tests"
     echo "  --delete-only      Delete test-* leftovers from a prior --skip-delete run"
+    echo "  --tag TAG          Reuse tag from a prior --skip-delete run"
+    echo "  --remount          Skip creation, mount existing shares and verify (use with --tag)"
     exit 1
 fi
 

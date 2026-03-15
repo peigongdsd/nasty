@@ -49,29 +49,30 @@ async def test_iscsi(ctx: TestContext):
     clone_mounted   = [False] * N
 
     try:
-        # ── Create block subvolumes + targets ─────────────────────
-        for i in range(N):
-            label = f"iSCSI[{i+1}]"
-            info(f"Creating block subvolume '{sv_names[i]}' (64 MiB)...")
-            sv = await ctx.client.call("subvolume.create", {
-                "pool": ctx.pool,
-                "name": sv_names[i],
-                "subvolume_type": "block",
-                "volsize_bytes": 64 * 1024 * 1024,
-            })
-            block_dev = sv.get("block_device")
-            if not block_dev:
-                ctx.record(f"{label}: block device", False, "no block_device returned")
-                return
-            ctx.record(f"{label}: block subvolume created", True)
+        if not ctx.remount:
+            # ── Create block subvolumes + targets ─────────────────
+            for i in range(N):
+                label = f"iSCSI[{i+1}]"
+                info(f"Creating block subvolume '{sv_names[i]}' (64 MiB)...")
+                sv = await ctx.client.call("subvolume.create", {
+                    "pool": ctx.pool,
+                    "name": sv_names[i],
+                    "subvolume_type": "block",
+                    "volsize_bytes": 64 * 1024 * 1024,
+                })
+                block_dev = sv.get("block_device")
+                if not block_dev:
+                    ctx.record(f"{label}: block device", False, "no block_device returned")
+                    return
+                ctx.record(f"{label}: block subvolume created", True)
 
-            info(f"Creating iSCSI target for {sv_names[i]}...")
-            target = await ctx.client.call("share.iscsi.create_quick", {
-                "name": target_names[i],
-                "device_path": block_dev,
-            })
-            target_ids[i] = target["id"]
-            ctx.record(f"{label}: target created", True)
+                info(f"Creating iSCSI target for {sv_names[i]}...")
+                target = await ctx.client.call("share.iscsi.create_quick", {
+                    "name": target_names[i],
+                    "device_path": block_dev,
+                })
+                target_ids[i] = target["id"]
+                ctx.record(f"{label}: target created", True)
 
         # ── Discovery + login ─────────────────────────────────────
         for i in range(N):
@@ -110,12 +111,13 @@ async def test_iscsi(ctx: TestContext):
             devices[i] = dev
             ctx.record(f"{label}: device attached", True)
 
-            info(f"Formatting {dev} with ext4...")
-            r = run(["mkfs.ext4", "-F", "-q", dev], check=False, timeout=60)
-            if r.returncode != 0:
-                ctx.record(f"{label}: mkfs.ext4", False, r.stderr.strip())
-                continue
-            ctx.record(f"{label}: mkfs.ext4", True)
+            if not ctx.remount:
+                info(f"Formatting {dev} with ext4...")
+                r = run(["mkfs.ext4", "-F", "-q", dev], check=False, timeout=60)
+                if r.returncode != 0:
+                    ctx.record(f"{label}: mkfs.ext4", False, r.stderr.strip())
+                    continue
+                ctx.record(f"{label}: mkfs.ext4", True)
 
             os.makedirs(mount_points[i], exist_ok=True)
             r = run(["mount", dev, mount_points[i]], check=False)
@@ -125,13 +127,14 @@ async def test_iscsi(ctx: TestContext):
             mounted[i] = True
             ctx.record(f"{label}: mount", True)
 
-        for i in range(N):
-            if not mounted[i]:
-                continue
-            test_data = f"nasty-iscsi-test{i+1}-{ctx.tag}"
-            with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
-                f.write(test_data)
-            ctx.record(f"iSCSI[{i+1}]: write", True)
+        if not ctx.remount:
+            for i in range(N):
+                if not mounted[i]:
+                    continue
+                test_data = f"nasty-iscsi-test{i+1}-{ctx.tag}"
+                with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
+                    f.write(test_data)
+                ctx.record(f"iSCSI[{i+1}]: write", True)
 
         for i in range(N):
             if not mounted[i]:
@@ -141,6 +144,9 @@ async def test_iscsi(ctx: TestContext):
                 got = f.read()
             ctx.record(f"iSCSI[{i+1}]: read/verify", got == expected,
                        "" if got == expected else f"expected '{expected}', got '{got}'")
+
+        if ctx.remount:
+            return
 
         # ── Snapshots ─────────────────────────────────────────────
         snap_names = [[f"snap-iscsi{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]

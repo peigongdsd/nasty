@@ -25,27 +25,39 @@ async def test_nfs(ctx: TestContext):
     clone_mounted   = [False] * N
 
     try:
-        # ── Create subvolumes + shares ────────────────────────────
-        for i in range(N):
-            label = f"NFS[{i+1}]"
-            info(f"Creating filesystem subvolume '{sv_names[i]}'...")
-            svs[i] = await ctx.client.call("subvolume.create", {
-                "pool": ctx.pool,
-                "name": sv_names[i],
-                "subvolume_type": "filesystem",
-            })
-            ctx.record(f"{label}: subvolume created", True)
+        if ctx.remount:
+            # ── Remount: look up existing subvolumes by name ──────
+            all_svs = await ctx.client.call("subvolume.list", {"pool": ctx.pool})
+            for i in range(N):
+                sv = next((s for s in all_svs if s["name"] == sv_names[i]), None)
+                if sv:
+                    svs[i] = sv
+                else:
+                    ctx.record(f"NFS[{i+1}]: subvolume found", False, f"'{sv_names[i]}' not found")
+        else:
+            # ── Create subvolumes + shares ────────────────────────
+            for i in range(N):
+                label = f"NFS[{i+1}]"
+                info(f"Creating filesystem subvolume '{sv_names[i]}'...")
+                svs[i] = await ctx.client.call("subvolume.create", {
+                    "pool": ctx.pool,
+                    "name": sv_names[i],
+                    "subvolume_type": "filesystem",
+                })
+                ctx.record(f"{label}: subvolume created", True)
 
-            info(f"Creating NFS share for {sv_names[i]}...")
-            share = await ctx.client.call("share.nfs.create", {
-                "path": svs[i]["path"],
-                "clients": [{"host": "*", "options": "rw,sync,no_subtree_check,no_root_squash"}],
-            })
-            share_ids[i] = share["id"]
-            ctx.record(f"{label}: share created", True)
+                info(f"Creating NFS share for {sv_names[i]}...")
+                share = await ctx.client.call("share.nfs.create", {
+                    "path": svs[i]["path"],
+                    "clients": [{"host": "*", "options": "rw,sync,no_subtree_check,no_root_squash"}],
+                })
+                share_ids[i] = share["id"]
+                ctx.record(f"{label}: share created", True)
 
         # ── Mount ─────────────────────────────────────────────────
         for i in range(N):
+            if svs[i] is None:
+                continue
             label = f"NFS[{i+1}]"
             info(f"Mounting NFS share at {mount_points[i]}...")
             os.makedirs(mount_points[i], exist_ok=True)
@@ -57,13 +69,14 @@ async def test_nfs(ctx: TestContext):
                 ctx.record(f"{label}: mount", True)
 
         # ── Write ─────────────────────────────────────────────────
-        for i in range(N):
-            if not mounted[i]:
-                continue
-            test_data = f"nasty-nfs-test{i+1}-{ctx.tag}"
-            with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
-                f.write(test_data)
-            ctx.record(f"NFS[{i+1}]: write", True)
+        if not ctx.remount:
+            for i in range(N):
+                if not mounted[i]:
+                    continue
+                test_data = f"nasty-nfs-test{i+1}-{ctx.tag}"
+                with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
+                    f.write(test_data)
+                ctx.record(f"NFS[{i+1}]: write", True)
 
         # ── Read/verify ───────────────────────────────────────────
         for i in range(N):
@@ -74,6 +87,9 @@ async def test_nfs(ctx: TestContext):
                 got = f.read()
             ctx.record(f"NFS[{i+1}]: read/verify", got == expected,
                        "" if got == expected else f"expected '{expected}', got '{got}'")
+
+        if ctx.remount:
+            return
 
         # ── Snapshots ─────────────────────────────────────────────
         snap_names = [[f"snap-nfs{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]

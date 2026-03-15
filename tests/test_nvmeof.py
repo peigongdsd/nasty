@@ -71,29 +71,30 @@ async def test_nvmeof(ctx: TestContext):
     snap2_mounted   = [False] * N
 
     try:
-        # ── Create block subvolumes + shares ──────────────────────
-        for i in range(N):
-            label = f"NVMe-oF[{i+1}]"
-            info(f"Creating block subvolume '{sv_names[i]}' (64 MiB)...")
-            sv = await ctx.client.call("subvolume.create", {
-                "pool": ctx.pool,
-                "name": sv_names[i],
-                "subvolume_type": "block",
-                "volsize_bytes": 64 * 1024 * 1024,
-            })
-            block_dev = sv.get("block_device")
-            if not block_dev:
-                ctx.record(f"{label}: block device", False, "no block_device returned")
-                return
-            ctx.record(f"{label}: block subvolume created", True)
+        if not ctx.remount:
+            # ── Create block subvolumes + shares ──────────────────
+            for i in range(N):
+                label = f"NVMe-oF[{i+1}]"
+                info(f"Creating block subvolume '{sv_names[i]}' (64 MiB)...")
+                sv = await ctx.client.call("subvolume.create", {
+                    "pool": ctx.pool,
+                    "name": sv_names[i],
+                    "subvolume_type": "block",
+                    "volsize_bytes": 64 * 1024 * 1024,
+                })
+                block_dev = sv.get("block_device")
+                if not block_dev:
+                    ctx.record(f"{label}: block device", False, "no block_device returned")
+                    return
+                ctx.record(f"{label}: block subvolume created", True)
 
-            info(f"Creating NVMe-oF share for {sv_names[i]}...")
-            subsys = await ctx.client.call("share.nvmeof.create_quick", {
-                "name": subsys_names[i],
-                "device_path": block_dev,
-            })
-            subsys_ids[i] = subsys["id"]
-            ctx.record(f"{label}: share created", True)
+                info(f"Creating NVMe-oF share for {sv_names[i]}...")
+                subsys = await ctx.client.call("share.nvmeof.create_quick", {
+                    "name": subsys_names[i],
+                    "device_path": block_dev,
+                })
+                subsys_ids[i] = subsys["id"]
+                ctx.record(f"{label}: share created", True)
 
         # ── Connect ───────────────────────────────────────────────
         for i in range(N):
@@ -121,12 +122,13 @@ async def test_nvmeof(ctx: TestContext):
                 continue
             ctx.record(f"{label}: device visible", True)
 
-            info(f"Formatting {dev} with ext4...")
-            r = run(["mkfs.ext4", "-F", "-q", dev], check=False, timeout=60)
-            if r.returncode != 0:
-                ctx.record(f"{label}: mkfs.ext4", False, r.stderr.strip())
-                continue
-            ctx.record(f"{label}: mkfs.ext4", True)
+            if not ctx.remount:
+                info(f"Formatting {dev} with ext4...")
+                r = run(["mkfs.ext4", "-F", "-q", dev], check=False, timeout=60)
+                if r.returncode != 0:
+                    ctx.record(f"{label}: mkfs.ext4", False, r.stderr.strip())
+                    continue
+                ctx.record(f"{label}: mkfs.ext4", True)
 
             os.makedirs(mount_points[i], exist_ok=True)
             r = run(["mount", dev, mount_points[i]], check=False)
@@ -136,13 +138,14 @@ async def test_nvmeof(ctx: TestContext):
             mounted[i] = True
             ctx.record(f"{label}: mount", True)
 
-        for i in range(N):
-            if not mounted[i]:
-                continue
-            test_data = f"nasty-nvme-test{i+1}-{ctx.tag}"
-            with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
-                f.write(test_data)
-            ctx.record(f"NVMe-oF[{i+1}]: write", True)
+        if not ctx.remount:
+            for i in range(N):
+                if not mounted[i]:
+                    continue
+                test_data = f"nasty-nvme-test{i+1}-{ctx.tag}"
+                with open(os.path.join(mount_points[i], "testfile.txt"), "w") as f:
+                    f.write(test_data)
+                ctx.record(f"NVMe-oF[{i+1}]: write", True)
 
         for i in range(N):
             if not mounted[i]:
@@ -152,6 +155,9 @@ async def test_nvmeof(ctx: TestContext):
                 got = f.read()
             ctx.record(f"NVMe-oF[{i+1}]: read/verify", got == expected,
                        "" if got == expected else f"expected '{expected}', got '{got}'")
+
+        if ctx.remount:
+            return
 
         # ── Flush before snapshotting ─────────────────────────────
         # Flush the client's page cache to the NVMe-oF target so the snapshot
