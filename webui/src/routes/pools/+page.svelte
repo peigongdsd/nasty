@@ -382,7 +382,7 @@
 <h1 class="mb-4 text-2xl font-bold">Storage Pools</h1>
 
 <div class="mb-4">
-	<Button onclick={() => wizardStep === 0 ? openWizard() : (wizardStep = 0)}>
+	<Button size="sm" onclick={() => wizardStep === 0 ? openWizard() : (wizardStep = 0)}>
 		{wizardStep !== 0 ? 'Cancel' : 'Create Pool'}
 	</Button>
 </div>
@@ -447,7 +447,7 @@
 					{/if}
 				</div>
 				<div class="flex gap-2">
-					<Button onclick={wizardNext} disabled={!newName || selectedPaths.length === 0}>
+					<Button size="sm" onclick={wizardNext} disabled={!newName || selectedPaths.length === 0}>
 						Next: Choose Tiering →
 					</Button>
 				</div>
@@ -546,8 +546,8 @@
 					{/each}
 				</div>
 				<div class="flex gap-2">
-					<Button variant="secondary" onclick={() => wizardStep = 1}>← Back</Button>
-					<Button onclick={wizardNext}>Next: Review →</Button>
+					<Button variant="secondary" size="sm" onclick={() => wizardStep = 1}>← Back</Button>
+					<Button size="sm" onclick={wizardNext}>Next: Review →</Button>
 				</div>
 
 			<!-- Step 3: Review + Options -->
@@ -608,8 +608,8 @@
 				</div>
 
 				<div class="flex gap-2">
-					<Button variant="secondary" onclick={() => wizardStep = 2}>← Back</Button>
-					<Button onclick={createPool}>Create Pool</Button>
+					<Button variant="secondary" size="sm" onclick={() => wizardStep = 2}>← Back</Button>
+					<Button size="sm" onclick={createPool}>Create Pool</Button>
 				</div>
 			{/if}
 		</CardContent>
@@ -635,21 +635,21 @@
 						{/if}
 					</div>
 					<div class="flex gap-2">
-						<Button variant="secondary" size="sm" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
+						<Button variant="secondary" size="xs" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
 							{expandedPool === pool.name ? 'Hide Devices' : `Devices (${pool.devices.length})`}
 						</Button>
 						{#if pool.mounted}
-							<Button variant="secondary" size="sm" onclick={() => openEditOptions(pool)}>
+							<Button variant="secondary" size="xs" onclick={() => openEditOptions(pool)}>
 								{editOptionsPool === pool.name ? 'Hide Options' : 'Options'}
 							</Button>
-							<Button variant="secondary" size="sm" onclick={() => toggleHealth(pool.name)}>
+							<Button variant="secondary" size="xs" onclick={() => toggleHealth(pool.name)}>
 								{healthPool === pool.name ? 'Hide Health' : 'Health'}
 							</Button>
 						{/if}
-						<Button variant="secondary" size="sm" onclick={() => toggleMount(pool)}>
+						<Button variant="secondary" size="xs" onclick={() => toggleMount(pool)}>
 							{pool.mounted ? 'Unmount' : 'Mount'}
 						</Button>
-						<Button variant="destructive" size="sm" onclick={() => destroyPool(pool.name)}>Destroy</Button>
+						<Button variant="destructive" size="xs" onclick={() => destroyPool(pool.name)}>Destroy</Button>
 					</div>
 				</div>
 
@@ -690,8 +690,8 @@
 						</div>
 					</div>
 					<div class="mt-3 flex gap-2">
-						<Button size="sm" onclick={() => saveOptions(pool.name)}>Save</Button>
-						<Button variant="secondary" size="sm" onclick={() => editOptionsPool = null}>Cancel</Button>
+						<Button size="xs" onclick={() => saveOptions(pool.name)}>Save</Button>
+						<Button variant="secondary" size="xs" onclick={() => editOptionsPool = null}>Cancel</Button>
 					</div>
 				</div>
 			{/if}
@@ -749,7 +749,7 @@
 									{#if scrubStatus?.raw}
 										<pre class="mb-3 max-h-[200px] overflow-auto whitespace-pre-wrap rounded bg-secondary p-2 font-mono text-xs text-muted-foreground">{scrubStatus.raw}</pre>
 									{/if}
-									<Button size="sm" onclick={() => startScrub(pool.name)}>Start Scrub</Button>
+									<Button size="xs" onclick={() => startScrub(pool.name)}>Start Scrub</Button>
 								</div>
 								<div class="rounded-lg border border-border p-4">
 									<h4 class="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Reconcile</h4>
@@ -760,7 +760,7 @@
 									{/if}
 								</div>
 							</div>
-							<Button variant="secondary" size="sm" class="mt-4" onclick={() => refreshHealth(pool.name)}>Refresh</Button>
+							<Button variant="secondary" size="xs" class="mt-4" onclick={() => refreshHealth(pool.name)}>Refresh</Button>
 						{/if}
 					</div>
 				{/if}
@@ -824,15 +824,15 @@
 										<td class="flex flex-wrap gap-1.5 p-2">
 											{#if pool.mounted}
 												{#if dev.state === 'rw'}
-													<Button variant="secondary" size="sm" onclick={() => setDeviceState(pool.name, dev.path, 'ro')}>Set RO</Button>
-													<Button variant="secondary" size="sm" onclick={() => offlineDevice(pool.name, dev.path)}>Offline</Button>
+													<Button variant="secondary" size="xs" onclick={() => setDeviceState(pool.name, dev.path, 'ro')}>Set RO</Button>
+													<Button variant="secondary" size="xs" onclick={() => offlineDevice(pool.name, dev.path)}>Offline</Button>
 												{:else if dev.state === 'ro'}
-													<Button variant="secondary" size="sm" onclick={() => setDeviceState(pool.name, dev.path, 'rw')}>Set RW</Button>
+													<Button variant="secondary" size="xs" onclick={() => setDeviceState(pool.name, dev.path, 'rw')}>Set RW</Button>
 												{/if}
 												{#if dev.state !== 'spare'}
-													<Button variant="secondary" size="sm" onclick={() => evacuateDevice(pool.name, dev.path)}>Evacuate</Button>
+													<Button variant="secondary" size="xs" onclick={() => evacuateDevice(pool.name, dev.path)}>Evacuate</Button>
 												{/if}
-												<Button variant="destructive" size="sm" onclick={() => removeDevice(pool.name, dev.path)}>Remove</Button>
+												<Button variant="destructive" size="xs" onclick={() => removeDevice(pool.name, dev.path)}>Remove</Button>
 											{/if}
 										</td>
 									</tr>
@@ -867,12 +867,12 @@
 										</div>
 									{/if}
 									<div class="mt-2 flex gap-2">
-										<Button size="sm" onclick={() => addDevice(pool.name)} disabled={!addDevicePath}>Add</Button>
-										<Button variant="secondary" size="sm" onclick={() => { addDevicePool = null; addDevicePath = ''; addDeviceLabel = ''; }}>Cancel</Button>
+										<Button size="xs" onclick={() => addDevice(pool.name)} disabled={!addDevicePath}>Add</Button>
+										<Button variant="secondary" size="xs" onclick={() => { addDevicePool = null; addDevicePath = ''; addDeviceLabel = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button variant="secondary" size="sm" class="mt-3" onclick={() => addDevicePool = pool.name}>+ Add Device</Button>
+								<Button variant="secondary" size="xs" class="mt-3" onclick={() => addDevicePool = pool.name}>+ Add Device</Button>
 							{/if}
 						{/if}
 					</div>

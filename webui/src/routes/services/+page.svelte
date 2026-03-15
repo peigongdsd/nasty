@@ -74,7 +74,7 @@
 					<td class="p-3">
 						<Button
 							variant={proto.enabled ? 'secondary' : 'default'}
-							size="sm"
+							size="xs"
 							onclick={() => toggle(proto)}
 						>
 							{proto.enabled ? 'Disable' : 'Enable'}

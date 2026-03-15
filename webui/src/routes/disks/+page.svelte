@@ -67,7 +67,7 @@
 			<span class="text-sm text-muted-foreground">
 				SMART disk health monitoring
 			</span>
-			<Button variant="secondary" size="sm" onclick={toggleSmart}>
+			<Button variant="secondary" size="xs" onclick={toggleSmart}>
 				{settings.smart_enabled ? 'Disable' : 'Enable'}
 			</Button>
 		</CardContent>
@@ -75,7 +75,7 @@
 {/if}
 
 <div class="mb-4">
-	<Button onclick={refresh}>Refresh</Button>
+	<Button size="sm" onclick={refresh}>Refresh</Button>
 </div>
 
 {#if loading}
@@ -96,7 +96,7 @@
 						<strong class="font-mono">{disk.device}</strong>
 						<span class="text-sm text-muted-foreground">{disk.model}</span>
 					</div>
-					<Button variant="secondary" size="sm" onclick={() => expandedDisk = expandedDisk === disk.device ? null : disk.device}>
+					<Button variant="secondary" size="xs" onclick={() => expandedDisk = expandedDisk === disk.device ? null : disk.device}>
 						{expandedDisk === disk.device ? 'Hide' : 'Details'}
 					</Button>
 				</div>

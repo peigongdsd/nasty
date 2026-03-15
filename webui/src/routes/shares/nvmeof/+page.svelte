@@ -245,7 +245,7 @@
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button onclick={() => showCreate = !showCreate}>
+	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Share'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
@@ -333,7 +333,7 @@
 													{ns.enabled ? 'Active' : 'Off'}
 												</Badge>
 											</div>
-											<Button variant="ghost" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</Button>
+											<Button variant="ghost" size="xs" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</Button>
 										</div>
 									{/each}
 								</div>
@@ -351,12 +351,12 @@
 										</select>
 									</div>
 									<div class="flex gap-2">
-										<Button size="sm" class="h-7 text-xs" onclick={addNamespace} disabled={!addNsDevice}>Add</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { addNsSubsys = ''; }}>Cancel</Button>
+										<Button size="xs" class="h-7 text-xs" onclick={addNamespace} disabled={!addNsDevice}>Add</Button>
+										<Button size="xs" variant="ghost" class="h-7 text-xs" onclick={() => { addNsSubsys = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button size="sm" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addNsSubsys = subsys.id; }}>+ Add Namespace</Button>
+								<Button size="xs" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addNsSubsys = subsys.id; }}>+ Add Namespace</Button>
 							{/if}
 						</div>
 
@@ -374,7 +374,7 @@
 												<span class="ml-2">{port.transport.toUpperCase()} {port.addr}:{port.service_id}</span>
 												<span class="ml-1 text-xs text-muted-foreground">({port.addr_family})</span>
 											</div>
-											<Button variant="ghost" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removePort(subsys.id, port.port_id)}>Remove</Button>
+											<Button variant="ghost" size="xs" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removePort(subsys.id, port.port_id)}>Remove</Button>
 										</div>
 									{/each}
 								</div>
@@ -409,12 +409,12 @@
 										</div>
 									</div>
 									<div class="flex gap-2">
-										<Button size="sm" class="h-7 text-xs" onclick={addPort}>Add</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { addPortSubsys = ''; }}>Cancel</Button>
+										<Button size="xs" class="h-7 text-xs" onclick={addPort}>Add</Button>
+										<Button size="xs" variant="ghost" class="h-7 text-xs" onclick={() => { addPortSubsys = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button size="sm" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addPortSubsys = subsys.id; }}>+ Add Port</Button>
+								<Button size="xs" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addPortSubsys = subsys.id; }}>+ Add Port</Button>
 							{/if}
 						</div>
 
@@ -428,7 +428,7 @@
 									{#each subsys.allowed_hosts as hostNqn}
 										<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
 											<span class="font-mono text-xs">{hostNqn}</span>
-											<Button variant="ghost" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeHost(subsys.id, hostNqn)}>Remove</Button>
+											<Button variant="ghost" size="xs" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeHost(subsys.id, hostNqn)}>Remove</Button>
 										</div>
 									{/each}
 								</div>
@@ -441,18 +441,18 @@
 										<Input bind:value={addHostNqn} placeholder="nqn.2024-01.com.client:host1" class="mt-1 h-8 text-xs" />
 									</div>
 									<div class="flex gap-2">
-										<Button size="sm" class="h-7 text-xs" onclick={addHost} disabled={!addHostNqn}>Add</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { addHostSubsys = ''; }}>Cancel</Button>
+										<Button size="xs" class="h-7 text-xs" onclick={addHost} disabled={!addHostNqn}>Add</Button>
+										<Button size="xs" variant="ghost" class="h-7 text-xs" onclick={() => { addHostSubsys = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button size="sm" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addHostSubsys = subsys.id; }}>+ Add Host</Button>
+								<Button size="xs" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addHostSubsys = subsys.id; }}>+ Add Host</Button>
 							{/if}
 						</div>
 
 						<!-- Delete -->
 						<div class="border-t pt-3">
-							<Button variant="destructive" size="sm" onclick={() => remove(subsys.id)}>Delete Share</Button>
+							<Button variant="destructive" size="xs" onclick={() => remove(subsys.id)}>Delete Share</Button>
 						</div>
 					</div>
 				{/if}

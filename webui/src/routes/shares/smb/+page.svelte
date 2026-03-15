@@ -166,7 +166,7 @@
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button onclick={() => showCreate = !showCreate}>
+	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Share'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
@@ -247,10 +247,10 @@
 					</td>
 					<td class="p-3">
 						<div class="flex gap-2">
-							<Button variant="secondary" size="sm" onclick={() => toggleEnabled(share)}>
+							<Button variant="secondary" size="xs" onclick={() => toggleEnabled(share)}>
 								{share.enabled ? 'Disable' : 'Enable'}
 							</Button>
-							<Button variant="destructive" size="sm" onclick={() => remove(share.id)}>Delete</Button>
+							<Button variant="destructive" size="xs" onclick={() => remove(share.id)}>Delete</Button>
 						</div>
 					</td>
 				</tr>

@@ -145,7 +145,7 @@
 <h1 class="mb-4 text-2xl font-bold">Users</h1>
 
 <div class="mb-4">
-	<Button onclick={() => showCreate = !showCreate}>
+	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create User'}
 	</Button>
 </div>
@@ -211,10 +211,10 @@
 					</td>
 					<td class="p-3">
 						<div class="flex gap-2">
-							<Button variant="secondary" size="sm" onclick={() => { pwUser = user.username; pwNew = ''; pwConfirm = ''; }}>
+							<Button variant="secondary" size="xs" onclick={() => { pwUser = user.username; pwNew = ''; pwConfirm = ''; }}>
 								Change Password
 							</Button>
-							<Button variant="destructive" size="sm" onclick={() => deleteUser(user.username)}>Delete</Button>
+							<Button variant="destructive" size="xs" onclick={() => deleteUser(user.username)}>Delete</Button>
 						</div>
 					</td>
 				</tr>
@@ -225,7 +225,7 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<h2 class="text-xl font-semibold">API Tokens</h2>
-	<Button onclick={() => showCreateToken = !showCreateToken}>
+	<Button size="sm" onclick={() => showCreateToken = !showCreateToken}>
 		{showCreateToken ? 'Cancel' : 'Create Token'}
 	</Button>
 </div>
@@ -306,7 +306,7 @@
 							{token.expires_at ? formatDate(token.expires_at) : '—'}
 						</td>
 						<td class="p-3">
-							<Button variant="destructive" size="sm" onclick={() => deleteToken(token.id, token.name)}>Revoke</Button>
+							<Button variant="destructive" size="xs" onclick={() => deleteToken(token.id, token.name)}>Revoke</Button>
 						</td>
 					</tr>
 				{/each}
@@ -333,10 +333,10 @@
 			{/if}
 		</div>
 		<Dialog.Footer>
-			<Button onclick={changePassword} disabled={!pwNew || pwNew.length < 8 || pwNew !== pwConfirm}>
+			<Button size="sm" onclick={changePassword} disabled={!pwNew || pwNew.length < 8 || pwNew !== pwConfirm}>
 				Change Password
 			</Button>
-			<Button variant="secondary" onclick={() => pwUser = null}>Cancel</Button>
+			<Button variant="secondary" size="sm" onclick={() => pwUser = null}>Cancel</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
@@ -357,8 +357,8 @@
 			</div>
 		{/if}
 		<Dialog.Footer>
-			<Button onclick={copyToken}>{tokenCopied ? 'Copied!' : 'Copy to Clipboard'}</Button>
-			<Button variant="secondary" onclick={() => createdToken = null}>Close</Button>
+			<Button size="sm" onclick={copyToken}>{tokenCopied ? 'Copied!' : 'Copy to Clipboard'}</Button>
+			<Button variant="secondary" size="sm" onclick={() => createdToken = null}>Close</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

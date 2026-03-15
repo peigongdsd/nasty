@@ -125,7 +125,7 @@
 
 <div class="mb-4 flex items-center justify-between">
 	<h2 class="text-base font-semibold">Alert Rules</h2>
-	<Button onclick={() => showCreate = !showCreate}>
+	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Rule'}
 	</Button>
 </div>
@@ -206,10 +206,10 @@
 					</td>
 					<td class="p-3">
 						<div class="flex gap-2">
-							<Button variant="secondary" size="sm" onclick={() => toggleRule(rule)}>
+							<Button variant="secondary" size="xs" onclick={() => toggleRule(rule)}>
 								{rule.enabled ? 'Disable' : 'Enable'}
 							</Button>
-							<Button variant="destructive" size="sm" onclick={() => deleteRule(rule.id)}>Delete</Button>
+							<Button variant="destructive" size="xs" onclick={() => deleteRule(rule.id)}>Delete</Button>
 						</div>
 					</td>
 				</tr>

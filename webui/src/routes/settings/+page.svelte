@@ -83,7 +83,7 @@
 				/>
 			</div>
 
-			<Button onclick={saveHostname} disabled={savingHostname}>
+			<Button size="sm" onclick={saveHostname} disabled={savingHostname}>
 				{savingHostname ? 'Saving...' : 'Apply Hostname'}
 			</Button>
 		</section>
@@ -118,7 +118,7 @@
 				</select>
 			</div>
 
-			<Button onclick={saveTimezone} disabled={saving}>
+			<Button size="sm" onclick={saveTimezone} disabled={saving}>
 				{saving ? 'Saving...' : 'Apply Timezone'}
 			</Button>
 		</section>
@@ -134,7 +134,7 @@
 				</div>
 				<Button
 					variant={settings.smart_enabled ? 'secondary' : 'default'}
-					size="sm"
+					size="xs"
 					onclick={toggleSmart}
 				>
 					{settings.smart_enabled ? 'Disable' : 'Enable'}

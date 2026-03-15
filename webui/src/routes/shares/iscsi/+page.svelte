@@ -213,7 +213,7 @@
 {/if}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button onclick={() => showCreate = !showCreate}>
+	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Target'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
@@ -306,7 +306,7 @@
 												<span class="ml-2 text-muted-foreground">{lun.backstore_path}</span>
 												<span class="ml-1 text-xs text-muted-foreground">({lun.backstore_type})</span>
 											</div>
-											<Button variant="ghost" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeLun(target.id, lun.lun_id)}>Remove</Button>
+											<Button variant="ghost" size="xs" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeLun(target.id, lun.lun_id)}>Remove</Button>
 										</div>
 									{/each}
 								</div>
@@ -333,12 +333,12 @@
 										</select>
 									</div>
 									<div class="flex gap-2">
-										<Button size="sm" class="h-7 text-xs" onclick={addLun} disabled={!addLunPath}>Add</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { addLunTarget = ''; }}>Cancel</Button>
+										<Button size="xs" class="h-7 text-xs" onclick={addLun} disabled={!addLunPath}>Add</Button>
+										<Button size="xs" variant="ghost" class="h-7 text-xs" onclick={() => { addLunTarget = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button size="sm" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addLunTarget = target.id; }}>+ Add LUN</Button>
+								<Button size="xs" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addLunTarget = target.id; }}>+ Add LUN</Button>
 							{/if}
 						</div>
 
@@ -357,7 +357,7 @@
 													<span class="ml-2 text-xs text-muted-foreground">CHAP: {acl.userid}</span>
 												{/if}
 											</div>
-											<Button variant="ghost" size="sm" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeAcl(target.id, acl.initiator_iqn)}>Remove</Button>
+											<Button variant="ghost" size="xs" class="h-7 text-xs text-destructive hover:text-destructive" onclick={() => removeAcl(target.id, acl.initiator_iqn)}>Remove</Button>
 										</div>
 									{/each}
 								</div>
@@ -381,18 +381,18 @@
 										</div>
 									</div>
 									<div class="flex gap-2">
-										<Button size="sm" class="h-7 text-xs" onclick={addAcl} disabled={!addAclIqn}>Add</Button>
-										<Button size="sm" variant="ghost" class="h-7 text-xs" onclick={() => { addAclTarget = ''; }}>Cancel</Button>
+										<Button size="xs" class="h-7 text-xs" onclick={addAcl} disabled={!addAclIqn}>Add</Button>
+										<Button size="xs" variant="ghost" class="h-7 text-xs" onclick={() => { addAclTarget = ''; }}>Cancel</Button>
 									</div>
 								</div>
 							{:else}
-								<Button size="sm" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addAclTarget = target.id; }}>+ Add ACL</Button>
+								<Button size="xs" variant="outline" class="mt-2 h-7 text-xs" onclick={() => { addAclTarget = target.id; }}>+ Add ACL</Button>
 							{/if}
 						</div>
 
 						<!-- Delete -->
 						<div class="border-t pt-3">
-							<Button variant="destructive" size="sm" onclick={() => remove(target.id)}>Delete Target</Button>
+							<Button variant="destructive" size="xs" onclick={() => remove(target.id)}>Delete Target</Button>
 						</div>
 					</div>
 				{/if}

@@ -143,7 +143,7 @@
 {#if needsRefresh}
 	<div class="mb-4 flex items-center gap-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
 		<span class="flex-1">Update applied. Refresh your browser to load the new WebUI.</span>
-		<Button variant="secondary" size="sm" onclick={() => location.reload()}>
+		<Button variant="secondary" size="xs" onclick={() => location.reload()}>
 			Refresh Now
 		</Button>
 	</div>
@@ -154,7 +154,7 @@
 		<span class="flex-1">A kernel update was installed. Reboot to activate it.</span>
 		<Button
 			variant={confirmAction === 'reboot' ? 'destructive' : 'secondary'}
-			size="sm"
+			size="xs"
 			onclick={() => requestAction('reboot')}
 		>
 			{confirmAction === 'reboot' ? 'Confirm Reboot?' : 'Reboot Now'}
@@ -195,12 +195,13 @@
 			{/if}
 
 			<div class="flex gap-3">
-				<Button onclick={checkForUpdates} disabled={checking || status?.state === 'running'}>
+				<Button size="sm" onclick={checkForUpdates} disabled={checking || status?.state === 'running'}>
 					{checking ? 'Checking...' : 'Check for Updates'}
 				</Button>
 				{#if info?.update_available}
 					<Button
 						variant={confirmAction === 'update' ? 'destructive' : 'default'}
+						size="sm"
 						onclick={() => requestAction('update')}
 						disabled={status?.state === 'running'}
 					>
@@ -209,6 +210,7 @@
 				{/if}
 				<Button
 					variant={confirmAction === 'rollback' ? 'destructive' : 'secondary'}
+					size="sm"
 					onclick={() => requestAction('rollback')}
 					disabled={status?.state === 'running'}
 				>
@@ -253,6 +255,7 @@
 			</div>
 			<Button
 				variant={confirmAction === 'reboot' ? 'destructive' : 'outline'}
+				size="sm"
 				onclick={() => requestAction('reboot')}
 				disabled={status?.state === 'running'}
 			>

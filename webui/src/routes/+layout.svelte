@@ -177,10 +177,10 @@
 					{@const active = currentNav.href === item.href}
 					<a
 						href={item.href}
-						class="flex items-center gap-2.5 px-4 py-2 text-sm no-underline transition-colors
+						class="relative flex items-center gap-2.5 py-2 pl-[18px] pr-4 text-sm no-underline transition-all
 							{active
-								? 'bg-accent text-accent-foreground font-medium'
-								: 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'}"
+								? 'text-foreground font-medium before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary before:content-[\'\']'
+								: 'text-muted-foreground hover:text-foreground hover:before:absolute hover:before:left-0 hover:before:top-1 hover:before:bottom-1 hover:before:w-0.5 hover:before:rounded-full hover:before:bg-border hover:before:content-[\'\']'}"
 					>
 						<Icon size={15} class="shrink-0" />
 						{item.label}

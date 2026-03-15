@@ -196,7 +196,7 @@
 				<option value={p.name}>{p.name}</option>
 			{/each}
 		</select>
-		<Button onclick={() => showCreate = !showCreate}>
+		<Button size="sm" onclick={() => showCreate = !showCreate}>
 			{showCreate ? 'Cancel' : 'Create Subvolume'}
 		</Button>
 		<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
@@ -294,10 +294,10 @@
 						{#if sv.subvolume_type === 'block'}
 							{#if sv.block_device}
 								<span class="font-mono text-xs">{sv.block_device}</span>
-								<Button variant="secondary" size="sm" class="ml-2" onclick={() => detachSubvolume(sv.name)}>Detach</Button>
+								<Button variant="secondary" size="xs" class="ml-2" onclick={() => detachSubvolume(sv.name)}>Detach</Button>
 							{:else}
 								<span class="text-muted-foreground">Detached</span>
-								<Button variant="secondary" size="sm" class="ml-2" onclick={() => attachSubvolume(sv.name)}>Attach</Button>
+								<Button variant="secondary" size="xs" class="ml-2" onclick={() => attachSubvolume(sv.name)}>Attach</Button>
 							{/if}
 						{:else}
 							<span class="text-muted-foreground">N/A</span>
@@ -310,15 +310,15 @@
 							{#each sv.snapshots as snap}
 								<div class="my-0.5 flex items-center gap-2">
 									<span class="font-mono text-xs">{snap}</span>
-									<Button variant="destructive" size="sm" onclick={() => deleteSnapshot(sv.name, snap)}>Delete</Button>
+									<Button variant="destructive" size="xs" onclick={() => deleteSnapshot(sv.name, snap)}>Delete</Button>
 								</div>
 							{/each}
 						{/if}
 					</td>
 					<td class="p-3">
 						<div class="flex gap-2">
-							<Button variant="secondary" onclick={() => { showSnap = sv.name; snapName = ''; }}>Snapshot</Button>
-							<Button variant="destructive" onclick={() => deleteSubvolume(sv.name)}>Delete</Button>
+							<Button variant="secondary" size="xs" onclick={() => { showSnap = sv.name; snapName = ''; }}>Snapshot</Button>
+							<Button variant="destructive" size="xs" onclick={() => deleteSubvolume(sv.name)}>Delete</Button>
 						</div>
 					</td>
 				</tr>
@@ -337,8 +337,8 @@
 			<Input id="snap-name" bind:value={snapName} placeholder="snap-2026-03-12" class="mt-1" />
 		</div>
 		<Dialog.Footer>
-			<Button onclick={createSnapshot} disabled={!snapName}>Create</Button>
-			<Button variant="secondary" onclick={() => showSnap = null}>Cancel</Button>
+			<Button size="sm" onclick={createSnapshot} disabled={!snapName}>Create</Button>
+			<Button variant="secondary" size="sm" onclick={() => showSnap = null}>Cancel</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
