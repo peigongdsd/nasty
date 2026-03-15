@@ -122,14 +122,8 @@ impl ProtocolService {
 
             prepare_protocol(proto).await;
 
-            // Start associated services
-            for svc in proto.services() {
-                if let Err(e) = systemctl("start", svc).await {
-                    warn!("Failed to start {svc}: {e}");
-                }
-            }
-
-            // Load kernel modules for iSCSI/NVMe-oF
+            // Load kernel modules before starting services (iSCSI/NVMe-oF
+            // services require the LIO/nvmet modules to already be present)
             if proto == Protocol::Iscsi {
                 for module in &["target_core_mod", "iscsi_target_mod"] {
                     if let Err(e) = modprobe(module).await {
@@ -142,6 +136,13 @@ impl ProtocolService {
                     if let Err(e) = modprobe(module).await {
                         warn!("{e}");
                     }
+                }
+            }
+
+            // Start associated services
+            for svc in proto.services() {
+                if let Err(e) = systemctl("start", svc).await {
+                    warn!("Failed to start {svc}: {e}");
                 }
             }
         }
@@ -176,15 +177,7 @@ impl ProtocolService {
 
         prepare_protocol(proto).await;
 
-        // Start associated services
-        for svc in proto.services() {
-            info!("Starting service {svc} for protocol {}", proto.display_name());
-            if let Err(e) = systemctl("start", svc).await {
-                warn!("Failed to start {svc}: {e}");
-            }
-        }
-
-        // For iSCSI: load kernel modules
+        // Load kernel modules before starting services
         if proto == Protocol::Iscsi {
             for module in &["target_core_mod", "iscsi_target_mod"] {
                 if let Err(e) = modprobe(module).await {
@@ -192,13 +185,19 @@ impl ProtocolService {
                 }
             }
         }
-
-        // For NVMe-oF: load kernel modules
         if proto == Protocol::Nvmeof {
             for module in &["nvmet", "nvmet-tcp"] {
                 if let Err(e) = modprobe(module).await {
                     warn!("{e}");
                 }
+            }
+        }
+
+        // Start associated services
+        for svc in proto.services() {
+            info!("Starting service {svc} for protocol {}", proto.display_name());
+            if let Err(e) = systemctl("start", svc).await {
+                warn!("Failed to start {svc}: {e}");
             }
         }
 

@@ -423,8 +423,19 @@ in {
     systemd.services.nmb.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
 
     # ── iSCSI / LIO ───────────────────────────────────────────
-    # kernel modules loaded via boot.kernelModules above
-    # targetcli auto-restores from /etc/target/saveconfig.json on boot
+    # target.service: restore LIO config from /etc/target/saveconfig.json.
+    # Not started at boot — the nasty-engine starts it on demand after
+    # loading kernel modules and patching device paths.
+    systemd.services.target = mkIf cfg.iscsi.enable {
+      description = "LIO iSCSI target restore";
+      path = [ targetcli-fixed ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${targetcli-fixed}/bin/targetcli restoreconfig /etc/target/saveconfig.json";
+        ExecStop = "${targetcli-fixed}/bin/targetcli clearconfig confirm=True";
+      };
+    };
 
     # ── WebUI via nginx ────────────────────────────────────────
 
