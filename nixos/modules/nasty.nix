@@ -227,33 +227,49 @@ in {
       echo ""
       echo "  Welcome to NASty!  |  $(hostname)  |  $(date '+%Y-%m-%d %H:%M %Z')"
       echo ""
-      echo "  Type 'debug' to show the bcachefs debugging cheatsheet."
+      echo "  Type 'help' to show the NASty command reference."
       echo ""
 
-      debug() { cat /etc/nasty/debug-cheatsheet; }
-      export -f debug
+      help() { cat /etc/nasty/debug-cheatsheet; }
+      export -f help
     '';
 
     environment.etc."nasty/debug-cheatsheet".text = ''
 
       ╔══════════════════════════════════════════════════════╗
-      ║              NASty Debugging Cheat Sheet             ║
+      ║               NASty Command Reference                ║
       ╚══════════════════════════════════════════════════════╝
 
-       bcachefs status
-         bcachefs fs usage /mnt/<pool>
-         bcachefs show-super /dev/<disk>
-         dmesg | grep -i bcachefs
+       bcachefs — filesystem info
+         bcachefs fs usage /storage/<pool>        space by type (btree, data, cached, parity …)
+         bcachefs fs usage -h /storage/<pool>     human-readable sizes
+         bcachefs show-super /dev/<disk>           dump superblock (UUID, features, devices)
+         bcachefs device list /storage/<pool>      member devices with state and tier
+         dmesg | grep -i bcachefs                  kernel messages
 
-       perf profiling
-         perf record -e 'bcachefs:*' -- sleep 5 && perf script
-         perf record -g -p $(pgrep -f bcachefs) && perf report
+       bcachefs — live diagnostics (interactive, q to quit)
+         bcachefs fs top /storage/<pool>           btree ops per process
+         bcachefs fs timestats /storage/<pool>     op latency (min/max/mean/stddev/EWMA)
+
+       bcachefs — device management
+         bcachefs device add /storage/<pool> /dev/<disk>      add a device
+         bcachefs device remove /storage/<pool> /dev/<disk>   remove a device (triggers rebalance)
+         bcachefs device set-state failed /dev/<disk>         mark device failed
+         bcachefs data rereplicate /storage/<pool>            rereplicate after device change
+
+       bcachefs — subvolumes & snapshots
+         bcachefs subvolume list /storage/<pool>
+         bcachefs subvolume snapshot <src> <dst>
 
        I/O monitoring
          iotop -o
          iostat -x 1
-         fio --name=test --rw=randread --bs=4k --size=1g --filename=/mnt/<pool>/fiotest
+         fio --name=test --rw=randread --bs=4k --size=1g --filename=/storage/<pool>/fiotest
          dool -dny 1
+
+       perf profiling
+         perf record -e 'bcachefs:*' -- sleep 5 && perf script
+         perf record -g -p $(pgrep -f bcachefs) && perf report
 
        share findings with devs
          dmesg | nc termbin.com 9999
