@@ -62,12 +62,13 @@ async def test_nvmeof(ctx: TestContext):
     clone_connected = [False] * N
     clone_mounted   = [False] * N
     snap_names      = [[f"snap-nvme{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]
-    # Snapshot mount tracking (snap1 exposed read-only via NVMe-oF)
-    snap_nqns       = [f"nqn.2024-01.com.nasty:test-nvme{i+1}-snap-{ctx.tag}" for i in range(N)]
-    snap_subsys_ids = [None] * N
-    snap_mounts     = [f"/tmp/nasty-test-nvme{i+1}-snap-{ctx.tag}" for i in range(N)]
-    snap_connected  = [False] * N
-    snap_mounted    = [False] * N
+    # Snapshot content verification: clone snap2 into a temp subvolume and read via NVMe-oF
+    snap2_sv_names  = [f"test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
+    snap2_nqns      = [f"nqn.2024-01.com.nasty:test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
+    snap2_subsys_ids = [None] * N
+    snap2_mounts    = [f"/tmp/nasty-test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
+    snap2_connected = [False] * N
+    snap2_mounted   = [False] * N
 
     try:
         # ── Create block subvolumes + shares ──────────────────────
@@ -183,21 +184,31 @@ async def test_nvmeof(ctx: TestContext):
                 ctx.record(f"NVMe-oF[{i+1}]: snapshot {j+1} listed", found,
                            "" if found else f"'{snap_names[i][j]}' not found")
 
-        # ── Snapshot mount + verify (snap1, read-only) ───────────
+        # ── Snapshot content verify (snap2 cloned → NVMe-oF → read) ─
         for i in range(N):
             if not mounted[i]:
                 continue
-            label = f"NVMe-oF[{i+1}] snap"
-            info(f"Attaching snapshot '{snap_names[i][0]}' as read-only block device...")
+            label = f"NVMe-oF[{i+1}] snap2"
+            info(f"Cloning '{snap_names[i][1]}' → '{snap2_sv_names[i]}' for snapshot verify...")
             try:
-                snap = await ctx.client.call("snapshot.attach", {
+                sv = await ctx.client.call("snapshot.clone", {
                     "pool": ctx.pool,
                     "subvolume": sv_names[i],
-                    "snapshot": snap_names[i][0],
+                    "snapshot": snap_names[i][1],
+                    "new_name": snap2_sv_names[i],
                 })
-                block_dev = snap.get("block_device")
+                ctx.record(f"{label}: clone created", True)
+            except Exception as e:
+                ctx.record(f"{label}: clone created", False, str(e))
+                continue
+
+            try:
+                attached = await ctx.client.call("subvolume.attach", {
+                    "pool": ctx.pool, "name": snap2_sv_names[i],
+                })
+                block_dev = attached.get("block_device")
                 if not block_dev:
-                    ctx.record(f"{label}: attach", False, "no block_device returned")
+                    ctx.record(f"{label}: attach", False, "no block_device")
                     continue
                 ctx.record(f"{label}: attach", True)
             except Exception as e:
@@ -206,10 +217,10 @@ async def test_nvmeof(ctx: TestContext):
 
             try:
                 subsys = await ctx.client.call("share.nvmeof.create_quick", {
-                    "name": f"test-nvme{i+1}-snap-{ctx.tag}",
+                    "name": f"test-nvme{i+1}-snap2v-{ctx.tag}",
                     "device_path": block_dev,
                 })
-                snap_subsys_ids[i] = subsys["id"]
+                snap2_subsys_ids[i] = subsys["id"]
                 ctx.record(f"{label}: share created", True)
             except Exception as e:
                 ctx.record(f"{label}: share created", False, str(e))
@@ -217,39 +228,39 @@ async def test_nvmeof(ctx: TestContext):
         await asyncio.sleep(3)
 
         for i in range(N):
-            if snap_subsys_ids[i] is None:
+            if snap2_subsys_ids[i] is None:
                 continue
-            label = f"NVMe-oF[{i+1}] snap"
-            r = run(["nvme", "connect", "-t", "tcp", "-n", snap_nqns[i], "-a", ctx.host, "-s", "4420"],
+            label = f"NVMe-oF[{i+1}] snap2"
+            r = run(["nvme", "connect", "-t", "tcp", "-n", snap2_nqns[i], "-a", ctx.host, "-s", "4420"],
                     check=False)
             if r.returncode != 0:
                 ctx.record(f"{label}: read/verify", False, f"connect: {r.stderr.strip()}")
                 continue
-            snap_connected[i] = True
+            snap2_connected[i] = True
 
             await asyncio.sleep(2)
-            dev = find_nvme_device(snap_nqns[i])
+            dev = find_nvme_device(snap2_nqns[i])
             if not dev:
                 ctx.record(f"{label}: read/verify", False, "device not found")
                 continue
 
-            os.makedirs(snap_mounts[i], exist_ok=True)
-            r = run(["mount", "-o", "ro", dev, snap_mounts[i]], check=False)
+            os.makedirs(snap2_mounts[i], exist_ok=True)
+            r = run(["mount", dev, snap2_mounts[i]], check=False)
             if r.returncode != 0:
                 ctx.record(f"{label}: read/verify", False, f"mount: {r.stderr.strip()}")
                 continue
-            snap_mounted[i] = True
+            snap2_mounted[i] = True
 
             expected = f"nasty-nvme-test{i+1}-{ctx.tag}"
             try:
-                with open(os.path.join(snap_mounts[i], "testfile.txt")) as f:
+                with open(os.path.join(snap2_mounts[i], "testfile.txt")) as f:
                     got = f.read()
                 ctx.record(f"{label}: read/verify", got == expected,
                            "" if got == expected else f"expected '{expected}', got '{got}'")
             except Exception as e:
                 ctx.record(f"{label}: read/verify", False, str(e))
 
-        # ── Clone ─────────────────────────────────────────────────
+        # ── Clone (snap1) ──────────────────────────────────────────
         for i in range(N):
             label = f"NVMe-oF[{i+1}] clone"
             info(f"Cloning '{snap_names[i][0]}' → '{clone_sv_names[i]}'...")
@@ -338,12 +349,12 @@ async def test_nvmeof(ctx: TestContext):
         ctx.record("NVMe-oF: test", False, str(e))
     finally:
         for i in range(N):
-            if snap_mounted[i]:
-                run(["umount", snap_mounts[i]], check=False)
-            if os.path.isdir(snap_mounts[i]):
-                os.rmdir(snap_mounts[i])
-            if snap_connected[i]:
-                run(["nvme", "disconnect", "-n", snap_nqns[i]], check=False)
+            if snap2_mounted[i]:
+                run(["umount", snap2_mounts[i]], check=False)
+            if os.path.isdir(snap2_mounts[i]):
+                os.rmdir(snap2_mounts[i])
+            if snap2_connected[i]:
+                run(["nvme", "disconnect", "-n", snap2_nqns[i]], check=False)
             if clone_mounted[i]:
                 run(["umount", clone_mounts[i]], check=False)
             if os.path.isdir(clone_mounts[i]):
@@ -357,15 +368,17 @@ async def test_nvmeof(ctx: TestContext):
             if connected[i]:
                 run(["nvme", "disconnect", "-n", nqns[i]], check=False)
             if not ctx.skip_delete:
-                if snap_subsys_ids[i]:
+                if snap2_subsys_ids[i]:
                     try:
-                        await ctx.client.call("share.nvmeof.delete", {"id": snap_subsys_ids[i]})
+                        await ctx.client.call("share.nvmeof.delete", {"id": snap2_subsys_ids[i]})
                     except Exception:
                         pass
                 try:
-                    await ctx.client.call("snapshot.detach", {
-                        "pool": ctx.pool, "subvolume": sv_names[i], "snapshot": snap_names[i][0],
-                    })
+                    await ctx.client.call("subvolume.detach", {"pool": ctx.pool, "name": snap2_sv_names[i]})
+                except Exception:
+                    pass
+                try:
+                    await ctx.client.call("subvolume.delete", {"pool": ctx.pool, "name": snap2_sv_names[i]})
                 except Exception:
                     pass
                 if clone_subsys_ids[i]:
