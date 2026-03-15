@@ -264,7 +264,10 @@ in {
        I/O monitoring
          iotop -o
          iostat -x 1
-         fio --name=test --rw=randread --bs=4k --size=1g --filename=/storage/<pool>/fiotest
+         fio --name=seq-read    --ioengine=libaio --direct=1 --rw=read     --bs=1024k --iodepth=8  --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
+         fio --name=seq-write   --ioengine=libaio --direct=1 --rw=write    --bs=1024k --iodepth=8  --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
+         fio --name=rand-read   --ioengine=libaio --direct=1 --rw=randread --bs=4k    --iodepth=32 --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
+         fio --name=rand-write  --ioengine=libaio --direct=1 --rw=randwrite --bs=4k   --iodepth=32 --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
          dool -dny 1
 
        perf profiling
