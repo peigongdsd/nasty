@@ -18,10 +18,10 @@ export const confirmState = $state<ConfirmState>({
 	resolve: null,
 });
 
-export function confirm(title: string, message: string): Promise<boolean> {
+export function confirm(title: string, message?: string): Promise<boolean> {
 	return new Promise((resolve) => {
 		confirmState.title = title;
-		confirmState.message = message;
+		confirmState.message = message ?? '';
 		confirmState.resolve = resolve;
 		confirmState.open = true;
 	});

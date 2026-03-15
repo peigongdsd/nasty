@@ -104,7 +104,7 @@
 	}
 
 	async function remove(id: string) {
-		if (!await confirm('Delete Share', 'Delete this share?')) return;
+		if (!await confirm('Delete this SMB share?')) return;
 		await withToast(
 			() => client.call('share.smb.delete', { id }),
 			'SMB share deleted'

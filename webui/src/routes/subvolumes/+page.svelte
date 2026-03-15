@@ -91,7 +91,7 @@
 	}
 
 	async function deleteSubvolume(name: string) {
-		if (!await confirm(`Delete Subvolume`, `Delete subvolume "${name}" and all its snapshots?`)) return;
+		if (!await confirm(`Delete "${name}"?`, 'All snapshots will also be deleted.')) return;
 		await withToast(
 			() => client.call('subvolume.delete', { pool: selectedPool, name }),
 			`Subvolume "${name}" deleted`
@@ -134,7 +134,7 @@
 	}
 
 	async function deleteSnapshot(subvolume: string, snap: string) {
-		if (!await confirm(`Delete Snapshot`, `Delete snapshot "${snap}"?`)) return;
+		if (!await confirm(`Delete snapshot "${snap}"?`)) return;
 		await withToast(
 			() => client.call('snapshot.delete', {
 				pool: selectedPool,

@@ -93,7 +93,7 @@
 	}
 
 	async function remove(id: string) {
-		if (!await confirm('Delete Share', 'Delete this share?')) return;
+		if (!await confirm('Delete this NFS share?')) return;
 		await withToast(
 			() => client.call('share.nfs.delete', { id }),
 			'NFS share deleted'

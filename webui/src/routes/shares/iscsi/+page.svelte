@@ -105,7 +105,7 @@
 	}
 
 	async function remove(id: string) {
-		if (!await confirm('Delete Target', 'Delete this target and all its LUNs?')) return;
+		if (!await confirm('Delete this iSCSI target?', 'All its LUNs will also be removed.')) return;
 		await withToast(
 			() => client.call('share.iscsi.delete', { id }),
 			'iSCSI target deleted'
@@ -131,7 +131,7 @@
 	}
 
 	async function removeLun(targetId: string, lunId: number) {
-		if (!await confirm(`Remove LUN`, `Remove LUN ${lunId}?`)) return;
+		if (!await confirm(`Remove LUN ${lunId}?`)) return;
 		await withToast(
 			() => client.call('share.iscsi.remove_lun', { target_id: targetId, lun_id: lunId }),
 			'LUN removed'
@@ -184,7 +184,7 @@
 	});
 
 	async function removeAcl(targetId: string, initiatorIqn: string) {
-		if (!await confirm(`Remove ACL`, `Remove ACL for ${initiatorIqn}?`)) return;
+		if (!await confirm(`Remove ACL for ${initiatorIqn}?`)) return;
 		await withToast(
 			() => client.call('share.iscsi.remove_acl', { target_id: targetId, initiator_iqn: initiatorIqn }),
 			'ACL removed'

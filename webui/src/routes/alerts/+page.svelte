@@ -91,7 +91,7 @@
 	}
 
 	async function deleteRule(id: string) {
-		if (!await confirm('Delete Alert Rule', 'Delete this alert rule?')) return;
+		if (!await confirm('Delete this alert rule?')) return;
 		await withToast(
 			() => client.call('alert.rules.delete', { id }),
 			'Alert rule deleted'

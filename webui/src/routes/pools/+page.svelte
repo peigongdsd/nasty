@@ -243,7 +243,7 @@
 	}
 
 	async function removeDevice(poolName: string, devicePath: string) {
-		if (!await confirm(`Remove Device`, `Remove ${devicePath} from pool "${poolName}"? Data will be evacuated first.`)) return;
+		if (!await confirm(`Remove ${devicePath}?`, `Data will be evacuated from pool "${poolName}" first.`)) return;
 		await withToast(
 			() => client.call('pool.device.remove', { pool: poolName, device: devicePath }),
 			`Device ${devicePath} removed from "${poolName}"`
@@ -252,7 +252,7 @@
 	}
 
 	async function evacuateDevice(poolName: string, devicePath: string) {
-		if (!await confirm(`Evacuate Device`, `Evacuate all data from ${devicePath}?`)) return;
+		if (!await confirm(`Evacuate all data from ${devicePath}?`)) return;
 		await withToast(
 			() => client.call('pool.device.evacuate', { pool: poolName, device: devicePath }),
 			`Device ${devicePath} evacuated`
@@ -277,7 +277,7 @@
 	}
 
 	async function offlineDevice(poolName: string, devicePath: string) {
-		if (!await confirm(`Take Device Offline`, `Take ${devicePath} offline?`)) return;
+		if (!await confirm(`Take ${devicePath} offline?`)) return;
 		await withToast(
 			() => client.call('pool.device.offline', { pool: poolName, device: devicePath }),
 			`Device ${devicePath} offline`

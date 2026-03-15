@@ -115,7 +115,7 @@
 	}
 
 	async function remove(id: string) {
-		if (!await confirm('Delete Share', 'Delete this share?')) return;
+		if (!await confirm('Delete this NVMe-oF share?')) return;
 		await withToast(
 			() => client.call('share.nvmeof.delete', { id }),
 			'NVMe-oF share deleted'
@@ -139,7 +139,7 @@
 	}
 
 	async function removeNamespace(subsystemId: string, nsid: number) {
-		if (!await confirm(`Remove Namespace`, `Remove namespace ${nsid}?`)) return;
+		if (!await confirm(`Remove namespace ${nsid}?`)) return;
 		await withToast(
 			() => client.call('share.nvmeof.remove_namespace', { subsystem_id: subsystemId, nsid }),
 			'Namespace removed'
@@ -169,7 +169,7 @@
 	}
 
 	async function removePort(subsystemId: string, portId: number) {
-		if (!await confirm(`Remove Port`, `Remove port ${portId}?`)) return;
+		if (!await confirm(`Remove port ${portId}?`)) return;
 		await withToast(
 			() => client.call('share.nvmeof.remove_port', { subsystem_id: subsystemId, port_id: portId }),
 			'Port removed'
@@ -216,7 +216,7 @@
 	});
 
 	async function removeHost(subsystemId: string, hostNqn: string) {
-		if (!await confirm(`Remove Host`, `Remove access for ${hostNqn}?`)) return;
+		if (!await confirm(`Remove access for ${hostNqn}?`)) return;
 		await withToast(
 			() => client.call('share.nvmeof.remove_host', { subsystem_id: subsystemId, host_nqn: hostNqn }),
 			'Allowed host removed'

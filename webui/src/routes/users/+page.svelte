@@ -73,7 +73,7 @@
 	}
 
 	async function deleteUser(username: string) {
-		if (!await confirm(`Delete User`, `Delete user "${username}"? This will revoke all their sessions.`)) return;
+		if (!await confirm(`Delete user "${username}"?`, 'All their sessions will be revoked.')) return;
 		await withToast(
 			() => client.call('auth.delete_user', { username }),
 			`User "${username}" deleted`
@@ -122,7 +122,7 @@
 	}
 
 	async function deleteToken(id: string, name: string) {
-		if (!await confirm(`Revoke API Token`, `Revoke API token "${name}"?`)) return;
+		if (!await confirm(`Revoke token "${name}"?`)) return;
 		await withToast(
 			() => client.call('auth.token.delete', { id }),
 			`API token "${name}" revoked`
