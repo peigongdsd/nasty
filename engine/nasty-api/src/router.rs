@@ -14,6 +14,7 @@ fn is_operator_allowed(method: &str) -> bool {
             | "subvolume.resize"
             | "subvolume.set_properties" | "subvolume.remove_properties"
             | "snapshot.create" | "snapshot.delete" | "snapshot.clone"
+            | "snapshot.attach" | "snapshot.detach"
         )
 }
 
@@ -635,6 +636,28 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
+        },
+        "snapshot.attach" => {
+            #[derive(Deserialize)]
+            struct P { pool: String, subvolume: String, snapshot: String }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.snapshots.attach(&p.pool, &p.subvolume, &p.snapshot, session.owner.as_deref()).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        },
+        "snapshot.detach" => {
+            #[derive(Deserialize)]
+            struct P { pool: String, subvolume: String, snapshot: String }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.snapshots.detach(&p.pool, &p.subvolume, &p.snapshot, session.owner.as_deref()).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
         },
 
         // ── NFS Shares ──────────────────────────────────────────

@@ -79,6 +79,9 @@ pub struct Snapshot {
     pub pool: String,
     pub path: String,
     pub read_only: bool,
+    /// Loop device path if this snapshot's vol.img is currently attached (block snapshots only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_device: Option<String>,
 }
 
 /// Persisted metadata for subvolumes (things bcachefs doesn't track)
@@ -293,6 +296,7 @@ impl SubvolumeService {
                         pool: pool_name.to_string(),
                         path: snap_path(&mount_point, name, &snap_name),
                         read_only,
+                        block_device: None,
                     }
                 })
                 .collect();
@@ -545,6 +549,69 @@ impl SubvolumeService {
         self.get(pool_name, name, owner_filter).await
     }
 
+    /// Attach a block snapshot's vol.img as a read-only loop device.
+    /// Returns the snapshot with `block_device` populated.
+    pub async fn attach_snapshot(
+        &self,
+        pool_name: &str,
+        subvol_name: &str,
+        snap_name: &str,
+        owner_filter: Option<&str>,
+    ) -> Result<Snapshot, SubvolumeError> {
+        // Check owner access via parent subvolume
+        self.get(pool_name, subvol_name, owner_filter).await?;
+        let snaps = self.list_snapshots_for(pool_name, subvol_name).await?;
+        let snap = snaps
+            .into_iter()
+            .find(|s| s.name == snap_name)
+            .ok_or_else(|| SubvolumeError::NotFound(snap_name.to_string()))?;
+
+        let img_path = format!("{}/{}", snap.path, BLOCK_FILE_NAME);
+        if !Path::new(&img_path).exists() {
+            return Err(SubvolumeError::CommandFailed(format!(
+                "snapshot '{}' has no vol.img — not a block snapshot",
+                snap_name
+            )));
+        }
+
+        // Already attached?
+        if let Some(dev) = find_loop_device(&img_path).await {
+            return Ok(Snapshot { block_device: Some(dev), ..snap });
+        }
+
+        info!("Attaching read-only loop device for snapshot '{}'", snap_name);
+        let dev = cmd::run_ok("losetup", &["-r", "--find", "--show", &img_path])
+            .await
+            .map_err(SubvolumeError::CommandFailed)?;
+
+        Ok(Snapshot { block_device: Some(dev.trim().to_string()), ..snap })
+    }
+
+    /// Detach a block snapshot's read-only loop device.
+    pub async fn detach_snapshot(
+        &self,
+        pool_name: &str,
+        subvol_name: &str,
+        snap_name: &str,
+        owner_filter: Option<&str>,
+    ) -> Result<(), SubvolumeError> {
+        self.get(pool_name, subvol_name, owner_filter).await?;
+        let snaps = self.list_snapshots_for(pool_name, subvol_name).await?;
+        let snap = snaps
+            .into_iter()
+            .find(|s| s.name == snap_name)
+            .ok_or_else(|| SubvolumeError::NotFound(snap_name.to_string()))?;
+
+        let img_path = format!("{}/{}", snap.path, BLOCK_FILE_NAME);
+        if let Some(dev) = find_loop_device(&img_path).await {
+            info!("Detaching loop device {} for snapshot '{}'", dev, snap_name);
+            cmd::run_ok("losetup", &["-d", &dev])
+                .await
+                .map_err(SubvolumeError::CommandFailed)?;
+        }
+        Ok(())
+    }
+
     /// Resize a block subvolume's underlying sparse image.
     /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
     pub async fn resize(
@@ -637,6 +704,7 @@ impl SubvolumeService {
             pool: req.pool,
             path: snap_path,
             read_only: true,
+            block_device: None,
         })
     }
 
@@ -693,6 +761,7 @@ impl SubvolumeService {
                     subvolume: subvol_name.to_string(),
                     pool: pool_name.to_string(),
                     read_only,
+                    block_device: None,
                 }
             })
             .collect();
@@ -740,6 +809,7 @@ impl SubvolumeService {
                 pool: pool_name.to_string(),
                 path: snap_path(&mount_point, &subvol_name, &snap_name),
                 read_only,
+                block_device: None,
             });
         }
 

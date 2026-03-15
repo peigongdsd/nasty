@@ -124,4 +124,24 @@ impl SnapshotService {
     ) -> Result<Subvolume, SubvolumeError> {
         self.subvolumes.clone_snapshot(req, owner_filter).await
     }
+
+    pub async fn attach(
+        &self,
+        pool_name: &str,
+        subvol_name: &str,
+        snap_name: &str,
+        owner_filter: Option<&str>,
+    ) -> Result<nasty_storage::subvolume::Snapshot, SubvolumeError> {
+        self.subvolumes.attach_snapshot(pool_name, subvol_name, snap_name, owner_filter).await
+    }
+
+    pub async fn detach(
+        &self,
+        pool_name: &str,
+        subvol_name: &str,
+        snap_name: &str,
+        owner_filter: Option<&str>,
+    ) -> Result<(), SubvolumeError> {
+        self.subvolumes.detach_snapshot(pool_name, subvol_name, snap_name, owner_filter).await
+    }
 }
