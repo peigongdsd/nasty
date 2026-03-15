@@ -2,6 +2,80 @@
 
 let
   nastySrc = lib.cleanSource ./..;
+
+  nasty-grub-theme = pkgs.runCommand "nasty-grub-theme" {
+    nativeBuildInputs = [ pkgs.librsvg pkgs.imagemagick ];
+  } ''
+    nixos=${pkgs.nixos-grub2-theme}
+    mkdir -p $out
+
+    # Copy all theme chrome from nixos-grub2-theme (borders, fonts, icons, etc.)
+    cp $nixos/*.png $nixos/*.pf2 $nixos/fonts.sh $out/
+    cp -r $nixos/icons $out/
+
+    # Replace background with a solid dark canvas (1920×1080)
+    convert -size 1920x1080 xc:'#0f1117' $out/background.png
+
+    # Replace logo with the NASty logo (200×200, white SVG on transparent → dark bg)
+    rsvg-convert -w 200 -h 200 \
+      ${../webui/src/lib/assets/nasty-white.svg} \
+      -o $out/logo.png
+
+    # Rewrite theme.txt: same layout as nixos-grub2-theme but with updated
+    # logo dimensions and position (200×200 instead of 319×100)
+    cat > $out/theme.txt << 'EOF'
+title-text: ""
+title-font: "DejaVu Regular"
+title-color: "#ffffff"
+
++ image {
+  top = 3%
+  height = 200
+  width = 200
+  left = 50%-100
+  file = "logo.png"
+}
+
+desktop-image: "background.png"
+message-font: "DejaVu Regular"
+message-color: "#ffffff"
+terminal-font: "Unifont Regular"
+terminal-box: "terminal_*.png"
+
++ progress_bar {
+  id = "__timeout__"
+  top = 95%-32
+  left  = 50%-25%
+  height = 32
+  width = 50%
+  show_text = true
+  text = "@TIMEOUT_NOTIFICATION_MIDDLE@"
+  border_color = #5579C4
+  bg_color = #7EBAE4
+  fg_color = #5579C4
+}
+
++ boot_menu {
+  left = 50%-400
+  width = 800
+  top = 3%+200+3%
+  height = 100%-3%-200-3%-3%-32-3%
+  item_font = "DejaVu Regular"
+  item_color = "#e0e0e0"
+  item_height = 40
+  item_icon_space = 12
+  item_spacing = 0
+  item_padding = 0
+  selected_item_font = "DejaVu Regular"
+  selected_item_color = "#ffffff"
+  selected_item_pixmap_style = "select_*.png"
+  icon_height = 32
+  icon_width = 42
+  scrollbar = false
+  menu_pixmap_style = "boot_menu_*.png"
+}
+EOF
+  '';
 in
 {
   # Pre-built packages in the ISO's Nix store so nixos-install
@@ -25,6 +99,7 @@ in
   # UEFI-only boot (no legacy BIOS support)
   isoImage.makeEfiBootable = true;
   isoImage.makeUsbBootable = lib.mkForce false;
+  isoImage.grubTheme = nasty-grub-theme;
 
   environment.systemPackages = with pkgs; [
     bcachefs-tools
