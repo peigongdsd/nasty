@@ -122,8 +122,7 @@
 	</div>
 {/if}
 
-<div class="mb-4 flex items-center justify-between">
-	<h2 class="text-base font-semibold">Alert Rules</h2>
+<div class="mb-4 flex items-center gap-3">
 	<Button size="sm" onclick={() => showCreate = !showCreate}>
 		{showCreate ? 'Cancel' : 'Create Rule'}
 	</Button>

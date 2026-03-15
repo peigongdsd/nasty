@@ -316,7 +316,7 @@
 														<span class="ml-2 text-muted-foreground">{lun.backstore_path}</span>
 														<span class="ml-1 text-xs text-muted-foreground">({lun.backstore_type})</span>
 													</div>
-													<Button variant="ghost" size="xs" class="text-destructive hover:text-destructive" onclick={() => removeLun(target.id, lun.lun_id)}>Remove</Button>
+													<Button variant="destructive" size="xs" onclick={() => removeLun(target.id, lun.lun_id)}>Remove</Button>
 												</div>
 											{/each}
 										</div>
@@ -363,7 +363,7 @@
 														<span class="font-mono text-xs">{acl.initiator_iqn}</span>
 														{#if acl.userid}<span class="ml-2 text-xs text-muted-foreground">CHAP: {acl.userid}</span>{/if}
 													</div>
-													<Button variant="ghost" size="xs" class="text-destructive hover:text-destructive" onclick={() => removeAcl(target.id, acl.initiator_iqn)}>Remove</Button>
+													<Button variant="destructive" size="xs" onclick={() => removeAcl(target.id, acl.initiator_iqn)}>Remove</Button>
 												</div>
 											{/each}
 										</div>

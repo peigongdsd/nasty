@@ -222,8 +222,8 @@
 	</table>
 {/if}
 
-<div class="mb-4 flex items-center justify-between">
-	<h2 class="text-xl font-semibold">API Tokens</h2>
+<h2 class="mb-3 text-xl font-semibold">API Tokens</h2>
+<div class="mb-4 flex items-center gap-3">
 	<Button size="sm" onclick={() => showCreateToken = !showCreateToken}>
 		{showCreateToken ? 'Cancel' : 'Create Token'}
 	</Button>

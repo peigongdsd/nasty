@@ -343,7 +343,7 @@
 														<span class="ml-2 text-muted-foreground">{ns.device_path}</span>
 														<Badge variant={ns.enabled ? 'default' : 'secondary'} class="ml-2 text-[0.6rem]">{ns.enabled ? 'Active' : 'Off'}</Badge>
 													</div>
-													<Button variant="ghost" size="xs" class="text-destructive hover:text-destructive" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</Button>
+													<Button variant="destructive" size="xs" onclick={() => removeNamespace(subsys.id, ns.nsid)}>Remove</Button>
 												</div>
 											{/each}
 										</div>
@@ -379,7 +379,7 @@
 											{#each subsys.ports as port}
 												<div class="flex items-center gap-2 rounded bg-secondary/50 px-2 py-1">
 													<span class="font-mono text-xs">{port.transport.toUpperCase()} {port.addr}:{port.service_id}</span>
-													<Button variant="ghost" size="xs" class="h-5 text-xs text-destructive hover:text-destructive" onclick={() => removePort(subsys.id, port.port_id)}>×</Button>
+													<Button variant="destructive" size="xs" class="h-5 text-xs" onclick={() => removePort(subsys.id, port.port_id)}>×</Button>
 												</div>
 											{/each}
 										</div>
@@ -432,7 +432,7 @@
 											{#each subsys.allowed_hosts as hostNqn}
 												<div class="flex items-center justify-between rounded bg-secondary/50 px-2 py-1.5">
 													<span class="font-mono text-xs">{hostNqn}</span>
-													<Button variant="ghost" size="xs" class="text-destructive hover:text-destructive" onclick={() => removeHost(subsys.id, hostNqn)}>Remove</Button>
+													<Button variant="destructive" size="xs" onclick={() => removeHost(subsys.id, hostNqn)}>Remove</Button>
 												</div>
 											{/each}
 										</div>
