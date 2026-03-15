@@ -23,6 +23,10 @@
 	let newReadOnly = $state(false);
 	let newGuestOk = $state(false);
 
+	let expanded = $state<Record<string, boolean>>({});
+	let addUserShare = $state<string | null>(null);
+	let addUserName = $state('');
+
 	const client = getClient();
 
 	$effect(() => {
@@ -67,7 +71,6 @@
 	}
 
 	function onSubvolumeSelect() {
-		// Auto-fill share name from subvolume name if empty
 		if (newSubvolume && !newName) {
 			const sv = subvolumes.find(s => s.path === newSubvolume);
 			if (sv) newName = sv.name;
@@ -109,6 +112,37 @@
 			() => client.call('share.smb.delete', { id }),
 			'SMB share deleted'
 		);
+		await refresh();
+	}
+
+	async function toggleField(share: SmbShare, field: 'read_only' | 'browseable' | 'guest_ok') {
+		await withToast(
+			() => client.call('share.smb.update', { id: share.id, [field]: !share[field] }),
+			'Share updated'
+		);
+		await refresh();
+	}
+
+	async function removeUser(share: SmbShare, username: string) {
+		const valid_users = share.valid_users.filter(u => u !== username);
+		await withToast(
+			() => client.call('share.smb.update', { id: share.id, valid_users }),
+			'User removed'
+		);
+		await refresh();
+	}
+
+	async function addUser(share: SmbShare) {
+		if (!addUserName) return;
+		const valid_users = [...share.valid_users, addUserName];
+		const ok = await withToast(
+			() => client.call('share.smb.update', { id: share.id, valid_users }),
+			'User added'
+		);
+		if (ok !== undefined) {
+			addUserShare = null;
+			addUserName = '';
+		}
 		await refresh();
 	}
 
@@ -226,7 +260,10 @@
 		</thead>
 		<tbody>
 			{#each sorted as share}
-				<tr class="border-b border-border">
+				<tr
+					class="border-b border-border cursor-pointer hover:bg-muted/30 transition-colors"
+					onclick={() => expanded[share.id] = !expanded[share.id]}
+				>
 					<td class="p-3">
 						<strong>{share.name}</strong>
 						{#if share.comment}<br /><span class="text-xs text-muted-foreground">{share.comment}</span>{/if}
@@ -236,7 +273,7 @@
 						<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">{share.read_only ? 'RO' : 'RW'}</span>
 						{#if share.guest_ok}<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">Guest</span>{/if}
 						{#if share.valid_users.length > 0}
-							<span class="inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">Users: {share.valid_users.join(', ')}</span>
+							<span class="inline-block rounded bg-secondary px-1.5 py-0.5 text-xs">{share.valid_users.length} user{share.valid_users.length !== 1 ? 's' : ''}</span>
 						{/if}
 					</td>
 					<td class="p-3">
@@ -244,7 +281,7 @@
 							{share.enabled ? 'Enabled' : 'Disabled'}
 						</Badge>
 					</td>
-					<td class="p-3">
+					<td class="p-3" onclick={(e) => e.stopPropagation()}>
 						<div class="flex gap-2">
 							<Button variant="secondary" size="xs" onclick={() => toggleEnabled(share)}>
 								{share.enabled ? 'Disable' : 'Enable'}
@@ -253,6 +290,60 @@
 						</div>
 					</td>
 				</tr>
+				{#if expanded[share.id]}
+					<tr class="border-b border-border bg-muted/20">
+						<td colspan="5" class="px-6 py-4">
+							<div class="flex gap-12">
+								<div>
+									<p class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Settings</p>
+									<div class="space-y-2">
+										<label class="flex cursor-pointer items-center gap-2 text-sm" onclick={(e) => e.stopPropagation()}>
+											<input type="checkbox" checked={share.read_only} onchange={() => toggleField(share, 'read_only')} class="h-4 w-4" />
+											Read-only
+										</label>
+										<label class="flex cursor-pointer items-center gap-2 text-sm" onclick={(e) => e.stopPropagation()}>
+											<input type="checkbox" checked={share.browseable} onchange={() => toggleField(share, 'browseable')} class="h-4 w-4" />
+											Browseable
+										</label>
+										<label class="flex cursor-pointer items-center gap-2 text-sm" onclick={(e) => e.stopPropagation()}>
+											<input type="checkbox" checked={share.guest_ok} onchange={() => toggleField(share, 'guest_ok')} class="h-4 w-4" />
+											Allow guests
+										</label>
+									</div>
+								</div>
+								<div class="flex-1">
+									<p class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Valid Users</p>
+									{#if share.valid_users.length === 0}
+										<p class="mb-3 text-xs text-muted-foreground">No restrictions — all authenticated users may access.</p>
+									{:else}
+										<div class="mb-3 space-y-1.5">
+											{#each share.valid_users as username}
+												<div class="flex items-center gap-3">
+													<code class="text-xs">{username}</code>
+													<Button variant="destructive" size="xs" onclick={(e) => { e.stopPropagation(); removeUser(share, username); }}>Remove</Button>
+												</div>
+											{/each}
+										</div>
+									{/if}
+									{#if addUserShare === share.id}
+										<div class="flex items-end gap-2" onclick={(e) => e.stopPropagation()}>
+											<div>
+												<Label class="text-xs">Username</Label>
+												<Input bind:value={addUserName} placeholder="johndoe" class="mt-1 h-8 w-40 text-xs" />
+											</div>
+											<Button size="xs" onclick={() => addUser(share)} disabled={!addUserName}>Add</Button>
+											<Button variant="secondary" size="xs" onclick={() => { addUserShare = null; addUserName = ''; }}>Cancel</Button>
+										</div>
+									{:else}
+										<Button variant="secondary" size="xs" onclick={(e) => { e.stopPropagation(); addUserShare = share.id; addUserName = ''; }}>
+											Add User
+										</Button>
+									{/if}
+								</div>
+							</div>
+						</td>
+					</tr>
+				{/if}
 			{/each}
 		</tbody>
 	</table>

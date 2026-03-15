@@ -1001,7 +1001,6 @@ pub struct BlockDevice {
 /// Read per-device info (labels, durability) for a mounted bcachefs filesystem.
 /// Uses `bcachefs show-super` on the first device to extract member info.
 async fn read_pool_devices(_uuid: &str, device_paths: &[String]) -> Vec<PoolDevice> {
-    // Try to read member info from show-super for label/durability
     let first_dev = match device_paths.first() {
         Some(d) => d.as_str(),
         None => return Vec::new(),
@@ -1011,56 +1010,77 @@ async fn read_pool_devices(_uuid: &str, device_paths: &[String]) -> Vec<PoolDevi
         .await
         .unwrap_or_default();
 
-    // Parse member info lines for labels and durability
-    // Format varies but typically includes lines like:
+    // show-super -f members_v2 output comes in two formats:
+    //
+    // Single-line (older):
     //   Device 0 (label ssd.fast):  /dev/sda  ...  durability: 1  state: rw
-    let mut devices: Vec<PoolDevice> = Vec::new();
+    //
+    // Multi-line (newer):
+    //   Device 0:       /dev/sda
+    //           Label:          ssd.fast
+    //           State:          rw
+    //           Durability:     1
+    //
+    // Split output into per-device blocks by "Device N:" markers, then scan
+    // each block for the info we need regardless of which format is used.
 
-    for dev_path in device_paths {
-        let mut label = None;
-        let mut durability = None;
-        let mut state = None;
+    // Build blocks: each block is all lines from one "Device N:" until the next.
+    let lines: Vec<&str> = member_info.lines().collect();
+    let mut blocks: Vec<Vec<&str>> = Vec::new();
+    let mut current: Vec<&str> = Vec::new();
+    for line in &lines {
+        let trimmed = line.trim();
+        // A new device block starts when a line begins with "Device " followed by a digit.
+        if trimmed.starts_with("Device ")
+            && trimmed.chars().nth(7).map_or(false, |c| c.is_ascii_digit())
+        {
+            if !current.is_empty() {
+                blocks.push(current.clone());
+                current.clear();
+            }
+        }
+        current.push(line);
+    }
+    if !current.is_empty() {
+        blocks.push(current);
+    }
 
-        // Search for this device in show-super output
-        for line in member_info.lines() {
-            if line.contains(dev_path) || line.contains(dev_path.trim_start_matches("/dev/")) {
-                // Try to extract label from "label X" or "(label X)"
-                if let Some(pos) = line.find("label") {
-                    let rest = &line[pos + 5..];
-                    let rest = rest.trim_start_matches(|c: char| c == ' ' || c == ':');
-                    if let Some(end) = rest.find(|c: char| c == ')' || c == ' ' || c == '\t') {
-                        let l = rest[..end].trim();
-                        if !l.is_empty() && l != "(none)" {
-                            label = Some(l.to_string());
-                        }
-                    } else {
-                        let l = rest.trim();
-                        if !l.is_empty() && l != "(none)" {
-                            label = Some(l.to_string());
-                        }
-                    }
-                }
-                // Try to extract durability
-                if let Some(pos) = line.find("durability") {
-                    let rest = &line[pos + 10..];
-                    let rest = rest.trim_start_matches(|c: char| c == ' ' || c == ':');
-                    if let Some(d) = rest
-                        .split_whitespace()
-                        .next()
-                        .and_then(|s| s.parse::<u32>().ok())
-                    {
-                        durability = Some(d);
-                    }
-                }
-                // Try to extract state (rw, ro, failed, spare)
-                if let Some(pos) = line.find("state:") {
-                    let rest = &line[pos + 6..];
-                    if let Some(s) = rest.trim().split_whitespace().next() {
-                        state = Some(s.to_string());
+    let extract_value = |block: &[&str], key: &str| -> Option<String> {
+        for line in block {
+            let lower = line.to_lowercase();
+            if let Some(pos) = lower.find(key) {
+                let rest = &line[pos + key.len()..];
+                let rest = rest.trim_start_matches(|c: char| c == ':' || c == ' ' || c == '\t');
+                // Take first token, strip trailing punctuation
+                if let Some(tok) = rest.split_whitespace().next() {
+                    let tok = tok.trim_matches(|c: char| c == ')' || c == ',' || c == ';');
+                    if !tok.is_empty() && tok != "(none)" && tok != "none" {
+                        return Some(tok.to_string());
                     }
                 }
             }
         }
+        None
+    };
+
+    let mut devices: Vec<PoolDevice> = Vec::new();
+
+    for dev_path in device_paths {
+        let dev_short = dev_path.trim_start_matches("/dev/");
+
+        // Find the block that mentions this device path
+        let block = blocks.iter().find(|b| {
+            b.iter().any(|l| l.contains(dev_path.as_str()) || l.contains(dev_short))
+        });
+
+        let (label, durability, state) = if let Some(block) = block {
+            let label = extract_value(block, "label");
+            let durability = extract_value(block, "durability").and_then(|s| s.parse().ok());
+            let state = extract_value(block, "state");
+            (label, durability, state)
+        } else {
+            (None, None, None)
+        };
 
         devices.push(PoolDevice {
             path: dev_path.clone(),
@@ -1068,19 +1088,6 @@ async fn read_pool_devices(_uuid: &str, device_paths: &[String]) -> Vec<PoolDevi
             durability,
             state,
         });
-    }
-
-    // If we couldn't parse anything, just return bare device paths
-    if devices.is_empty() {
-        return device_paths
-            .iter()
-            .map(|d| PoolDevice {
-                path: d.clone(),
-                label: None,
-                durability: None,
-                state: None,
-            })
-            .collect();
     }
 
     devices

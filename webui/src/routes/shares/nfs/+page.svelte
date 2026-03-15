@@ -22,6 +22,11 @@
 	let newHost = $state('');
 	let newOptions = $state('rw,sync,no_subtree_check');
 
+	let expanded = $state<Record<string, boolean>>({});
+	let addClientShare = $state<string | null>(null);
+	let addClientHost = $state('');
+	let addClientOptions = $state('rw,sync,no_subtree_check');
+
 	const client = getClient();
 
 	$effect(() => {
@@ -101,9 +106,28 @@
 		await refresh();
 	}
 
-	function pathLabel(path: string): string {
-		// /mnt/nasty/tank/data -> tank/data
-		return path.replace(/^\/mnt\/nasty\//, '');
+	async function removeClient(share: NfsShare, host: string) {
+		const clients = share.clients.filter(c => c.host !== host);
+		await withToast(
+			() => client.call('share.nfs.update', { id: share.id, clients }),
+			'Client removed'
+		);
+		await refresh();
+	}
+
+	async function addClient(share: NfsShare) {
+		if (!addClientHost) return;
+		const clients = [...share.clients, { host: addClientHost, options: addClientOptions }];
+		const ok = await withToast(
+			() => client.call('share.nfs.update', { id: share.id, clients }),
+			'Client added'
+		);
+		if (ok !== undefined) {
+			addClientShare = null;
+			addClientHost = '';
+			addClientOptions = 'rw,sync,no_subtree_check';
+		}
+		await refresh();
 	}
 
 	let search = $state('');
@@ -213,22 +237,23 @@
 		</thead>
 		<tbody>
 			{#each sorted as share}
-				<tr class="border-b border-border">
+				<tr
+					class="border-b border-border cursor-pointer hover:bg-muted/30 transition-colors"
+					onclick={() => expanded[share.id] = !expanded[share.id]}
+				>
 					<td class="p-3">
 						<span class="font-mono text-sm">{share.path}</span>
 						{#if share.comment}<br /><span class="text-xs text-muted-foreground">{share.comment}</span>{/if}
 					</td>
-					<td class="p-3">
-						{#each share.clients as c}
-							<div class="text-sm">{c.host} <span class="text-xs text-muted-foreground">({c.options})</span></div>
-						{/each}
+					<td class="p-3 text-xs text-muted-foreground">
+						{share.clients.length} client{share.clients.length !== 1 ? 's' : ''}
 					</td>
 					<td class="p-3">
 						<Badge variant={share.enabled ? 'default' : 'secondary'}>
 							{share.enabled ? 'Enabled' : 'Disabled'}
 						</Badge>
 					</td>
-					<td class="p-3">
+					<td class="p-3" onclick={(e) => e.stopPropagation()}>
 						<div class="flex gap-2">
 							<Button variant="secondary" size="xs" onclick={() => toggleEnabled(share)}>
 								{share.enabled ? 'Disable' : 'Enable'}
@@ -237,6 +262,44 @@
 						</div>
 					</td>
 				</tr>
+				{#if expanded[share.id]}
+					<tr class="border-b border-border bg-muted/20">
+						<td colspan="4" class="px-6 py-4">
+							<p class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Allowed Clients</p>
+							{#if share.clients.length === 0}
+								<p class="mb-3 text-xs text-muted-foreground">No clients configured.</p>
+							{:else}
+								<div class="mb-3 space-y-1.5">
+									{#each share.clients as c}
+										<div class="flex items-center gap-3">
+											<code class="text-xs">{c.host}</code>
+											<span class="text-xs text-muted-foreground">({c.options})</span>
+											<Button variant="destructive" size="xs" onclick={() => removeClient(share, c.host)}>Remove</Button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+							{#if addClientShare === share.id}
+								<div class="flex items-end gap-2">
+									<div>
+										<Label class="text-xs">Host / Network</Label>
+										<Input bind:value={addClientHost} placeholder="192.168.1.0/24" class="mt-1 h-8 w-44 text-xs" />
+									</div>
+									<div>
+										<Label class="text-xs">Options</Label>
+										<Input bind:value={addClientOptions} class="mt-1 h-8 w-56 text-xs" />
+									</div>
+									<Button size="xs" onclick={() => addClient(share)} disabled={!addClientHost}>Add</Button>
+									<Button variant="secondary" size="xs" onclick={() => { addClientShare = null; addClientHost = ''; }}>Cancel</Button>
+								</div>
+							{:else}
+								<Button variant="secondary" size="xs" onclick={() => { addClientShare = share.id; addClientHost = ''; addClientOptions = 'rw,sync,no_subtree_check'; }}>
+									Add Client
+								</Button>
+							{/if}
+						</td>
+					</tr>
+				{/if}
 			{/each}
 		</tbody>
 	</table>

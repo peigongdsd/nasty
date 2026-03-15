@@ -622,7 +622,7 @@
 	<p class="text-muted-foreground">No pools configured yet.</p>
 {:else}
 	{#each pools as pool}
-		<Card class="mb-4">
+		<Card class="mb-4 cursor-pointer" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
 			<CardContent class="pt-4">
 				<div class="flex flex-wrap items-center justify-between gap-4">
 					<div class="flex items-center gap-3">
@@ -634,9 +634,9 @@
 							<span class="font-mono text-xs text-muted-foreground">{pool.mount_point}</span>
 						{/if}
 					</div>
-					<div class="flex gap-2">
+					<div class="flex gap-2" onclick={(e) => e.stopPropagation()}>
 						<Button variant="secondary" size="xs" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
-							{expandedPool === pool.name ? 'Hide Devices' : `Devices (${pool.devices.length})`}
+							{expandedPool === pool.name ? 'Hide Details' : 'Details'}
 						</Button>
 						{#if pool.mounted}
 							<Button variant="secondary" size="xs" onclick={() => openEditOptions(pool)}>
