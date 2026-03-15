@@ -145,8 +145,8 @@
 	}
 </script>
 
-<div class="flex h-[calc(100vh-4rem)] flex-col">
-	<div class="mb-4 flex shrink-0 items-center justify-between">
+<div class="flex h-[calc(100vh-4rem)] flex-col gap-4">
+	<div class="flex shrink-0 items-center justify-between">
 		<h2 class="text-2xl font-bold">Terminal</h2>
 		<div class="flex items-center gap-3">
 			<span class="text-xs uppercase {
@@ -158,6 +158,33 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- bcachefs cheatsheet -->
+	<details class="shrink-0 rounded-lg border border-border bg-card text-xs">
+		<summary class="cursor-pointer select-none px-4 py-2 font-medium text-muted-foreground hover:text-foreground">
+			bcachefs commands
+		</summary>
+		<div class="grid grid-cols-1 gap-x-8 gap-y-1 px-4 pb-3 pt-2 sm:grid-cols-2 font-mono">
+			{#each [
+				['bcachefs fs usage /storage/<pool>',     'Space by type (superblock, journal, btree, data, cached, parity)'],
+				['bcachefs fs top /storage/<pool>',       'Live btree ops per process — interactive, q to quit'],
+				['bcachefs fs timestats /storage/<pool>', 'Live op latency (min/max/mean/stddev/EWMA) — interactive, q to quit'],
+				['bcachefs show-super /dev/<disk>',       'Dump filesystem superblock (UUID, features, device list)'],
+				['bcachefs fs usage -h /storage/<pool>',  'Human-readable sizes'],
+				['bcachefs device list /storage/<pool>',  'Show all member devices with state and tier'],
+				['bcachefs device add /storage/<pool> /dev/<disk>', 'Add a device to an existing pool'],
+				['bcachefs device remove /storage/<pool> /dev/<disk>', 'Remove a device (triggers rebalance)'],
+				['bcachefs device set-state failed /dev/<disk>', 'Mark a device failed'],
+				['bcachefs data rereplicate /storage/<pool>', 'Rereplicate data after adding a device or device failure'],
+				['bcachefs subvolume list /storage/<pool>', 'List all subvolumes'],
+				['bcachefs subvolume snapshot <src> <dst>', 'Create a snapshot'],
+			] as [cmd, desc]}
+				<code class="text-cyan-400">{cmd}</code>
+				<span class="text-muted-foreground">{desc}</span>
+			{/each}
+		</div>
+	</details>
+
 	<div class="flex-1 overflow-hidden rounded-lg border border-border p-1" style="background: #0f1117" bind:this={terminalEl}></div>
 </div>
 
