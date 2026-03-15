@@ -283,6 +283,9 @@
 					</td>
 					<td class="p-3" onclick={(e) => e.stopPropagation()}>
 						<div class="flex gap-2">
+							<Button variant="secondary" size="xs" onclick={() => expanded[share.id] = !expanded[share.id]}>
+								{expanded[share.id] ? 'Hide' : 'Details'}
+							</Button>
 							<Button variant="secondary" size="xs" onclick={() => toggleEnabled(share)}>
 								{share.enabled ? 'Disable' : 'Enable'}
 							</Button>
