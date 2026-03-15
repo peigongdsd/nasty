@@ -202,11 +202,20 @@
 			</nav>
 
 			<!-- Footer — version info -->
-			<div class="shrink-0 border-t border-border px-4 py-3 space-y-0.5">
+			<div class="shrink-0 border-t border-border px-4 py-3">
 				{#if sysInfo}
-					<div class="text-[0.68rem] text-muted-foreground/60">NASty {sysInfo.version}</div>
-					<div class="text-[0.68rem] text-muted-foreground/60">bcachefs {sysInfo.bcachefs_version}</div>
-					<div class="text-[0.68rem] text-muted-foreground/60 truncate" title={sysInfo.kernel}>kernel {sysInfo.kernel}</div>
+					<div class="flex items-center justify-between">
+						<span class="text-[0.68rem] text-muted-foreground/50">NASty</span>
+						<span class="text-[0.68rem] font-mono text-muted-foreground/70">{sysInfo.version}</span>
+					</div>
+					<div class="flex items-center justify-between mt-0.5">
+						<span class="text-[0.68rem] text-muted-foreground/50">bcachefs</span>
+						<span class="text-[0.68rem] font-mono text-muted-foreground/70">{sysInfo.bcachefs_version}</span>
+					</div>
+					<div class="flex items-center justify-between mt-0.5">
+						<span class="text-[0.68rem] text-muted-foreground/50">kernel</span>
+						<span class="text-[0.68rem] font-mono text-muted-foreground/70 truncate ml-2 text-right" title={sysInfo.kernel}>{sysInfo.kernel}</span>
+					</div>
 				{:else}
 					<div class="text-[0.68rem] text-muted-foreground/40">Loading…</div>
 				{/if}

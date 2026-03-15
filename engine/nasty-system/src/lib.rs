@@ -173,8 +173,10 @@ async fn bcachefs_version() -> String {
         .output()
         .await;
     match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
+        Ok(o) => {
+            // First line of stdout is the version; ignore kernel config warnings on subsequent lines
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().next().unwrap_or("unknown").trim().to_string()
         }
         _ => "unknown".to_string(),
     }
