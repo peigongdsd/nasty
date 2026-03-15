@@ -190,10 +190,10 @@
 					{@const active = currentNav.href === item.href}
 					<a
 						href={item.href}
-						class="relative flex items-center gap-2.5 py-2 pl-[18px] pr-4 text-sm no-underline transition-all
+						class="relative mx-2 flex items-center gap-2.5 rounded-md py-2 pl-4 pr-4 text-sm no-underline transition-all border-2
 							{active
-								? 'text-foreground font-medium before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary before:content-[\'\']'
-								: 'text-muted-foreground hover:text-foreground hover:before:absolute hover:before:left-0 hover:before:top-1 hover:before:bottom-1 hover:before:w-0.5 hover:before:rounded-full hover:before:bg-border hover:before:content-[\'\']'}"
+								? 'text-foreground font-medium border-blue-500/50 shadow-[0_0_8px_rgba(96,165,250,0.25)]'
+								: 'text-muted-foreground border-transparent hover:text-foreground hover:border-blue-400/50 hover:shadow-[0_0_10px_rgba(96,165,250,0.25)]'}"
 					>
 						<Icon size={15} class="shrink-0" />
 						{item.label}
@@ -240,7 +240,7 @@
 					<div class="relative">
 						<button
 							onclick={() => { profileOpen = !profileOpen; powerOpen = false; }}
-							class="flex items-center gap-2 rounded-md border border-blue-500/30 px-3 py-1.5 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/60 hover:shadow-[0_0_10px_rgba(96,165,250,0.3)] active:shadow-none"
+							class="flex items-center gap-2 rounded-md border-2 border-blue-500/50 px-3 py-1.5 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
 						>
 							<User size={15} />
 							{authInfo?.username ?? ''}
@@ -273,7 +273,7 @@
 						<button
 							onclick={() => { powerOpen = !powerOpen; profileOpen = false; }}
 							disabled={powering}
-							class="flex items-center gap-2 rounded-md border border-blue-500/30 px-3 py-1.5 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/60 hover:shadow-[0_0_10px_rgba(96,165,250,0.3)] active:shadow-none disabled:opacity-50"
+							class="flex items-center gap-2 rounded-md border-2 border-blue-500/50 px-3 py-1.5 text-sm text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none disabled:opacity-50"
 						>
 							<Power size={15} />
 							Power
