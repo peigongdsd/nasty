@@ -694,11 +694,22 @@ impl PoolService {
             ));
         }
 
+        let mount_point = pool.mount_point.as_ref().unwrap().clone();
+
         info!("Evacuating device {} in pool '{}'", req.device, req.pool);
         cmd::run_ok("bcachefs", &["device", "evacuate", &req.device])
             .await
             .map_err(PoolError::CommandFailed)?;
 
+        // Mark as spare so bcachefs won't write new data to it and the UI
+        // shows a clear visual change (amber "spare" instead of green "rw").
+        let _ = cmd::run_ok(
+            "bcachefs",
+            &["device", "set-state", &mount_point, &req.device, "spare"],
+        )
+        .await;
+
+        info!("Device {} marked as spare after evacuation", req.device);
         Ok(())
     }
 
