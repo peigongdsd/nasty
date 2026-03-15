@@ -275,7 +275,7 @@
 			<div class="mb-4">
 				<Label for="nvme-name">Share Name</Label>
 				<Input id="nvme-name" bind:value={newName} placeholder="faststore" class="mt-1" />
-				<span class="mt-1 block text-xs text-muted-foreground">NQN: nqn.2024-01.com.nasty:{newName || '...'}</span>
+				<span class="mt-1 block text-xs text-muted-foreground">NQN: nqn.2137.com.nasty:{newName || '...'}</span>
 			</div>
 			<div class="grid grid-cols-2 gap-4 mb-4">
 				<div>

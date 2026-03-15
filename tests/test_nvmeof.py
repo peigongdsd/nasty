@@ -50,13 +50,13 @@ async def test_nvmeof(ctx: TestContext):
 
     sv_names     = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
     subsys_names = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
-    nqns         = [f"nqn.2024-01.com.nasty:{n}"       for n in subsys_names]
+    nqns         = [f"nqn.2137.com.nasty:{n}"       for n in subsys_names]
     mount_points = [f"/tmp/nasty-test-nvme{i}-{ctx.tag}" for i in range(1, N + 1)]
     subsys_ids      = [None] * N
     connected       = [False] * N
     mounted         = [False] * N
     clone_sv_names  = [f"test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
-    clone_nqns      = [f"nqn.2024-01.com.nasty:test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
+    clone_nqns      = [f"nqn.2137.com.nasty:test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_subsys_ids = [None] * N
     clone_mounts    = [f"/tmp/nasty-test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_connected = [False] * N
@@ -64,7 +64,7 @@ async def test_nvmeof(ctx: TestContext):
     snap_names      = [[f"snap-nvme{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]
     # Snapshot content verification: clone snap2 into a temp subvolume and read via NVMe-oF
     snap2_sv_names  = [f"test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
-    snap2_nqns      = [f"nqn.2024-01.com.nasty:test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
+    snap2_nqns      = [f"nqn.2137.com.nasty:test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
     snap2_subsys_ids = [None] * N
     snap2_mounts    = [f"/tmp/nasty-test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
     snap2_connected = [False] * N
