@@ -31,7 +31,7 @@
       package = nasty-webui;
     };
 
-    storage.mountBase = "/mnt/nasty";
+    storage.mountBase = "/storage";
 
     nfs.enable = true;
     smb.enable = true;

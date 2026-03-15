@@ -149,11 +149,11 @@ in
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
 
-      # Strip any /mnt/nasty/ pool mount entries from the generated config.
+      # Strip any /storage/ pool mount entries from the generated config.
       # Pool mounts are managed at runtime by the engine; if left in
       # hardware-configuration.nix they will block boot after pool destruction.
       awk '
-        /fileSystems\."\/mnt\/nasty\// { skip=1; depth=0 }
+        /fileSystems\."\/storage\// { skip=1; depth=0 }
         skip {
           for (i=1; i<=length($0); i++) {
             c = substr($0, i, 1)

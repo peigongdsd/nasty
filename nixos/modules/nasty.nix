@@ -135,7 +135,7 @@ in {
     storage = {
       mountBase = mkOption {
         type = types.str;
-        default = "/mnt/nasty";
+        default = "/storage";
         description = "Base directory for pool mount points";
       };
     };

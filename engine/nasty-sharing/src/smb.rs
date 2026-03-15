@@ -109,7 +109,7 @@ impl SmbService {
         if !Path::new(&req.path).exists() {
             return Err(SmbError::PathNotFound(req.path));
         }
-        if !req.path.starts_with("/mnt/nasty/") {
+        if !req.path.starts_with("/storage/") {
             return Err(SmbError::PathNotInPool(req.path));
         }
 

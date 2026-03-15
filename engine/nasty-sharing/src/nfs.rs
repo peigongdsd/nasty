@@ -101,7 +101,7 @@ impl NfsService {
         if !Path::new(&req.path).exists() {
             return Err(NfsError::PathNotFound(req.path));
         }
-        if !req.path.starts_with("/mnt/nasty/") {
+        if !req.path.starts_with("/storage/") {
             return Err(NfsError::PathNotInPool(req.path));
         }
 

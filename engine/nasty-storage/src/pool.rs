@@ -7,7 +7,7 @@ use tracing::{info, warn};
 
 use crate::cmd;
 
-const NASTY_MOUNT_BASE: &str = "/mnt/nasty";
+const NASTY_MOUNT_BASE: &str = "/storage";
 const POOL_STATE_PATH: &str = "/var/lib/nasty/pool-state.json";
 
 #[derive(Debug, Error)]

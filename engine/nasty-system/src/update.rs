@@ -367,7 +367,7 @@ echo "==> Update complete!"
     }
 }
 
-/// Remove any `fileSystems."/mnt/nasty/..."` blocks from hardware-configuration.nix.
+/// Remove any `fileSystems."/storage/..."` blocks from hardware-configuration.nix.
 ///
 /// Pool mounts are managed at runtime by the engine. If a user ran
 /// `nixos-generate-config` while pools were mounted, those entries end up in
@@ -393,7 +393,7 @@ fn strip_pool_mounts(content: &str) -> String {
     let mut skip = false;
     let mut depth = 0i32;
     for line in content.lines() {
-        if !skip && line.trim_start().starts_with("fileSystems.\"/mnt/nasty/") {
+        if !skip && line.trim_start().starts_with("fileSystems.\"/storage/") {
             skip = true;
             depth = 0;
         }
