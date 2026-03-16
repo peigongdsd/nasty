@@ -65,6 +65,15 @@
 		bcachefsRef.trim() !== '' && bcachefsRef.trim() !== ((bcachefsInfo as BcachefsToolsInfo | null)?.default_ref ?? '')
 	);
 
+	// True when the entered ref looks like a branch name rather than a tag (v*) or commit SHA ([0-9a-f]{7,40})
+	const bcachefsRefIsBranch = $derived.by(() => {
+		const r = bcachefsRef.trim();
+		if (!r) return false;
+		if (/^v\d/.test(r)) return false;           // tag: v1.37.0
+		if (/^[0-9a-f]{7,40}$/.test(r)) return false; // commit SHA
+		return true;
+	});
+
 	const client = getClient();
 
 	$effect(() => {
@@ -469,9 +478,16 @@
 				</div>
 
 				{#if bcachefsWarnVisible}
-					<div class="mb-4 rounded-lg border border-amber-700 bg-amber-950 px-4 py-3 text-sm text-amber-200">
+					<div class="mb-3 rounded-lg border border-amber-700 bg-amber-950 px-4 py-3 text-sm text-amber-200">
 						<strong>Warning:</strong> Switching versions carries risk. Downgrading after a newer format version
 						was written to your pools may leave them unmountable. Consult the bcachefs author before downgrading.
+					</div>
+				{/if}
+				{#if bcachefsRefIsBranch}
+					<div class="mb-3 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
+						<strong>Branch detected:</strong> <code class="font-mono">{bcachefsRef.trim()}</code> will be resolved
+						to the exact commit it points to right now and pinned there. Future system updates won't follow the
+						branch tip. Use a specific tag or commit SHA for full control.
 					</div>
 				{/if}
 

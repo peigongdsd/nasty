@@ -393,11 +393,11 @@ echo "==> Update complete!"
         let is_default = git_ref == default_ref;
 
         // Persist the chosen ref so regular updates can re-apply it.
-        // Clear the state file when restoring the default.
+        // State file is written by the script after resolving the ref to a commit SHA.
+        // For the default ref we clear it here; for custom refs the script overwrites it
+        // with the pinned SHA so branch names like "master" don't drift on future updates.
         if is_default {
             let _ = tokio::fs::remove_file(BCACHEFS_REF_STATE).await;
-        } else {
-            let _ = tokio::fs::write(BCACHEFS_REF_STATE, &git_ref).await;
         }
 
         let input_url = format!("{BCACHEFS_TOOLS_REPO}/{git_ref}");
@@ -412,10 +412,18 @@ echo "failed" > {BCACHEFS_SWITCH_RESULT}
 echo "==> Switching bcachefs-tools to {git_ref}..."
 cd {NIXOS_FLAKE_DIR}
 nix flake lock --override-input bcachefs-tools "{input_url}"
+# Resolve the symbolic ref (e.g. "master") to the exact commit SHA that was
+# just pinned in flake.lock. Store the SHA so future system updates re-use
+# the same commit rather than advancing with the branch tip.
+RESOLVED_SHA=$(python3 -c "import json,sys; d=json.load(open('flake.lock')); print(d['nodes']['bcachefs-tools']['locked']['rev'])" 2>/dev/null || true)
+if [ -n "$RESOLVED_SHA" ] && [ "{git_ref}" != "{default_ref}" ]; then
+    echo "$RESOLVED_SHA" > {BCACHEFS_REF_STATE}
+    echo "==> Pinned to commit $RESOLVED_SHA"
+fi
 # Commit the updated flake.lock so the tree stays clean for the next rebuild
 git add flake.lock
 git -c user.email="nasty@localhost" -c user.name="NASty" \
-  commit -m "bcachefs-tools: switch to {git_ref}" || true
+  commit -m "bcachefs-tools: switch to {git_ref} (${{RESOLVED_SHA:-unknown}})" || true
 echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {LOCAL_FLAKE}
 echo "success" > {BCACHEFS_SWITCH_RESULT}
