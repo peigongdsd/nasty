@@ -3,7 +3,7 @@
 	import { AreaChart } from 'layerchart';
 	import { scaleUtc } from 'd3-scale';
 	import { curveMonotoneX } from 'd3-shape';
-	import { formatBytes } from '$lib/format';
+	import { formatBytes, makeBytesFormatter } from '$lib/format';
 
 	interface Props {
 		samples: { time: Date; in: number; out: number }[];
@@ -21,9 +21,16 @@
 		outLabel,
 		inColor = 'var(--chart-1)',
 		outColor = 'var(--chart-2)',
-		yFormat = (v: number) => formatBytes(v) + '/s',
+		yFormat,
 		tooltipFormat = (v: number) => formatBytes(v) + '/s',
 	}: Props = $props();
+
+	// Derive the Y-axis formatter from the peak value so all ticks share one unit.
+	const yFormatDerived = $derived.by(() => {
+		if (yFormat) return yFormat;
+		const max = Math.max(0, ...samples.map((s) => Math.max(s.in, s.out)));
+		return (v: number) => makeBytesFormatter(max)(v) + '/s';
+	});
 
 	const singleSeries = $derived(!outLabel);
 
@@ -61,7 +68,7 @@
 					ticks: 4,
 				},
 				yAxis: {
-					format: yFormat,
+					format: yFormatDerived,
 					ticks: 3,
 				},
 			}}
