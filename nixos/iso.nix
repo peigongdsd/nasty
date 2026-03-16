@@ -20,32 +20,32 @@ let
     # PNG24: = 8-bit RGB — GRUB requires bit depth 8 or 16.
     magick -size 1920x1080 xc:'#0f1117' -type TrueColor -depth 8 PNG24:$out/background.png
 
-    # Replace logo with the NASty logo (200×200, white SVG on transparent bg).
+    # Replace logo with the NASty logo (320×320, white SVG on transparent bg).
     # rsvg-convert outputs raw RGBA; re-encode as 16-bit RGBA (PNG64:) so GRUB
     # gets the full quality gradient/anti-aliasing instead of a lossy 8-bit palette.
-    rsvg-convert -w 200 -h 200 \
+    rsvg-convert -w 320 -h 320 \
       ${../webui/src/lib/assets/nasty-white.svg} \
       -o /tmp/nasty-logo-raw.png
     magick /tmp/nasty-logo-raw.png -type TrueColorAlpha -depth 16 PNG64:$out/logo.png
 
-    # Rewrite theme.txt: same layout as nixos-grub2-theme but with updated
-    # logo dimensions and position (200×200 instead of 319×100)
+    # Rewrite theme.txt: bigger logo, dark transparent menu (no white box),
+    # and better contrast item colors.
     cat > $out/theme.txt << 'EOF'
 title-text: ""
 title-font: "DejaVu Regular"
 title-color: "#ffffff"
 
 + image {
-  top = 3%
-  height = 200
-  width = 200
-  left = 50%-100
+  top = 4%
+  height = 320
+  width = 320
+  left = 50%-160
   file = "logo.png"
 }
 
 desktop-image: "background.png"
 message-font: "DejaVu Regular"
-message-color: "#ffffff"
+message-color: "#aaaaaa"
 terminal-font: "Unifont Regular"
 terminal-box: "terminal_*.png"
 
@@ -58,28 +58,27 @@ terminal-box: "terminal_*.png"
   show_text = true
   text = "@TIMEOUT_NOTIFICATION_MIDDLE@"
   border_color = #5579C4
-  bg_color = #7EBAE4
+  bg_color = #1e2130
   fg_color = #5579C4
 }
 
 + boot_menu {
-  left = 50%-400
-  width = 800
-  top = 3%+200+3%
-  height = 100%-3%-200-3%-3%-32-3%
+  left = 50%-300
+  width = 600
+  top = 4%+320+4%
+  height = 100%-4%-320-4%-4%-32-4%
   item_font = "DejaVu Regular"
-  item_color = "#e0e0e0"
-  item_height = 40
-  item_icon_space = 12
-  item_spacing = 0
-  item_padding = 0
+  item_color = "#9aa0b4"
+  item_height = 44
+  item_icon_space = 14
+  item_spacing = 4
+  item_padding = 8
   selected_item_font = "DejaVu Regular"
   selected_item_color = "#ffffff"
   selected_item_pixmap_style = "select_*.png"
   icon_height = 32
   icon_width = 42
   scrollbar = false
-  menu_pixmap_style = "boot_menu_*.png"
 }
 EOF
   '';
