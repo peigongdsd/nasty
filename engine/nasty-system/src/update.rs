@@ -340,11 +340,17 @@ echo "==> Update complete!"
 
     pub async fn bcachefs_info(&self) -> BcachefsToolsInfo {
         let running_version = bcachefs_version().await;
-        let (pinned_ref, pinned_rev) = read_flake_lock_bcachefs().await;
+        let (lock_ref, pinned_rev) = read_flake_lock_bcachefs().await;
         let default_ref = read_flake_nix_default_ref().await;
-        let is_custom = tokio::fs::read_to_string(BCACHEFS_REF_STATE).await
-            .map(|r| r.trim().to_string() != default_ref)
-            .unwrap_or(false);
+        // Use the state file as the canonical display ref when the user has switched.
+        // flake.lock's original.ref always mirrors flake.nix (not updated by --override-input),
+        // so it would show the old version even after a successful switch to a new rev.
+        let state_ref = tokio::fs::read_to_string(BCACHEFS_REF_STATE).await
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let pinned_ref = state_ref.clone().or(lock_ref);
+        let is_custom = state_ref.as_deref().map(|r| r != default_ref).unwrap_or(false);
         BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, default_ref }
     }
 

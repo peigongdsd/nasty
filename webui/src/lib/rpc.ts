@@ -85,6 +85,11 @@ export class NastyClient {
 
 			this.ws.onclose = () => {
 				this._authenticated = false;
+				// Reject all pending calls so awaiting code doesn't hang forever
+				for (const pending of this.pending.values()) {
+					pending.reject({ code: -32000, message: 'WebSocket disconnected' });
+				}
+				this.pending.clear();
 				// Auto-reconnect after 3s if we were previously authenticated
 				if (authResolved) {
 					this.reconnectTimer = setTimeout(() => this.connect(token).catch(() => {}), 3000);
