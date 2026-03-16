@@ -35,14 +35,14 @@ async def test_iscsi(ctx: TestContext):
 
     sv_names     = [f"test-iscsi{i}-{ctx.tag}"        for i in range(1, N + 1)]
     target_names = [f"test-iscsi{i}-{ctx.tag}"        for i in range(1, N + 1)]
-    iqns         = [f"iqn.2137-01.com.nasty:{n}"       for n in target_names]
+    iqns         = [None] * N  # populated from API response after create_quick
     mount_points = [f"/tmp/nasty-test-iscsi{i}-{ctx.tag}" for i in range(1, N + 1)]
     target_ids      = [None] * N
     logged_in       = [False] * N
     mounted         = [False] * N
     devices         = [None] * N
     clone_sv_names  = [f"test-iscsi{i+1}-clone-{ctx.tag}" for i in range(N)]
-    clone_iqns      = [f"iqn.2137-01.com.nasty:test-iscsi{i+1}-clone-{ctx.tag}" for i in range(N)]
+    clone_iqns      = [None] * N  # populated from API response after create_quick
     clone_target_ids = [None] * N
     clone_mounts    = [f"/tmp/nasty-test-iscsi{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_connected = [False] * N
@@ -72,10 +72,13 @@ async def test_iscsi(ctx: TestContext):
                     "device_path": block_dev,
                 })
                 target_ids[i] = target["id"]
+                iqns[i] = target["iqn"]
                 ctx.record(f"{label}: target created", True)
 
         # ── Discovery + login ─────────────────────────────────────
         for i in range(N):
+            if iqns[i] is None:
+                continue
             label = f"iSCSI[{i+1}]"
             info(f"Discovering iSCSI targets on {ctx.host}...")
             r = run(["iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", ctx.host], check=False)
@@ -213,6 +216,7 @@ async def test_iscsi(ctx: TestContext):
                     "device_path": block_dev,
                 })
                 clone_target_ids[i] = target["id"]
+                clone_iqns[i] = target["iqn"]
                 ctx.record(f"{label}: target created", True)
             except Exception as e:
                 ctx.record(f"{label}: target created", False, str(e))
@@ -220,7 +224,7 @@ async def test_iscsi(ctx: TestContext):
         await asyncio.sleep(3)
 
         for i in range(N):
-            if clone_target_ids[i] is None:
+            if clone_target_ids[i] is None or clone_iqns[i] is None:
                 continue
             label = f"iSCSI[{i+1}] clone"
             r = run(["iscsiadm", "-m", "discovery", "-t", "sendtargets", "-p", ctx.host], check=False)
@@ -275,20 +279,22 @@ async def test_iscsi(ctx: TestContext):
                 run(["umount", clone_mounts[i]], check=False)
             if os.path.isdir(clone_mounts[i]):
                 os.rmdir(clone_mounts[i])
-            if clone_connected[i]:
+            if clone_connected[i] and clone_iqns[i]:
                 run(["iscsiadm", "-m", "node", "-T", clone_iqns[i], "-p", f"{ctx.host}:3260", "--logout"],
                     check=False)
-            run(["iscsiadm", "-m", "node", "-T", clone_iqns[i], "-p", f"{ctx.host}:3260", "-o", "delete"],
-                check=False)
+            if clone_iqns[i]:
+                run(["iscsiadm", "-m", "node", "-T", clone_iqns[i], "-p", f"{ctx.host}:3260", "-o", "delete"],
+                    check=False)
             if mounted[i]:
                 run(["umount", mount_points[i]], check=False)
             if os.path.isdir(mount_points[i]):
                 os.rmdir(mount_points[i])
-            if logged_in[i]:
+            if logged_in[i] and iqns[i]:
                 run(["iscsiadm", "-m", "node", "-T", iqns[i], "-p", f"{ctx.host}:3260", "--logout"],
                     check=False)
-            run(["iscsiadm", "-m", "node", "-T", iqns[i], "-p", f"{ctx.host}:3260", "-o", "delete"],
-                check=False)
+            if iqns[i]:
+                run(["iscsiadm", "-m", "node", "-T", iqns[i], "-p", f"{ctx.host}:3260", "-o", "delete"],
+                    check=False)
             if not ctx.skip_delete:
                 if clone_target_ids[i]:
                     try:

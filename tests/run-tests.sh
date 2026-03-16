@@ -149,12 +149,26 @@ tar -C "$SCRIPT_DIR" -czf - \
     '
 ok "Test suite copied"
 
+LOG="$SCRIPT_DIR/last-run.log"
+
 info "Running tests inside Colima VM..."
 echo ""
 
 # The VM needs root for mount/iscsi/nvme operations
 colima ssh -- sudo bash -c \
-    "cd /tmp/nasty-tests && /tmp/nasty-test-venv/bin/python3 run_tests.py $*"
-EXIT_CODE=$?
+    "cd /tmp/nasty-tests && /tmp/nasty-test-venv/bin/python3 run_tests.py $*" \
+    | tee "$LOG"
+EXIT_CODE=${PIPESTATUS[0]}
+
+# Strip ANSI escape codes and show failures summary
+FAILURES=$(sed 's/\x1b\[[0-9;]*m//g' "$LOG" | grep '^\s*\[FAIL\]' || true)
+if [[ -n "$FAILURES" ]]; then
+    echo ""
+    echo -e "${RED}══ Failures ══${RESET}"
+    echo "$FAILURES"
+fi
+
+echo ""
+info "Full log saved to: $LOG"
 
 exit $EXIT_CODE

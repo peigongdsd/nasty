@@ -50,13 +50,13 @@ async def test_nvmeof(ctx: TestContext):
 
     sv_names     = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
     subsys_names = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
-    nqns         = [f"nqn.2137.com.nasty:{n}"       for n in subsys_names]
+    nqns         = [None] * N  # populated from API response after create_quick
     mount_points = [f"/tmp/nasty-test-nvme{i}-{ctx.tag}" for i in range(1, N + 1)]
     subsys_ids      = [None] * N
     connected       = [False] * N
     mounted         = [False] * N
     clone_sv_names  = [f"test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
-    clone_nqns      = [f"nqn.2137.com.nasty:test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
+    clone_nqns      = [None] * N  # populated from API response after create_quick
     clone_subsys_ids = [None] * N
     clone_mounts    = [f"/tmp/nasty-test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_connected = [False] * N
@@ -64,7 +64,7 @@ async def test_nvmeof(ctx: TestContext):
     snap_names      = [[f"snap-nvme{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]
     # Snapshot content verification: clone snap2 into a temp subvolume and read via NVMe-oF
     snap2_sv_names  = [f"test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
-    snap2_nqns      = [f"nqn.2137.com.nasty:test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
+    snap2_nqns      = [None] * N  # populated from API response after create_quick
     snap2_subsys_ids = [None] * N
     snap2_mounts    = [f"/tmp/nasty-test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
     snap2_connected = [False] * N
@@ -94,10 +94,13 @@ async def test_nvmeof(ctx: TestContext):
                     "device_path": block_dev,
                 })
                 subsys_ids[i] = subsys["id"]
+                nqns[i] = subsys["nqn"]
                 ctx.record(f"{label}: share created", True)
 
         # ── Connect ───────────────────────────────────────────────
         for i in range(N):
+            if nqns[i] is None:
+                continue
             label = f"NVMe-oF[{i+1}]"
             info(f"Connecting to NVMe-oF target {nqns[i]}...")
             r = run(["nvme", "connect", "-t", "tcp", "-n", nqns[i], "-a", ctx.host, "-s", "4420"],
@@ -227,6 +230,7 @@ async def test_nvmeof(ctx: TestContext):
                     "device_path": block_dev,
                 })
                 snap2_subsys_ids[i] = subsys["id"]
+                snap2_nqns[i] = subsys["nqn"]
                 ctx.record(f"{label}: share created", True)
             except Exception as e:
                 ctx.record(f"{label}: share created", False, str(e))
@@ -234,7 +238,7 @@ async def test_nvmeof(ctx: TestContext):
         await asyncio.sleep(3)
 
         for i in range(N):
-            if snap2_subsys_ids[i] is None:
+            if snap2_subsys_ids[i] is None or snap2_nqns[i] is None:
                 continue
             label = f"NVMe-oF[{i+1}] snap2"
             r = run(["nvme", "connect", "-t", "tcp", "-n", snap2_nqns[i], "-a", ctx.host, "-s", "4420"],
@@ -301,6 +305,7 @@ async def test_nvmeof(ctx: TestContext):
                     "device_path": block_dev,
                 })
                 clone_subsys_ids[i] = subsys["id"]
+                clone_nqns[i] = subsys["nqn"]
                 ctx.record(f"{label}: share created", True)
             except Exception as e:
                 ctx.record(f"{label}: share created", False, str(e))
@@ -308,7 +313,7 @@ async def test_nvmeof(ctx: TestContext):
         await asyncio.sleep(3)
 
         for i in range(N):
-            if clone_subsys_ids[i] is None:
+            if clone_subsys_ids[i] is None or clone_nqns[i] is None:
                 continue
             label = f"NVMe-oF[{i+1}] clone"
             r = run(["nvme", "connect", "-t", "tcp", "-n", clone_nqns[i], "-a", ctx.host, "-s", "4420"],
@@ -359,19 +364,19 @@ async def test_nvmeof(ctx: TestContext):
                 run(["umount", snap2_mounts[i]], check=False)
             if os.path.isdir(snap2_mounts[i]):
                 os.rmdir(snap2_mounts[i])
-            if snap2_connected[i]:
+            if snap2_connected[i] and snap2_nqns[i]:
                 run(["nvme", "disconnect", "-n", snap2_nqns[i]], check=False)
             if clone_mounted[i]:
                 run(["umount", clone_mounts[i]], check=False)
             if os.path.isdir(clone_mounts[i]):
                 os.rmdir(clone_mounts[i])
-            if clone_connected[i]:
+            if clone_connected[i] and clone_nqns[i]:
                 run(["nvme", "disconnect", "-n", clone_nqns[i]], check=False)
             if mounted[i]:
                 run(["umount", mount_points[i]], check=False)
             if os.path.isdir(mount_points[i]):
                 os.rmdir(mount_points[i])
-            if connected[i]:
+            if connected[i] and nqns[i]:
                 run(["nvme", "disconnect", "-n", nqns[i]], check=False)
             if not ctx.skip_delete:
                 if snap2_subsys_ids[i]:

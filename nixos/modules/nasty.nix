@@ -438,8 +438,9 @@ in {
       };
     };
 
-    systemd.services.smb.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
-    systemd.services.nmb.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
+    systemd.services.samba-smbd.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
+    systemd.services.samba-nmbd.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
+    systemd.services.samba-winbindd.wantedBy = mkIf cfg.smb.enable (lib.mkForce []);
 
     # ── iSCSI / LIO ───────────────────────────────────────────
     # target.service: restore LIO config from /etc/target/saveconfig.json.
@@ -451,7 +452,7 @@ in {
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${targetcli-fixed}/bin/targetcli restoreconfig /etc/target/saveconfig.json";
+        ExecStart = "${pkgs.bash}/bin/bash -c 'test -f /etc/target/saveconfig.json && ${targetcli-fixed}/bin/targetcli restoreconfig /etc/target/saveconfig.json || true'";
         ExecStop = "${targetcli-fixed}/bin/targetcli clearconfig confirm=True";
       };
     };

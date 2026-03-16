@@ -304,7 +304,7 @@ async fn is_protocol_running(proto: Protocol) -> bool {
     match proto {
         Protocol::Nfs => systemctl_is_active("nfs-server.service").await,
         Protocol::Smb => systemctl_is_active("samba-smbd.service").await,
-        Protocol::Iscsi => systemctl_is_active("target.service").await,
+        Protocol::Iscsi => std::path::Path::new("/sys/module/iscsi_target_mod").exists(),
         Protocol::Nvmeof => {
             // NVMe-oF is "running" if nvmet configfs is available
             std::path::Path::new("/sys/kernel/config/nvmet").exists()
