@@ -23,6 +23,7 @@
 	let replicas = $state(1);
 	let compression = $state('');
 	let showPartitions = $state(false);
+	let erasureCode = $state(false);
 
 	// Manual tiering state
 	let manualLabels: Record<string, string> = $state({});
@@ -39,6 +40,7 @@
 	let addDevicePath = $state('');
 	let addDeviceLabel = $state('');
 	let showAddPartitions = $state(false);
+	let editErasureCode = $state(false);
 
 	let healthPool: string | null = $state(null);
 	let fsUsage: FsUsage | null = $state(null);
@@ -201,6 +203,7 @@
 				metadata_target: profile.metadata_target || undefined,
 				background_target: profile.background_target || undefined,
 				promote_target: profile.promote_target || undefined,
+				erasure_code: erasureCode || undefined,
 			}),
 			`Pool "${newName}" created`
 		);
@@ -214,6 +217,7 @@
 			manualMetaTarget = '';
 			manualBgTarget = '';
 			manualPromoteTarget = '';
+			erasureCode = false;
 			await refresh();
 		}
 	}
@@ -230,6 +234,7 @@
 		manualMetaTarget = '';
 		manualBgTarget = '';
 		manualPromoteTarget = '';
+		erasureCode = false;
 		wizardStep = 1;
 	}
 
@@ -336,6 +341,7 @@
 		editOptionsPool = pool.name;
 		editCompression = pool.options.compression ?? '';
 		editBgCompression = pool.options.background_compression ?? '';
+	editErasureCode = pool.options.erasure_code ?? false;
 	}
 
 	async function saveOptions(poolName: string) {
@@ -344,6 +350,7 @@
 				name: poolName,
 				compression: editCompression || 'none',
 				background_compression: editBgCompression || 'none',
+				erasure_code: editErasureCode,
 			}),
 			`Options updated for "${poolName}"`
 		);
@@ -677,9 +684,12 @@
 					{#if profile.promote_target}
 						<span class="text-muted-foreground">Promote Target</span><span>{profile.promote_target}</span>
 					{/if}
+					{#if erasureCode}
+						<span class="text-muted-foreground">Erasure Coding</span><span class="text-amber-400">Enabled</span>
+					{/if}
 				</div>
 
-				<div class="mb-5 flex gap-4">
+				<div class="mb-5 flex flex-wrap gap-4">
 					<div class="flex-1">
 						<Label for="replicas">Replicas</Label>
 						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1}
@@ -701,6 +711,18 @@
 							<option value="zstd">Zstd</option>
 							<option value="gzip">Gzip</option>
 						</select>
+					</div>
+					<div>
+						<Label>Erasure Coding</Label>
+						<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+							<input type="checkbox" bind:checked={erasureCode} disabled={selectedPaths.length < 2} class="h-4 w-4" />
+							Enable
+						</label>
+						{#if erasureCode}
+							<p class="mt-1 text-xs text-amber-400">Replicas controls parity: 2 = RAID-5, 3 = RAID-6. Metadata is not erasure coded.</p>
+						{:else}
+							<p class="mt-1 text-xs text-muted-foreground">Requires multiple devices.</p>
+						{/if}
 					</div>
 				</div>
 
@@ -784,6 +806,13 @@
 								<option value="zstd">Zstd</option>
 								<option value="gzip">Gzip</option>
 							</select>
+						</div>
+						<div>
+							<label for="edit-erasure-{pool.name}" class="mb-1 block text-xs text-muted-foreground">Erasure Coding</label>
+							<label class="flex cursor-pointer items-center gap-2 text-sm">
+								<input id="edit-erasure-{pool.name}" type="checkbox" bind:checked={editErasureCode} class="h-4 w-4" />
+								Enabled
+							</label>
 						</div>
 					</div>
 					<div class="mt-3 flex gap-2">

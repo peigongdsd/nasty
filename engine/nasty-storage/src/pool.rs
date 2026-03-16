@@ -105,6 +105,7 @@ pub struct CreatePoolRequest {
     pub metadata_target: Option<String>,
     pub background_target: Option<String>,
     pub promote_target: Option<String>,
+    pub erasure_code: Option<bool>,
 }
 
 fn default_replicas() -> u32 {
@@ -129,6 +130,7 @@ pub struct UpdatePoolOptionsRequest {
     pub promote_target: Option<String>,
     pub metadata_target: Option<String>,
     pub error_action: Option<String>,
+    pub erasure_code: Option<bool>,
 }
 
 /// Add a device to an existing pool.
@@ -373,6 +375,10 @@ impl PoolService {
             args.push(format!("--promote_target={t}"));
         }
 
+        if req.erasure_code == Some(true) {
+            args.push("--erasure_code".to_string());
+        }
+
         // Per-device options go immediately before each device path
         let default_label = req.label.as_deref().unwrap_or(&req.name);
         for dev in &req.devices {
@@ -540,6 +546,9 @@ impl PoolService {
         }
         if let Some(ref v) = req.error_action {
             write_opt(&base, "errors", v).await?;
+        }
+        if let Some(ec) = req.erasure_code {
+            write_opt(&base, "erasure_code", if ec { "1" } else { "0" }).await?;
         }
 
         self.get(&req.name).await
