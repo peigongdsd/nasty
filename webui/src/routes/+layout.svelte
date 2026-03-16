@@ -9,7 +9,8 @@
 	import { confirm } from '$lib/confirm.svelte';
 	import type { AuthResult } from '$lib/rpc';
 	import favicon from '$lib/assets/favicon.svg';
-	import logo from '$lib/assets/nasty-white.svg';
+	import logoLight from '$lib/assets/nasty.svg';
+	import logoDark from '$lib/assets/nasty-white.svg';
 	import '../app.css';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -34,8 +35,11 @@
 		PowerOff,
 		LogOut,
 		User,
+		Sun,
+		Moon,
 	} from '@lucide/svelte';
 	import { refreshState } from '$lib/refresh.svelte';
+	import { theme } from '$lib/theme.svelte';
 
 	let { children } = $props();
 	let connected = $state(false);
@@ -157,7 +161,7 @@
 {#if showLogin}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="w-[340px] rounded-xl border border-border bg-card p-8">
-			<img src={logo} alt="NASty" class="mb-4 h-48 mx-auto" />
+			<img src={theme.isDark ? logoDark : logoLight} alt="NASty" class="mb-4 h-48 mx-auto" />
 			<p class="mb-6 text-sm text-muted-foreground">Sign in to manage your storage</p>
 			{#if loginError}
 				<p class="mb-4 text-sm text-destructive">{loginError}</p>
@@ -181,7 +185,7 @@
 		<aside class="flex w-[200px] shrink-0 flex-col border-r border-border bg-card">
 			<!-- Logo -->
 			<div class="shrink-0 border-b border-border px-4 py-4">
-				<img src={logo} alt="NASty" class="h-40" />
+				<img src={theme.isDark ? logoDark : logoLight} alt="NASty" class="h-40" />
 			</div>
 
 			<!-- Nav — scrollable -->
@@ -249,6 +253,19 @@
 					{#if powering}
 						<span class="text-sm text-amber-500">Shutting down…</span>
 					{/if}
+
+					<!-- Theme toggle -->
+					<button
+						onclick={() => theme.toggle()}
+						class="flex items-center rounded-md border-2 border-blue-500/50 p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
+						title={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+					>
+						{#if theme.isDark}
+							<Sun size={15} />
+						{:else}
+							<Moon size={15} />
+						{/if}
+					</button>
 
 					<!-- Profile button -->
 					<div class="relative">
