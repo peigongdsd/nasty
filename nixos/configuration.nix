@@ -45,20 +45,30 @@
 
   networking.hostName = "nasty";
 
-  # Show network info on the TTY login prompt so users know how to connect.
-  # \4 and \6 are agetty escape codes that expand to the live IPv4/IPv6 address.
-  services.getty.helpLine = lib.mkForce ''
+  # Dynamic TTY banner: a oneshot service writes /run/nasty-issue with the
+  # current IP (via 'ip route get') before getty starts on tty1.
+  # We use ip route get instead of agetty's \4 escape because \4 can resolve
+  # to the wrong interface (e.g. systemd-resolved's 127.0.0.2).
+  systemd.services.nasty-tty-banner = {
+    description = "NASty TTY login banner";
+    wantedBy = [ "getty@tty1.service" ];
+    before = [ "getty@tty1.service" ];
+    after = [ "network.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      IP=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null \
+        | awk '{for(i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}' \
+        || echo "unavailable")
+      printf '\n  NASty -- Storage with attitude\n\n  WebUI:   https://%s\n  Login:   admin / admin\n\n' \
+        "$IP" > /run/nasty-issue
+    '';
+  };
 
-    ┌─────────────────────────────────────────────┐
-    │           NASty — Storage with attitude      │
-    ├─────────────────────────────────────────────┤
-    │  WebUI:   https://\4                        │
-    │  IPv6:    https://[\6]                      │
-    │                                              │
-    │  Default login:  admin / admin               │
-    │  Change password in WebUI → Users            │
-    └─────────────────────────────────────────────┘
-  '';
+  services.getty.helpLine = lib.mkForce "";
+  services.getty.extraArgs = [ "--issue-file" "/run/nasty-issue" ];
 
   # Enable the NASty module with all protocols
   services.nasty = {
