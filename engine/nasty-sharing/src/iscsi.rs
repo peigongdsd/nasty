@@ -7,7 +7,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 const STATE_DIR: &str = "/var/lib/nasty/shares/iscsi";
-const DEFAULT_IQN_PREFIX: &str = "iqn.2137-01.com.nasty";
+const DEFAULT_IQN_PREFIX: &str = "iqn.2137-04.storage.nasty";
 
 #[derive(Debug, Error)]
 pub enum IscsiError {

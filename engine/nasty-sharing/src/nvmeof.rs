@@ -9,7 +9,7 @@ use uuid::Uuid;
 const STATE_DIR: &str = "/var/lib/nasty/shares/nvmeof";
 const PORT_COUNTER_PATH: &str = "/var/lib/nasty/shares/nvmeof/.next_port_id";
 const NVMET_BASE: &str = "/sys/kernel/config/nvmet";
-const DEFAULT_NQN_PREFIX: &str = "nqn.2137.com.nasty";
+const DEFAULT_NQN_PREFIX: &str = "nqn.2137-04.storage.nasty";
 
 #[derive(Debug, Error)]
 pub enum NvmeofError {
