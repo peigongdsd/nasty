@@ -366,6 +366,15 @@ async fn modprobe(module: &str) -> Result<(), String> {
     }
 }
 
+async fn is_virtual_machine() -> bool {
+    tokio::process::Command::new("systemd-detect-virt")
+        .arg("--vm")
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 async fn load_state() -> ProtocolState {
     match tokio::fs::read_to_string(STATE_PATH).await {
         Ok(content) => match serde_json::from_str(&content) {
@@ -376,9 +385,14 @@ async fn load_state() -> ProtocolState {
             }
         },
         Err(_) => {
-            // Default: all protocols disabled on fresh install.
-            // User explicitly enables what they need.
-            ProtocolState::default()
+            // Fresh install: disable SMART by default on VMs since smartd
+            // cannot find SMART-capable drives in virtual environments.
+            let mut state = ProtocolState::default();
+            if is_virtual_machine().await {
+                info!("Virtual machine detected — disabling SMART by default");
+                state.smart = false;
+            }
+            state
         }
     }
 }
