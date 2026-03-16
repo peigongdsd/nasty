@@ -377,6 +377,16 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
         },
+        "device.wipe" => match parse_params::<serde_json::Value>(req) {
+            Ok(p) => {
+                let path = p.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                match state.pools.device_wipe(&path).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                }
+            }
+            Err(e) => invalid(req, e),
+        },
         "pool.options.update" => match parse_params(req) {
             Ok(p) => match state.pools.update_options(p).await {
                 Ok(v) => ok(req, v),

@@ -639,6 +639,25 @@ impl PoolService {
         Ok(devices)
     }
 
+    /// Wipe all filesystem signatures from a device.
+    /// Only allowed if the device is not currently in use by any pool.
+    pub async fn device_wipe(&self, path: &str) -> Result<(), PoolError> {
+        let devices = self.list_devices().await?;
+        let dev = devices.iter().find(|d| d.path == path).ok_or_else(|| {
+            PoolError::CommandFailed(format!("device not found: {path}"))
+        })?;
+        if dev.in_use {
+            return Err(PoolError::CommandFailed(format!(
+                "device {path} is currently in use"
+            )));
+        }
+        info!("Wiping device {path}");
+        cmd::run_ok("wipefs", &["-a", path])
+            .await
+            .map_err(PoolError::CommandFailed)?;
+        Ok(())
+    }
+
     /// Add a device to an existing mounted pool.
     /// bcachefs device add [--label=X] [--durability=X] <mountpoint> <device>
     pub async fn device_add(&self, req: DeviceAddRequest) -> Result<Pool, PoolError> {
