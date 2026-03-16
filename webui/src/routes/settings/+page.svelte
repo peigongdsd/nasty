@@ -214,56 +214,58 @@
 				</div>
 			</div>
 
-			{#if !netDhcp}
-				<div class="mb-4 grid grid-cols-2 gap-3">
-					<div>
-						<label for="net-address" class="mb-1 block text-xs text-muted-foreground">IP Address</label>
-						<input
-							id="net-address"
-							type="text"
-							bind:value={netAddress}
-							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-							placeholder="192.168.1.100"
-						/>
-					</div>
-					<div>
-						<label for="net-prefix" class="mb-1 block text-xs text-muted-foreground">Prefix Length</label>
-						<input
-							id="net-prefix"
-							type="number"
-							min="1"
-							max="32"
-							bind:value={netPrefix}
-							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-							placeholder="24"
-						/>
-					</div>
-					<div>
-						<label for="net-gateway" class="mb-1 block text-xs text-muted-foreground">Gateway</label>
-						<input
-							id="net-gateway"
-							type="text"
-							bind:value={netGateway}
-							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-							placeholder="192.168.1.1"
-						/>
-					</div>
-					<div>
-						<label for="net-dns" class="mb-1 block text-xs text-muted-foreground">DNS Servers</label>
-						<input
-							id="net-dns"
-							type="text"
-							bind:value={netNameservers}
-							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-							placeholder="1.1.1.1, 8.8.8.8"
-						/>
-					</div>
+			<div class="mb-4 grid grid-cols-2 gap-3">
+				<div>
+					<label for="net-address" class="mb-1 block text-xs text-muted-foreground">IP Address</label>
+					<input
+						id="net-address"
+						type="text"
+						value={netDhcp ? (network.live_addresses[0]?.split('/')[0] ?? '') : netAddress}
+						oninput={(e) => { if (!netDhcp) { netAddress = (e.target as HTMLInputElement).value; netChanged = true; } }}
+						disabled={netDhcp}
+						class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+						placeholder="192.168.1.100"
+					/>
 				</div>
-			{/if}
+				<div>
+					<label for="net-prefix" class="mb-1 block text-xs text-muted-foreground">Prefix Length</label>
+					<input
+						id="net-prefix"
+						type="number"
+						min="1"
+						max="32"
+						value={netDhcp ? (network.live_addresses[0]?.split('/')[1] ?? '') : netPrefix}
+						oninput={(e) => { if (!netDhcp) { netPrefix = (e.target as HTMLInputElement).value; netChanged = true; } }}
+						disabled={netDhcp}
+						class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+						placeholder="24"
+					/>
+				</div>
+				<div>
+					<label for="net-gateway" class="mb-1 block text-xs text-muted-foreground">Gateway</label>
+					<input
+						id="net-gateway"
+						type="text"
+						value={netDhcp ? (network.live_gateway ?? '') : netGateway}
+						oninput={(e) => { if (!netDhcp) { netGateway = (e.target as HTMLInputElement).value; netChanged = true; } }}
+						disabled={netDhcp}
+						class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+						placeholder="192.168.1.1"
+					/>
+				</div>
+				<div>
+					<label for="net-dns" class="mb-1 block text-xs text-muted-foreground">DNS Servers</label>
+					<input
+						id="net-dns"
+						type="text"
+						bind:value={netNameservers}
+						oninput={() => { if (!netDhcp) netChanged = true; }}
+						disabled={netDhcp}
+						class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+						placeholder="1.1.1.1, 8.8.8.8"
+					/>
+				</div>
+			</div>
 
 			{#if netChanged && !netDhcp}
 				<p class="mb-3 text-xs text-amber-500">
