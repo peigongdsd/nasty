@@ -14,6 +14,7 @@ const BCACHEFS_SWITCH_UNIT: &str = "nasty-bcachefs-switch";
 const NIXOS_FLAKE_DIR: &str = "/etc/nixos/nixos";
 const BCACHEFS_TOOLS_REPO: &str = "github:koverstreet/bcachefs-tools";
 const BCACHEFS_REF_STATE: &str = "/var/lib/nasty/bcachefs-tools-ref";
+const BCACHEFS_SWITCH_RESULT: &str = "/var/lib/nasty/bcachefs-switch-result";
 
 // TODO: Remove token-based auth once the repo is public.
 // The token file is only needed for private repo access.
@@ -367,12 +368,13 @@ echo "==> Update complete!"
             return Err(UpdateError::CommandFailed("git_ref must not be empty".into()));
         }
 
-        // Clean up previous unit
+        // Clean up previous unit and result file
         for action in &["reset-failed", "stop"] {
             let _ = tokio::process::Command::new("systemctl")
                 .args([action, BCACHEFS_SWITCH_UNIT])
                 .output().await;
         }
+        let _ = tokio::fs::remove_file(BCACHEFS_SWITCH_RESULT).await;
 
         let default_ref = read_flake_nix_default_ref().await;
         let is_default = git_ref == default_ref;
@@ -390,6 +392,10 @@ echo "==> Update complete!"
             r#"#!/bin/bash
 set -euo pipefail
 export PATH="/run/current-system/sw/bin:$PATH"
+# Write 'failed' up front; overwritten with 'success' at the end.
+# Survives engine restarts so polling can read the outcome even after
+# the transient systemd unit has been garbage-collected.
+echo "failed" > {BCACHEFS_SWITCH_RESULT}
 echo "==> Switching bcachefs-tools to {git_ref}..."
 cd {NIXOS_FLAKE_DIR}
 nix flake lock --override-input bcachefs-tools "{input_url}"
@@ -399,6 +405,7 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
   commit -m "bcachefs-tools: switch to {git_ref}" || true
 echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {LOCAL_FLAKE}
+echo "success" > {BCACHEFS_SWITCH_RESULT}
 echo "==> bcachefs-tools switch complete!"
 "#
         );
@@ -450,7 +457,18 @@ echo "==> bcachefs-tools switch complete!"
                         if result == "success" { "success".to_string() } else { "idle".to_string() }
                     }
                     "failed" => "failed".to_string(),
-                    _ => "idle".to_string(),
+                    _ => {
+                        // Unit not found — may have been garbage-collected by systemd
+                        // daemon-reload.  Fall back to the result file written by the script.
+                        tokio::fs::read_to_string(BCACHEFS_SWITCH_RESULT).await
+                            .ok()
+                            .map(|s| match s.trim() {
+                                "success" => "success".to_string(),
+                                "failed"  => "failed".to_string(),
+                                _         => "idle".to_string(),
+                            })
+                            .unwrap_or_else(|| "idle".to_string())
+                    }
                 }
             }
             Err(_) => "idle".to_string(),
