@@ -348,12 +348,12 @@
 									<div class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-all {
 										done   ? 'border-blue-500 bg-blue-500 text-white' :
 										active ? 'border-blue-400 bg-transparent text-blue-400 animate-pulse' :
-										failed ? 'border-border bg-transparent text-muted-foreground/30' :
+										failed ? 'border-red-700 bg-transparent text-red-500' :
 										         'border-border bg-transparent text-muted-foreground/30'
 									}">
-										{#if done}✓{:else if active}…{:else}{i + 1}{/if}
+										{#if done}✓{:else if active}…{:else if failed}✕{:else}{i + 1}{/if}
 									</div>
-									<span class="text-[0.65rem] font-medium {done ? 'text-blue-400' : active ? 'text-blue-400/70' : 'text-muted-foreground/40'}">{phase.label}</span>
+									<span class="text-[0.65rem] font-medium {done ? 'text-blue-400' : active ? 'text-blue-400/70' : failed ? 'text-red-500/70' : 'text-muted-foreground/40'}">{phase.label}</span>
 								</div>
 								{#if i < phases.length - 1}
 									<div class="mb-3.5 h-px w-12 {currentPhase > i ? 'bg-blue-500' : 'bg-border'} mx-1"></div>
@@ -367,6 +367,12 @@
 
 					{#if status.log}
 						<pre bind:this={logEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{status.log}</pre>
+					{/if}
+					{#if status.state === 'failed'}
+						<div class="mt-4 flex gap-2">
+							<Button size="sm" onclick={doApplyUpdate}>Retry</Button>
+							<Button variant="secondary" size="sm" onclick={() => status = { state: 'idle', log: '', reboot_required: false }}>Dismiss</Button>
+						</div>
 					{/if}
 				</CardContent>
 			</Card>
@@ -470,12 +476,12 @@
 									<div class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-all {
 										done   ? 'border-blue-500 bg-blue-500 text-white' :
 										active ? 'border-blue-400 bg-transparent text-blue-400 animate-pulse' :
-										failed ? 'border-border bg-transparent text-muted-foreground/30' :
+										failed ? 'border-red-700 bg-transparent text-red-500' :
 										         'border-border bg-transparent text-muted-foreground/30'
 									}">
-										{#if done}✓{:else if active}…{:else}{i + 1}{/if}
+										{#if done}✓{:else if active}…{:else if failed}✕{:else}{i + 1}{/if}
 									</div>
-									<span class="text-[0.65rem] font-medium {done ? 'text-blue-400' : active ? 'text-blue-400/70' : 'text-muted-foreground/40'}">{phase.label}</span>
+									<span class="text-[0.65rem] font-medium {done ? 'text-blue-400' : active ? 'text-blue-400/70' : failed ? 'text-red-500/70' : 'text-muted-foreground/40'}">{phase.label}</span>
 								</div>
 								{#if i < bcachefsPhases.length - 1}
 									<div class="mb-3.5 h-px w-12 {bcachefsCurrentPhase > i ? 'bg-blue-500' : 'bg-border'} mx-1"></div>
@@ -489,6 +495,12 @@
 
 					{#if bcachefsStatus.log}
 						<pre bind:this={bcachefsLogEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{bcachefsStatus.log}</pre>
+					{/if}
+					{#if bcachefsStatus.state === 'failed'}
+						<div class="mt-4 flex gap-2">
+							<Button size="sm" onclick={doBcachefsSwitch} disabled={!bcachefsRef.trim()}>Retry</Button>
+							<Button variant="secondary" size="sm" onclick={() => bcachefsStatus = { state: 'idle', log: '', reboot_required: false }}>Dismiss</Button>
+						</div>
 					{/if}
 				</CardContent>
 			</Card>
