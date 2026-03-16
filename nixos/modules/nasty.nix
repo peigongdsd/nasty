@@ -337,7 +337,7 @@ in {
         section "Engine State — Subvolumes"
         count=$(ls /var/lib/nasty/subvolumes/*.json 2>/dev/null | wc -l || echo 0)
         echo "  $count subvolume(s)"
-        for f in /var/lib/nasty/subvolumes/*.json 2>/dev/null; do
+        for f in /var/lib/nasty/subvolumes/*.json; do
           [ -f "$f" ] || continue
           ${pkgs.jq}/bin/jq -r '  "  • \(.name)  pool=\(.pool)  type=\(.subvolume_type)  \(if .volsize_bytes then "size=\(.volsize_bytes / 1048576 | floor)MiB" else "" end)"' "$f" 2>/dev/null || true
         done
