@@ -24,6 +24,7 @@
 	let bcachefsStatus: UpdateStatus | null = $state(null);
 	let bcachefsRef = $state('');
 	let bcachefsSwitching = $state(false);
+	let bcachefsNeedsRefresh = $state(false);
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
 	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = $state(null);
 
@@ -228,6 +229,9 @@
 				if (bcachefsStatus && (bcachefsStatus.state === 'success' || bcachefsStatus.state === 'failed')) {
 					stopBcachefsPolling();
 					await loadBcachefsInfo();
+					if (bcachefsStatus.state === 'success') {
+						bcachefsNeedsRefresh = true;
+					}
 				}
 			} catch {
 				// Connection may drop during rebuild, keep polling
@@ -248,6 +252,12 @@
 {#if needsRefresh}
 	<div class="mb-4 flex items-center gap-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
 		<span class="flex-1">Update applied. Refresh your browser to load the new WebUI.</span>
+		<Button variant="secondary" size="xs" onclick={() => location.reload()}>Refresh Now</Button>
+	</div>
+{/if}
+{#if bcachefsNeedsRefresh}
+	<div class="mb-4 flex items-center gap-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
+		<span class="flex-1">bcachefs-tools switch complete. Refresh to load the updated interface.</span>
 		<Button variant="secondary" size="xs" onclick={() => location.reload()}>Refresh Now</Button>
 	</div>
 {/if}
