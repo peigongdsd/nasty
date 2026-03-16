@@ -16,7 +16,7 @@
 	let checking = $state(false);
 	let confirmAction: 'update' | 'rollback' | null = $state(null);
 	let confirmTimer: ReturnType<typeof setTimeout> | null = null;
-	let pollInterval: ReturnType<typeof setInterval> | null = $state(null);
+	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let logEl: HTMLPreElement | undefined = $state();
 
 	// bcachefs-tools switching state
@@ -25,7 +25,7 @@
 	let bcachefsRef = $state('');
 	let bcachefsSwitching = $state(false);
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
-	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = $state(null);
+	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = null;
 
 	const phases = [
 		{ label: 'Fetch',    marker: '==> Pulling' },
