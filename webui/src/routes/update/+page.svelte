@@ -173,6 +173,7 @@
 					await loadVersion();
 					if (status.state === 'success') {
 						refreshState.set();
+						setTimeout(() => { status = { state: 'idle', log: '', reboot_required: false }; }, 5000);
 					}
 				}
 			} catch {
@@ -230,6 +231,8 @@
 					await loadBcachefsInfo();
 					if (bcachefsStatus.state === 'success') {
 						refreshState.set();
+						bcachefsRef = '';
+						setTimeout(() => { bcachefsStatus = { state: 'idle', log: '', reboot_required: false }; }, 5000);
 					}
 				}
 			} catch {
