@@ -7,6 +7,7 @@ export interface SystemInfo {
 	kernel: string;
 	bcachefs_version: string;
 	bcachefs_commit: string | null;
+	bcachefs_is_custom: boolean;
 	timezone: string;
 	ntp_synced: boolean;
 }
