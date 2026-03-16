@@ -106,7 +106,7 @@
   system.nixos.distroId = "nasty";
 
   # Useful tools
-  environment.systemPackages = with pkgs; [ vim file ];
+  environment.systemPackages = with pkgs; [ vim file binutils ];
 
   # Allow SSH for management
   services.openssh = {
