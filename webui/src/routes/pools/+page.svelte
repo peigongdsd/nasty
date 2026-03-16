@@ -445,7 +445,7 @@
 									</span>
 									<span class="text-muted-foreground">{formatBytes(dev.size_bytes)}</span>
 									{#if dev.fs_type}
-										<span class="text-xs text-muted-foreground">[{dev.fs_type}]</span>
+										<span class="rounded border border-amber-700 px-1.5 py-0.5 text-[10px] text-amber-400">has signatures · wipe first</span>
 									{/if}
 								</label>
 							{/each}

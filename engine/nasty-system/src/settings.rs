@@ -7,8 +7,6 @@ const STATE_DIR: &str = "/var/lib/nasty";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
-    #[serde(default)]
-    pub smart_enabled: bool,
     #[serde(default = "default_timezone")]
     pub timezone: String,
     pub hostname: Option<String>,
@@ -21,7 +19,6 @@ fn default_timezone() -> String {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            smart_enabled: false,
             timezone: default_timezone(),
             hostname: None,
         }
@@ -30,8 +27,6 @@ impl Default for Settings {
 
 #[derive(Debug, Deserialize)]
 pub struct SettingsUpdate {
-    #[serde(default)]
-    pub smart_enabled: Option<bool>,
     pub timezone: Option<String>,
     pub hostname: Option<String>,
 }
@@ -54,9 +49,6 @@ impl SettingsService {
 
     pub async fn update(&self, update: SettingsUpdate) -> Result<Settings, String> {
         let mut settings = self.state.write().await;
-        if let Some(v) = update.smart_enabled {
-            settings.smart_enabled = v;
-        }
         if let Some(tz) = update.timezone {
             apply_timezone(&tz).await?;
             settings.timezone = tz;

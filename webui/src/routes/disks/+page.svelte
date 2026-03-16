@@ -4,21 +4,21 @@
 	import { formatBytes } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { BlockDevice, DiskHealth, Settings } from '$lib/types';
+	import type { BlockDevice, DiskHealth, ProtocolStatus } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
 
 	let blockDevices: BlockDevice[] = $state([]);
 	let disks: DiskHealth[] = $state([]);
-	let settings: Settings | null = $state(null);
+	let smartProtocol: ProtocolStatus | null = $state(null);
 	let loading = $state(true);
 	let expandedDisk = $state<string | null>(null);
 
 	const client = getClient();
 
 	onMount(async () => {
-		await Promise.all([loadBlockDevices(), loadSettings()]);
+		await Promise.all([loadBlockDevices(), loadSmartProtocol()]);
 		loading = false;
 	});
 
@@ -28,10 +28,11 @@
 		});
 	}
 
-	async function loadSettings() {
+	async function loadSmartProtocol() {
 		await withToast(async () => {
-			settings = await client.call<Settings>('system.settings.get');
-			if (settings?.smart_enabled) await loadSmartDisks();
+			const protocols = await client.call<ProtocolStatus[]>('service.protocol.list');
+			smartProtocol = protocols.find(p => p.name === 'smart') ?? null;
+			if (smartProtocol?.enabled) await loadSmartDisks();
 		});
 	}
 
@@ -43,19 +44,19 @@
 
 	async function refresh() {
 		await loadBlockDevices();
-		if (settings?.smart_enabled) await loadSmartDisks();
+		if (smartProtocol?.enabled) await loadSmartDisks();
 	}
 
 	async function toggleSmart() {
-		if (!settings) return;
+		if (!smartProtocol) return;
+		const action = smartProtocol.enabled ? 'disable' : 'enable';
 		const ok = await withToast(
-			() => client.call<Settings>('system.settings.update', { smart_enabled: !settings!.smart_enabled }),
-			`SMART monitoring ${settings.smart_enabled ? 'disabled' : 'enabled'}`
+			() => client.call(`service.protocol.${action}`, { name: 'smart' }),
+			`SMART monitoring ${smartProtocol.enabled ? 'disabled' : 'enabled'}`
 		);
 		if (ok !== undefined) {
-			settings = ok;
-			if (settings.smart_enabled) await loadSmartDisks();
-			else disks = [];
+			await loadSmartProtocol();
+			if (!smartProtocol?.enabled) disks = [];
 		}
 	}
 
@@ -146,17 +147,17 @@
 	<!-- SMART health -->
 	<div class="mb-4 flex items-center gap-4">
 		<h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">S.M.A.R.T. Health</h2>
-		{#if settings}
-			<Badge variant={settings.smart_enabled ? 'default' : 'secondary'}>
-				{settings.smart_enabled ? 'Enabled' : 'Disabled'}
+		{#if smartProtocol}
+			<Badge variant={smartProtocol.enabled ? 'default' : 'secondary'}>
+				{smartProtocol.enabled ? 'Enabled' : 'Disabled'}
 			</Badge>
 			<Button variant="secondary" size="xs" onclick={toggleSmart}>
-				{settings.smart_enabled ? 'Disable' : 'Enable'}
+				{smartProtocol.enabled ? 'Disable' : 'Enable'}
 			</Button>
 		{/if}
 	</div>
 
-	{#if !settings?.smart_enabled}
+	{#if !smartProtocol?.enabled}
 		<p class="text-sm text-muted-foreground">Enable SMART monitoring above to see disk health data.</p>
 	{:else if disks.length === 0}
 		<p class="text-sm text-muted-foreground">No disks detected or smartctl not available.</p>
