@@ -156,6 +156,7 @@ impl UpdateService {
         let script = format!(
             r#"#!/bin/bash
 set -euo pipefail
+export PATH="/run/current-system/sw/bin:$PATH"
 echo "==> Pulling latest source..."
 cd {LOCAL_REPO}
 
@@ -380,6 +381,7 @@ echo "==> Update complete!"
         let script = format!(
             r#"#!/bin/bash
 set -euo pipefail
+export PATH="/run/current-system/sw/bin:$PATH"
 echo "==> Switching bcachefs-tools to {git_ref}..."
 cd {NIXOS_FLAKE_DIR}
 nix flake lock --override-input bcachefs-tools "{input_url}"
