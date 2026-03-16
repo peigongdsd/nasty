@@ -129,11 +129,13 @@ async fn live_addresses(iface: &str) -> Vec<String> {
     if iface.is_empty() {
         return Vec::new();
     }
-    let output = tokio::process::Command::new("ip")
+    let Ok(output) = tokio::process::Command::new("ip")
         .args(["-4", "addr", "show", iface])
         .output()
         .await
-        .unwrap_or_default();
+    else {
+        return Vec::new();
+    };
     let text = String::from_utf8_lossy(&output.stdout);
     text.lines()
         .filter_map(|line| {
