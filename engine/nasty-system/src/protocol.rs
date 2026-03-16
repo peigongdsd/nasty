@@ -16,6 +16,9 @@ pub enum Protocol {
     Smb,
     Iscsi,
     Nvmeof,
+    Ssh,
+    Avahi,
+    Smart,
 }
 
 impl Protocol {
@@ -24,7 +27,14 @@ impl Protocol {
         Protocol::Smb,
         Protocol::Iscsi,
         Protocol::Nvmeof,
+        Protocol::Ssh,
+        Protocol::Avahi,
+        Protocol::Smart,
     ];
+
+    pub fn is_system_service(&self) -> bool {
+        matches!(self, Protocol::Ssh | Protocol::Avahi | Protocol::Smart)
+    }
 
     pub fn name(&self) -> &'static str {
         match self {
@@ -32,6 +42,9 @@ impl Protocol {
             Protocol::Smb => "smb",
             Protocol::Iscsi => "iscsi",
             Protocol::Nvmeof => "nvmeof",
+            Protocol::Ssh => "ssh",
+            Protocol::Avahi => "avahi",
+            Protocol::Smart => "smart",
         }
     }
 
@@ -41,6 +54,9 @@ impl Protocol {
             Protocol::Smb => "SMB",
             Protocol::Iscsi => "iSCSI",
             Protocol::Nvmeof => "NVMe-oF",
+            Protocol::Ssh => "SSH",
+            Protocol::Avahi => "mDNS (Avahi)",
+            Protocol::Smart => "SMART",
         }
     }
 
@@ -51,6 +67,9 @@ impl Protocol {
             Protocol::Smb => &["samba-smbd.service", "samba-nmbd.service"],
             Protocol::Iscsi => &["target.service"],
             Protocol::Nvmeof => &[], // configfs-based, no daemon
+            Protocol::Ssh => &["sshd.service"],
+            Protocol::Avahi => &["avahi-daemon.service"],
+            Protocol::Smart => &["smartd.service"],
         }
     }
 
@@ -60,6 +79,9 @@ impl Protocol {
             "smb" => Some(Protocol::Smb),
             "iscsi" => Some(Protocol::Iscsi),
             "nvmeof" => Some(Protocol::Nvmeof),
+            "ssh" => Some(Protocol::Ssh),
+            "avahi" => Some(Protocol::Avahi),
+            "smart" => Some(Protocol::Smart),
             _ => None,
         }
     }
@@ -71,14 +93,41 @@ pub struct ProtocolStatus {
     pub display_name: String,
     pub enabled: bool,
     pub running: bool,
+    pub system_service: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProtocolState {
+    #[serde(default)]
     nfs: bool,
+    #[serde(default)]
     smb: bool,
+    #[serde(default)]
     iscsi: bool,
+    #[serde(default)]
     nvmeof: bool,
+    #[serde(default = "default_true")]
+    ssh: bool,
+    #[serde(default = "default_true")]
+    avahi: bool,
+    #[serde(default = "default_true")]
+    smart: bool,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for ProtocolState {
+    fn default() -> Self {
+        Self {
+            nfs: false,
+            smb: false,
+            iscsi: false,
+            nvmeof: false,
+            ssh: true,
+            avahi: true,
+            smart: true,
+        }
+    }
 }
 
 impl ProtocolState {
@@ -88,6 +137,9 @@ impl ProtocolState {
             Protocol::Smb => self.smb,
             Protocol::Iscsi => self.iscsi,
             Protocol::Nvmeof => self.nvmeof,
+            Protocol::Ssh => self.ssh,
+            Protocol::Avahi => self.avahi,
+            Protocol::Smart => self.smart,
         }
     }
 
@@ -97,6 +149,9 @@ impl ProtocolState {
             Protocol::Smb => self.smb = enabled,
             Protocol::Iscsi => self.iscsi = enabled,
             Protocol::Nvmeof => self.nvmeof = enabled,
+            Protocol::Ssh => self.ssh = enabled,
+            Protocol::Avahi => self.avahi = enabled,
+            Protocol::Smart => self.smart = enabled,
         }
     }
 }
@@ -160,6 +215,7 @@ impl ProtocolService {
                 display_name: proto.display_name().to_string(),
                 enabled: state.get(proto),
                 running,
+                system_service: proto.is_system_service(),
             });
         }
 
@@ -207,6 +263,7 @@ impl ProtocolService {
             display_name: proto.display_name().to_string(),
             enabled: true,
             running,
+            system_service: proto.is_system_service(),
         })
     }
 
@@ -233,6 +290,7 @@ impl ProtocolService {
             display_name: proto.display_name().to_string(),
             enabled: false,
             running,
+            system_service: proto.is_system_service(),
         })
     }
 }
@@ -247,6 +305,9 @@ async fn is_protocol_running(proto: Protocol) -> bool {
             // NVMe-oF is "running" if nvmet configfs is available
             std::path::Path::new("/sys/kernel/config/nvmet").exists()
         }
+        Protocol::Ssh => systemctl_is_active("sshd.service").await,
+        Protocol::Avahi => systemctl_is_active("avahi-daemon.service").await,
+        Protocol::Smart => systemctl_is_active("smartd.service").await,
     }
 }
 

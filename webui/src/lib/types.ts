@@ -340,6 +340,7 @@ export interface ProtocolStatus {
 	display_name: string;
 	enabled: boolean;
 	running: boolean;
+	system_service: boolean;
 }
 
 export interface Settings {
