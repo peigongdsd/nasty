@@ -718,7 +718,7 @@ impl PoolService {
         // shows a clear visual change (amber "spare" instead of green "rw").
         let _ = cmd::run_ok(
             "bcachefs",
-            &["device", "set-state", &mount_point, &req.device, "spare"],
+            &["device", "set-state", "spare", &req.device],
         )
         .await;
 
@@ -727,7 +727,7 @@ impl PoolService {
     }
 
     /// Change the persistent state of a device (rw, ro, failed, spare).
-    /// bcachefs device set-state <mountpoint> <device> <state>
+    /// bcachefs device set-state <new_state> <device> [path]
     pub async fn device_set_state(&self, req: DeviceSetStateRequest) -> Result<Pool, PoolError> {
         let valid_states = ["rw", "ro", "failed", "spare"];
         if !valid_states.contains(&req.state.as_str()) {
@@ -752,7 +752,7 @@ impl PoolService {
         );
         cmd::run_ok(
             "bcachefs",
-            &["device", "set-state", mount_point, &req.device, &req.state],
+            &["device", "set-state", &req.state, &req.device],
         )
         .await
         .map_err(PoolError::CommandFailed)?;
@@ -761,7 +761,7 @@ impl PoolService {
     }
 
     /// Bring a device online (temporary, no membership change).
-    /// bcachefs device online <mountpoint> <device>
+    /// bcachefs device online <device>
     pub async fn device_online(&self, req: DeviceActionRequest) -> Result<Pool, PoolError> {
         let pool = self.get(&req.pool).await?;
         if !pool.mounted {
@@ -769,10 +769,9 @@ impl PoolService {
                 "pool must be mounted to online a device".to_string(),
             ));
         }
-        let mount_point = pool.mount_point.as_ref().unwrap();
 
         info!("Onlining device {} in pool '{}'", req.device, req.pool);
-        cmd::run_ok("bcachefs", &["device", "online", mount_point, &req.device])
+        cmd::run_ok("bcachefs", &["device", "online", &req.device])
             .await
             .map_err(PoolError::CommandFailed)?;
 
@@ -780,7 +779,7 @@ impl PoolService {
     }
 
     /// Take a device offline (temporary, no membership change).
-    /// bcachefs device offline <mountpoint> <device>
+    /// bcachefs device offline <device>
     pub async fn device_offline(&self, req: DeviceActionRequest) -> Result<Pool, PoolError> {
         let pool = self.get(&req.pool).await?;
         if !pool.mounted {
@@ -791,7 +790,7 @@ impl PoolService {
         let mount_point = pool.mount_point.as_ref().unwrap();
 
         info!("Offlining device {} in pool '{}'", req.device, req.pool);
-        cmd::run_ok("bcachefs", &["device", "offline", mount_point, &req.device])
+        cmd::run_ok("bcachefs", &["device", "offline", &req.device])
             .await
             .map_err(PoolError::CommandFailed)?;
 
