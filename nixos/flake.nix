@@ -55,7 +55,7 @@
       # the out-of-tree DKMS kernel module automatically via boot.bcachefs.package.
       # importCargoLock reads Cargo.lock directly — no pre-computed vendor hash needed.
       nasty-bcachefs-tools = pkgs.bcachefs-tools.overrideAttrs (old: {
-        version = "1.37.0";
+        version = (builtins.fromTOML (builtins.readFile "${bcachefs-tools}/Cargo.toml")).package.version;
         src = bcachefs-tools;
         cargoDeps = pkgs.rustPlatform.importCargoLock {
           lockFile = "${bcachefs-tools}/Cargo.lock";
