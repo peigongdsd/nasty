@@ -6,6 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
+	import { refreshState } from '$lib/refresh.svelte';
 
 	let activeTab: 'system' | 'bcachefs' = $state('system');
 
@@ -13,7 +14,6 @@
 	let status: UpdateStatus | null = $state(null);
 	let loading = $state(true);
 	let checking = $state(false);
-	let needsRefresh = $state(false);
 	let confirmAction: 'update' | 'rollback' | null = $state(null);
 	let confirmTimer: ReturnType<typeof setTimeout> | null = null;
 	let pollInterval: ReturnType<typeof setInterval> | null = $state(null);
@@ -24,7 +24,6 @@
 	let bcachefsStatus: UpdateStatus | null = $state(null);
 	let bcachefsRef = $state('');
 	let bcachefsSwitching = $state(false);
-	let bcachefsNeedsRefresh = $state(false);
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
 	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = $state(null);
 
@@ -173,7 +172,7 @@
 					stopPolling();
 					await loadVersion();
 					if (status.state === 'success') {
-						needsRefresh = true;
+						refreshState.set();
 					}
 				}
 			} catch {
@@ -230,7 +229,7 @@
 					stopBcachefsPolling();
 					await loadBcachefsInfo();
 					if (bcachefsStatus.state === 'success') {
-						bcachefsNeedsRefresh = true;
+						refreshState.set();
 					}
 				}
 			} catch {
@@ -249,18 +248,6 @@
 
 
 <!-- Global banners — shown regardless of active tab -->
-{#if needsRefresh}
-	<div class="mb-4 flex items-center gap-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
-		<span class="flex-1">Update applied. Refresh your browser to load the new WebUI.</span>
-		<Button variant="secondary" size="xs" onclick={() => location.reload()}>Refresh Now</Button>
-	</div>
-{/if}
-{#if bcachefsNeedsRefresh}
-	<div class="mb-4 flex items-center gap-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-sm text-blue-200">
-		<span class="flex-1">bcachefs-tools switch complete. Refresh to load the updated interface.</span>
-		<Button variant="secondary" size="xs" onclick={() => location.reload()}>Refresh Now</Button>
-	</div>
-{/if}
 
 {#if status?.reboot_required}
 	<div class="mb-4 rounded-lg border border-amber-800 bg-amber-950 px-4 py-3 text-sm text-amber-200">

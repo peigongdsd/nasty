@@ -35,6 +35,7 @@
 		LogOut,
 		User,
 	} from '@lucide/svelte';
+	import { refreshState } from '$lib/refresh.svelte';
 
 	let { children } = $props();
 	let connected = $state(false);
@@ -234,6 +235,17 @@
 				<div class="flex items-center gap-2.5">
 					{#if powering}
 						<span class="text-sm text-amber-500">Shutting down…</span>
+					{/if}
+
+					<!-- Reload button — shown after update or bcachefs switch -->
+					{#if refreshState.needed}
+						<button
+							onclick={() => location.reload()}
+							class="flex items-center gap-2 rounded-md border-2 border-amber-500/70 px-3 py-1.5 text-sm text-amber-400 transition-all animate-pulse hover:animate-none hover:bg-amber-500/10 hover:border-amber-400 hover:shadow-[0_0_16px_rgba(251,191,36,0.5)] active:shadow-none"
+						>
+							<RefreshCw size={15} />
+							Reload
+						</button>
 					{/if}
 
 					<!-- Profile button -->
