@@ -244,6 +244,14 @@
 			bcachefsPollInterval = null;
 		}
 	}
+
+	/** Break systemd's single-line "Consumed …" summary into one stat per line. */
+	function formatLog(log: string): string {
+		return log.replace(
+			/(^.+: Consumed .+)$/m,
+			(line) => line.replace(/, /g, ',\n  ')
+		);
+	}
 </script>
 
 
@@ -365,7 +373,7 @@
 					</div>
 
 					{#if status.log}
-						<pre bind:this={logEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{status.log}</pre>
+						<pre bind:this={logEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{formatLog(status.log)}</pre>
 					{/if}
 					{#if status.state === 'failed'}
 						<div class="mt-4 flex gap-2">
@@ -493,7 +501,7 @@
 					</div>
 
 					{#if bcachefsStatus.log}
-						<pre bind:this={bcachefsLogEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{bcachefsStatus.log}</pre>
+						<pre bind:this={bcachefsLogEl} class="max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{formatLog(bcachefsStatus.log)}</pre>
 					{/if}
 					{#if bcachefsStatus.state === 'failed'}
 						<div class="mt-4 flex gap-2">
