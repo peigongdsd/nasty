@@ -60,7 +60,7 @@
 	});
 
 	const bcachefsWarnVisible = $derived(
-		bcachefsRef.trim() !== '' && bcachefsRef.trim() !== (bcachefsInfo?.pinned_ref ?? '')
+		bcachefsRef.trim() !== '' && bcachefsRef.trim() !== (bcachefsInfo?.default_ref ?? '')
 	);
 
 	const client = getClient();
@@ -359,6 +359,14 @@
 
 	<!-- bcachefs Tools version switching -->
 	<h2 class="mt-8 mb-3 text-base font-semibold">bcachefs Tools</h2>
+	{#if bcachefsInfo?.is_custom}
+		<div class="mb-3 flex items-center gap-3 rounded-lg border border-amber-700 bg-amber-950 px-4 py-3 text-sm text-amber-200">
+			<span class="flex-1"><strong>Non-standard version in use.</strong> You are running a custom bcachefs-tools version ({bcachefsInfo.pinned_ref ?? 'unknown'}) instead of the default ({bcachefsInfo.default_ref}). Switch back when stability is more important than bleeding-edge fixes.</span>
+			<Button variant="secondary" size="xs" onclick={() => { bcachefsRef = bcachefsInfo!.default_ref; }} disabled={bcachefsSwitching || bcachefsStatus?.state === 'running'}>
+				Restore default
+			</Button>
+		</div>
+	{/if}
 	<Card class="mb-6">
 		<CardContent class="py-5">
 			<!-- Current version info -->

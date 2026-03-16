@@ -314,6 +314,8 @@ export interface BcachefsToolsInfo {
 	pinned_ref: string | null;
 	pinned_rev: string | null;
 	running_version: string;
+	is_custom: boolean;
+	default_ref: string;
 }
 
 export interface UpdateStatus {

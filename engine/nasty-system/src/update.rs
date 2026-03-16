@@ -13,6 +13,7 @@ const LOCAL_REPO: &str = "/etc/nixos";
 const BCACHEFS_SWITCH_UNIT: &str = "nasty-bcachefs-switch";
 const NIXOS_FLAKE_DIR: &str = "/etc/nixos/nixos";
 const BCACHEFS_TOOLS_REPO: &str = "github:koverstreet/bcachefs-tools";
+const BCACHEFS_REF_STATE: &str = "/var/lib/nasty/bcachefs-tools-ref";
 
 // TODO: Remove token-based auth once the repo is public.
 // The token file is only needed for private repo access.
@@ -29,6 +30,10 @@ pub struct BcachefsToolsInfo {
     pub pinned_rev: Option<String>,
     /// Output of `bcachefs version`
     pub running_version: String,
+    /// True when the user has overridden the default bcachefs-tools version
+    pub is_custom: bool,
+    /// The default ref from flake.nix (e.g. "v1.37.0")
+    pub default_ref: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -171,6 +176,13 @@ git reset --hard origin/main
 
 # Restore hardware config
 [ -f /tmp/nasty-hw-config.nix ] && cp /tmp/nasty-hw-config.nix "$HW_CFG"
+
+# Re-apply custom bcachefs-tools version if the user has set one
+if [ -f "{BCACHEFS_REF_STATE}" ]; then
+    BCACHEFS_REF=$(cat "{BCACHEFS_REF_STATE}")
+    echo "==> Re-applying custom bcachefs-tools: $BCACHEFS_REF..."
+    nix flake lock --override-input bcachefs-tools "{BCACHEFS_TOOLS_REPO}/$BCACHEFS_REF"
+fi
 
 # Flakes require all files to be tracked; commit so the tree is clean (no dirty warning)
 git add -A
@@ -326,7 +338,11 @@ echo "==> Update complete!"
     pub async fn bcachefs_info(&self) -> BcachefsToolsInfo {
         let running_version = bcachefs_version().await;
         let (pinned_ref, pinned_rev) = read_flake_lock_bcachefs().await;
-        BcachefsToolsInfo { pinned_ref, pinned_rev, running_version }
+        let default_ref = read_flake_nix_default_ref().await;
+        let is_custom = tokio::fs::read_to_string(BCACHEFS_REF_STATE).await
+            .map(|r| r.trim().to_string() != default_ref)
+            .unwrap_or(false);
+        BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, default_ref }
     }
 
     pub async fn bcachefs_switch(&self, req: BcachefsToolsSwitchRequest) -> Result<(), UpdateError> {
@@ -347,6 +363,17 @@ echo "==> Update complete!"
             let _ = tokio::process::Command::new("systemctl")
                 .args([action, BCACHEFS_SWITCH_UNIT])
                 .output().await;
+        }
+
+        let default_ref = read_flake_nix_default_ref().await;
+        let is_default = git_ref == default_ref;
+
+        // Persist the chosen ref so regular updates can re-apply it.
+        // Clear the state file when restoring the default.
+        if is_default {
+            let _ = tokio::fs::remove_file(BCACHEFS_REF_STATE).await;
+        } else {
+            let _ = tokio::fs::write(BCACHEFS_REF_STATE, &git_ref).await;
         }
 
         let input_url = format!("{BCACHEFS_TOOLS_REPO}/{git_ref}");
@@ -682,9 +709,10 @@ async fn read_github_token() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Run `bcachefs version` and return its output (trimmed), or "unknown" on failure.
+/// Run `bcachefs version` and return the version string, or "unknown" on failure.
+/// Strips trailing noise like "kernel: unable to read kernel config".
 async fn bcachefs_version() -> String {
-    tokio::process::Command::new("bcachefs")
+    let raw = tokio::process::Command::new("bcachefs")
         .arg("version")
         .output()
         .await
@@ -696,7 +724,29 @@ async fn bcachefs_version() -> String {
                 None
             }
         })
-        .unwrap_or_else(|| "unknown".to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    // bcachefs version may output extra info after the version number, e.g.:
+    //   "1.37.0 kernel: unable to read kernel config"
+    // Extract just the first whitespace-delimited token.
+    raw.split_whitespace().next().unwrap_or("unknown").to_string()
+}
+
+/// Parse flake.nix to extract the default bcachefs-tools ref from the input URL.
+async fn read_flake_nix_default_ref() -> String {
+    let path = format!("{NIXOS_FLAKE_DIR}/flake.nix");
+    let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("bcachefs-tools.url") {
+            // e.g. bcachefs-tools.url = "github:koverstreet/bcachefs-tools/v1.37.0";
+            if let Some(slash_pos) = line.rfind('/') {
+                let rest = &line[slash_pos + 1..];
+                let end = rest.find('"').unwrap_or(rest.len());
+                return rest[..end].to_string();
+            }
+        }
+    }
+    "unknown".to_string()
 }
 
 /// Parse flake.lock to extract the bcachefs-tools pinned ref and rev.
