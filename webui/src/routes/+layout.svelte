@@ -60,16 +60,26 @@
 
 	// Version info (loaded once after connect)
 	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null; bcachefs_is_custom: boolean } | null = $state(null);
+	let clock24h = $state(true);
 
 	$effect(() => {
 		if (connected && !sysInfo) {
 			getClient().call('system.info').then((info: any) => { sysInfo = info; }).catch(() => {});
+			getClient().call('system.settings.get').then((s: any) => { clock24h = s.clock_24h ?? true; }).catch(() => {});
 		}
 	});
 
+	// Clock
+	let now = $state(new Date());
+	const clockFmt = $derived(new Intl.DateTimeFormat(undefined, {
+		hour: '2-digit', minute: '2-digit', second: '2-digit',
+		hour12: !clock24h,
+	}));
+
 	onMount(() => {
 		tryConnect();
-		return () => getClient().disconnect();
+		const tick = setInterval(() => { now = new Date(); }, 1000);
+		return () => { getClient().disconnect(); clearInterval(tick); };
 	});
 
 	async function tryConnect() {
@@ -231,9 +241,12 @@
 		<div class="flex flex-1 flex-col overflow-hidden">
 			<!-- Top bar -->
 			<header class="relative flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-				<div class="flex items-center gap-2 text-base">
-					{#if currentNav.icon}{@const NavIcon = currentNav.icon}<NavIcon size={17} class="text-muted-foreground" />{/if}
-					<span class="font-medium">{currentNav.label}</span>
+				<div class="flex items-center gap-4">
+					<div class="flex items-center gap-2 text-base">
+						{#if currentNav.icon}{@const NavIcon = currentNav.icon}<NavIcon size={17} class="text-muted-foreground" />{/if}
+						<span class="font-medium">{currentNav.label}</span>
+					</div>
+					<span class="font-mono text-sm text-muted-foreground tabular-nums">{clockFmt.format(now)}</span>
 				</div>
 
 				<!-- Reload button — centered, shown after update or bcachefs switch -->
