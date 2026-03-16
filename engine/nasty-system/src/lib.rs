@@ -16,6 +16,8 @@ pub struct SystemInfo {
     pub uptime_seconds: u64,
     pub kernel: String,
     pub bcachefs_version: String,
+    /// Short (12-char) commit SHA of the pinned bcachefs-tools in flake.lock
+    pub bcachefs_commit: Option<String>,
     pub timezone: String,
     pub ntp_synced: bool,
 }
@@ -117,6 +119,7 @@ impl SystemService {
         let hostname = hostname();
         let kernel = kernel_version();
         let bcachefs_version = bcachefs_version().await;
+        let bcachefs_commit = read_bcachefs_commit().await;
         let uptime = uptime_seconds();
         let (timezone, ntp_synced) = timedatectl_info().await;
 
@@ -126,6 +129,7 @@ impl SystemService {
             uptime_seconds: uptime,
             kernel,
             bcachefs_version,
+            bcachefs_commit,
             timezone,
             ntp_synced,
         }
@@ -568,4 +572,12 @@ async fn query_smartctl(device: &str) -> Option<DiskHealth> {
         smart_status,
         attributes,
     })
+}
+
+/// Read the pinned bcachefs-tools commit SHA from flake.lock (12-char short form).
+async fn read_bcachefs_commit() -> Option<String> {
+    let content = tokio::fs::read_to_string("/etc/nixos/nixos/flake.lock").await.ok()?;
+    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let rev = v["nodes"]["bcachefs-tools"]["locked"]["rev"].as_str()?;
+    Some(rev[..rev.len().min(12)].to_string())
 }

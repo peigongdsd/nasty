@@ -59,7 +59,7 @@
 	let profileOpen = $state(false);
 
 	// Version info (loaded once after connect)
-	let sysInfo: { version: string; kernel: string; bcachefs_version: string } | null = $state(null);
+	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null } | null = $state(null);
 
 	$effect(() => {
 		if (connected && !sysInfo) {
@@ -215,7 +215,7 @@
 					</div>
 					<div class="flex items-center justify-between mt-0.5">
 						<span class="text-[0.68rem] text-muted-foreground/50">bcachefs</span>
-						<span class="text-[0.68rem] font-mono text-muted-foreground/70">{sysInfo.bcachefs_version}</span>
+						<span class="text-[0.68rem] font-mono text-muted-foreground/70 truncate ml-2 text-right" title="{sysInfo.bcachefs_version}{sysInfo.bcachefs_commit ? ' @ ' + sysInfo.bcachefs_commit : ''}">{sysInfo.bcachefs_version}{sysInfo.bcachefs_commit ? ' @ ' + sysInfo.bcachefs_commit.slice(0, 7) : ''}</span>
 					</div>
 					<div class="flex items-center justify-between mt-0.5">
 						<span class="text-[0.68rem] text-muted-foreground/50">kernel</span>

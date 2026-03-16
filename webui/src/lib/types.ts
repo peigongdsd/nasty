@@ -5,6 +5,8 @@ export interface SystemInfo {
 	version: string;
 	uptime_seconds: number;
 	kernel: string;
+	bcachefs_version: string;
+	bcachefs_commit: string | null;
 	timezone: string;
 	ntp_synced: boolean;
 }
