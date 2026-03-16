@@ -227,11 +227,13 @@ in {
       echo ""
       echo "  Welcome to NASty!  |  $(hostname)  |  $(date '+%Y-%m-%d %H:%M %Z')"
       echo ""
-      echo "  Type 'help' to show the NASty command reference."
+      echo "  Type 'help'  to show the NASty command reference."
+      echo "  Type 'debug' to dump diagnostic info for bug reports."
       echo ""
 
-      help() { cat /etc/nasty/debug-cheatsheet; }
-      export -f help
+      help()  { cat /etc/nasty/debug-cheatsheet; }
+      debug() { nasty-debug; }
+      export -f help debug
     '';
 
     environment.etc."nasty/debug-cheatsheet".text = ''
@@ -292,6 +294,92 @@ in {
       util-linux        # lsblk, blkid, wipefs
       smartmontools     # smartctl for disk health
       htop
+
+      (writeShellScriptBin "nasty-debug" ''
+        set -euo pipefail
+
+        SEP="─────────────────────────────────────────────────────"
+
+        section() { echo ""; echo "$SEP"; echo "  $1"; echo "$SEP"; }
+
+        echo ""
+        echo "╔═════════════════════════════════════════════════════╗"
+        echo "║              NASty Diagnostic Dump                  ║"
+        echo "╚═════════════════════════════════════════════════════╝"
+        echo "  $(date '+%Y-%m-%d %H:%M:%S %Z')  |  $(hostname)  |  NASty $(cat /etc/nasty-version 2>/dev/null || echo unknown)"
+
+        section "System"
+        echo "  OS:      $(nixos-version 2>/dev/null || echo unknown)"
+        echo "  Kernel:  $(uname -r)"
+        echo "  Uptime:  $(uptime -p)"
+        echo "  Memory:  $(free -h | awk '/^Mem/ {print $3 " used / " $2 " total"}')"
+
+        section "Block Devices"
+        lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL 2>/dev/null || true
+
+        section "bcachefs Pools"
+        for mp in /storage/*/; do
+          pool=$(basename "$mp")
+          echo ""
+          echo "  Pool: $pool  ($mp)"
+          bcachefs fs usage -h "$mp" 2>/dev/null || echo "  (not mounted or error)"
+          echo ""
+          echo "  Devices:"
+          bcachefs device list "$mp" 2>/dev/null | sed 's/^/    /' || true
+        done
+        if ! ls /storage/*/ >/dev/null 2>&1; then
+          echo "  (no mounted pools)"
+        fi
+
+        section "Engine State — Protocols"
+        cat /var/lib/nasty/protocols.json 2>/dev/null | ${pkgs.jq}/bin/jq . || echo "  (not found)"
+
+        section "Engine State — Subvolumes"
+        count=$(ls /var/lib/nasty/subvolumes/*.json 2>/dev/null | wc -l || echo 0)
+        echo "  $count subvolume(s)"
+        for f in /var/lib/nasty/subvolumes/*.json 2>/dev/null; do
+          [ -f "$f" ] || continue
+          ${pkgs.jq}/bin/jq -r '  "  • \(.name)  pool=\(.pool)  type=\(.subvolume_type)  \(if .volsize_bytes then "size=\(.volsize_bytes / 1048576 | floor)MiB" else "" end)"' "$f" 2>/dev/null || true
+        done
+
+        section "Engine State — Shares"
+        for proto in nfs smb iscsi nvmeof; do
+          count=$(ls /var/lib/nasty/shares/$proto/*.json 2>/dev/null | wc -l || echo 0)
+          [ "$count" -gt 0 ] || continue
+          echo "  $proto ($count share(s)):"
+          for f in /var/lib/nasty/shares/$proto/*.json; do
+            [ -f "$f" ] || continue
+            ${pkgs.jq}/bin/jq -r '. | "    • \(.id[:8])  \(if .path then .path elif .nqn then .nqn elif .iqn then .iqn elif .name then .name else "" end)"' "$f" 2>/dev/null || true
+          done
+        done
+
+        section "Active Mounts"
+        mount | grep -E 'bcachefs|nfs|cifs|loop' | sed 's/^/  /' || echo "  (none)"
+
+        section "Loop Devices"
+        losetup -l 2>/dev/null | sed 's/^/  /' || echo "  (none)"
+
+        section "Services"
+        for svc in nasty-engine nfs-server samba-smbd target nvmet_tcp sshd; do
+          state=$(systemctl is-active "$svc.service" 2>/dev/null || echo inactive)
+          printf "  %-20s %s\n" "$svc" "$state"
+        done
+
+        section "Kernel Modules (storage/sharing)"
+        lsmod | grep -E '^(bcachefs|nvmet|iscsi_target|target_core|nvme)' | awk '{printf "  %-30s %s\n", $1, $3}' || echo "  (none)"
+
+        section "Recent Engine Logs (last 50 lines)"
+        journalctl -u nasty-engine -n 50 --no-pager 2>/dev/null | sed 's/^/  /' || echo "  (unavailable)"
+
+        section "dmesg — bcachefs / storage errors (last 30)"
+        dmesg --level=err,warn -T 2>/dev/null | grep -iE 'bcachefs|nvme|scsi|ata|disk|i/o error' | tail -30 | sed 's/^/  /' || echo "  (none)"
+
+        echo ""
+        echo "$SEP"
+        echo "  Share full output:  nasty-debug | nc termbin.com 9999"
+        echo "$SEP"
+        echo ""
+      '')
       # bcachefs debugging
       perf               # perf record/report/script
       fio               # storage benchmarking
