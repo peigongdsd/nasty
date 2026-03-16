@@ -467,6 +467,7 @@ in {
         kmod             # modprobe (for iSCSI/NVMe-oF kernel modules)
         systemd          # systemctl, journalctl (for update status)
         nixos-rebuild-ng # nixos-rebuild (for system updates)
+        nix              # nix flake lock (for bcachefs-tools version switching)
         git              # for update check (git ls-remote)
         curl             # for update check (GitHub API, TODO: remove when repo is public)
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
