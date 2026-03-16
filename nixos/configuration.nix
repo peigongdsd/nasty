@@ -9,6 +9,7 @@
   # Boot loader — UEFI with systemd-boot
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 10;
+  boot.loader.systemd-boot.consoleMode = "auto";
   boot.loader.efi.canTouchEfiVariables = true;
 
   # NASty background in the systemd-boot generation picker.
