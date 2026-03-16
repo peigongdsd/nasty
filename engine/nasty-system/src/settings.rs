@@ -10,10 +10,16 @@ pub struct Settings {
     #[serde(default = "default_timezone")]
     pub timezone: String,
     pub hostname: Option<String>,
+    #[serde(default = "default_clock_24h")]
+    pub clock_24h: bool,
 }
 
 fn default_timezone() -> String {
     "UTC".to_string()
+}
+
+fn default_clock_24h() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -21,6 +27,7 @@ impl Default for Settings {
         Self {
             timezone: default_timezone(),
             hostname: None,
+            clock_24h: default_clock_24h(),
         }
     }
 }
@@ -29,6 +36,7 @@ impl Default for Settings {
 pub struct SettingsUpdate {
     pub timezone: Option<String>,
     pub hostname: Option<String>,
+    pub clock_24h: Option<bool>,
 }
 
 pub struct SettingsService {
@@ -56,6 +64,9 @@ impl SettingsService {
         if let Some(name) = update.hostname {
             apply_hostname(&name).await?;
             settings.hostname = Some(name);
+        }
+        if let Some(h24) = update.clock_24h {
+            settings.clock_24h = h24;
         }
         save(&settings).await.map_err(|e| e.to_string())?;
         Ok(settings.clone())

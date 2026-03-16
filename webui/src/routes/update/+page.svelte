@@ -145,7 +145,7 @@
 
 	async function doApplyUpdate() {
 		logCollapsed = false;
-		status = { state: 'running', log: '', reboot_required: false };
+		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const ok = await withToast(
 			() => client.call('system.update.apply'),
 			'Update started'
@@ -157,7 +157,7 @@
 
 	async function doRollback() {
 		logCollapsed = false;
-		status = { state: 'running', log: '', reboot_required: false };
+		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const ok = await withToast(
 			() => client.call('system.update.rollback'),
 			'Rollback started'
@@ -176,7 +176,7 @@
 					stopPolling();
 					await loadVersion();
 					if (status.state === 'success') {
-						refreshState.set();
+						if (status.webui_changed) refreshState.set();
 						setTimeout(() => { logCollapsed = true; }, 5000);
 					}
 				}
@@ -213,7 +213,7 @@
 		if (!ref) return;
 		bcachefsSwitching = true;
 		bcachefsLogCollapsed = false;
-		bcachefsStatus = { state: 'running', log: '', reboot_required: false };
+		bcachefsStatus = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const result = await withToast(
 			() => client.call('bcachefs.tools.switch', { git_ref: ref }),
 			'bcachefs-tools switch started'
@@ -397,7 +397,7 @@
 					{#if status.state === 'failed'}
 						<div class="mt-4 flex gap-2">
 							<Button size="sm" onclick={doApplyUpdate}>Retry</Button>
-							<Button variant="secondary" size="sm" onclick={() => status = { state: 'idle', log: '', reboot_required: false }}>Dismiss</Button>
+							<Button variant="secondary" size="sm" onclick={() => status = { state: 'idle', log: '', reboot_required: false, webui_changed: false }}>Dismiss</Button>
 						</div>
 					{/if}
 				</CardContent>
@@ -536,7 +536,7 @@
 					{#if bcachefsStatus.state === 'failed'}
 						<div class="mt-4 flex gap-2">
 							<Button size="sm" onclick={doBcachefsSwitch} disabled={!bcachefsRef.trim()}>Retry</Button>
-							<Button variant="secondary" size="sm" onclick={() => bcachefsStatus = { state: 'idle', log: '', reboot_required: false }}>Dismiss</Button>
+							<Button variant="secondary" size="sm" onclick={() => bcachefsStatus = { state: 'idle', log: '', reboot_required: false, webui_changed: false }}>Dismiss</Button>
 						</div>
 					{/if}
 				</CardContent>

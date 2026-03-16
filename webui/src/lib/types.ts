@@ -324,6 +324,8 @@ export interface UpdateStatus {
 	log: string;
 	/** True when the activated system has a different kernel than the booted one */
 	reboot_required: boolean;
+	/** True when the webui store path changed during this update (browser reload needed) */
+	webui_changed: boolean;
 }
 
 export interface IoSample {
@@ -348,6 +350,7 @@ export interface ProtocolStatus {
 export interface Settings {
 	timezone: string;
 	hostname: string | null;
+	clock_24h: boolean;
 }
 
 export interface NetworkConfig {

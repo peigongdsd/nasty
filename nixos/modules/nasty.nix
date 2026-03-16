@@ -276,6 +276,14 @@ in {
          perf record -e 'bcachefs:*' -- sleep 5 && perf script
          perf record -g -p $(pgrep -f bcachefs) && perf report
 
+       kernel oops symbolization (bcachefs crash)
+         # From an oops line like: RIP: 0010:bch2_btree_node_get+0x8d/0x5f0 [bcachefs]
+         faddr2line bch2_btree_node_get+0x8d/0x5f0
+         # To look at raw disassembly around the fault:
+         objdump -d $(find /run/current-system/kernel-modules -name "bcachefs.ko*" | head -1) | grep -A 20 "<bch2_btree_node_get>"
+         # Capture full oops for the bcachefs devs:
+         dmesg | grep -A 50 "RIP:" | nc termbin.com 9999
+
        share findings with devs
          dmesg | nc termbin.com 9999
          perf script | nc termbin.com 9999
@@ -391,6 +399,97 @@ in {
       netcat-gnu        # share output with devs: cmd | nc termbin.com 9999
       psmisc            # fuser, killall
       pciutils          # lspci for hardware identification
+
+      # kernel crash symbolization
+      binutils          # addr2line, nm, objdump, readelf
+
+      (writeShellScriptBin "faddr2line" ''
+        # Resolve a kernel function+offset (from a kernel oops) to a source line.
+        #
+        # Usage: faddr2line FUNC+OFFSET[/SIZE] [MODULE.ko]
+        #
+        # If MODULE is not given, bcachefs.ko is located automatically.
+        # Requires debug symbols in the .ko; see README for how to enable them.
+        #
+        # Example (from a kernel oops):
+        #   faddr2line bch2_btree_node_get+0x8d/0x5f0
+
+        set -euo pipefail
+
+        usage() {
+          echo "Usage: faddr2line FUNC+OFFSET[/SIZE] [MODULE.ko]" >&2
+          echo "Example: faddr2line bch2_btree_node_get+0x8d/0x5f0" >&2
+          exit 1
+        }
+
+        [ $# -lt 1 ] && usage
+
+        SPEC="$1"
+        FUNC="''${SPEC%%+*}"
+        REST="''${SPEC#*+}"
+        OFFSET_STR="''${REST%%/*}"
+
+        # Resolve hex or decimal offset to an integer
+        OFFSET=$(printf "%d" "$OFFSET_STR" 2>/dev/null || { echo "Error: bad offset '$OFFSET_STR'" >&2; exit 1; })
+
+        if [ $# -ge 2 ]; then
+          MODULE="$2"
+        else
+          # Auto-locate bcachefs.ko (may be compressed)
+          MODULE=$(find \
+            /run/current-system/kernel-modules \
+            /lib/modules \
+            -type f \( -name "bcachefs.ko" -o -name "bcachefs.ko.xz" -o -name "bcachefs.ko.zst" \) \
+            2>/dev/null | head -1 || true)
+          if [ -z "$MODULE" ]; then
+            echo "Error: bcachefs.ko not found — pass the path as the second argument." >&2
+            exit 1
+          fi
+        fi
+
+        # Decompress .ko if needed
+        TMPKO=""
+        case "$MODULE" in
+          *.ko.xz)
+            TMPKO=$(mktemp /tmp/kdbg-XXXXXX.ko)
+            xz -d -c "$MODULE" > "$TMPKO"
+            MODULE="$TMPKO"
+            ;;
+          *.ko.zst)
+            TMPKO=$(mktemp /tmp/kdbg-XXXXXX.ko)
+            ${pkgs.zstd}/bin/zstd -d -c "$MODULE" > "$TMPKO"
+            MODULE="$TMPKO"
+            ;;
+        esac
+        trap '[ -n "$TMPKO" ] && rm -f "$TMPKO"' EXIT
+
+        # Find the symbol in the module
+        SYM_LINE=$(${pkgs.binutils}/bin/nm "$MODULE" 2>/dev/null | awk -v f="$FUNC" '$3 == f {print; exit}')
+        if [ -z "$SYM_LINE" ]; then
+          echo "Error: symbol '$FUNC' not found in $MODULE" >&2
+          echo "Nearby symbols (grep):" >&2
+          ${pkgs.binutils}/bin/nm "$MODULE" 2>/dev/null | grep -i "$FUNC" | head -10 >&2 || true
+          exit 1
+        fi
+
+        SYM_ADDR_HEX=$(echo "$SYM_LINE" | awk '{print $1}')
+        SYM_ADDR=$(printf "%d" "0x$SYM_ADDR_HEX")
+        TARGET=$(printf "0x%x" $(( SYM_ADDR + OFFSET )))
+
+        echo "  module:  $MODULE"
+        echo "  symbol:  $FUNC @ 0x$SYM_ADDR_HEX"
+        echo "  offset:  $OFFSET_STR  →  address $TARGET"
+        echo ""
+
+        RESULT=$(${pkgs.binutils}/bin/addr2line -i -f -p -e "$MODULE" "$TARGET" 2>&1)
+        echo "$RESULT"
+
+        if echo "$RESULT" | grep -q "??"; then
+          echo ""
+          echo "Note: '??' means the .ko has no DWARF debug symbols (stripped)."
+          echo "To get source lines, rebuild bcachefs with debug info enabled."
+        fi
+      '')
     ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
       ++ lib.optionals cfg.smb.enable [ samba ]
       ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]

@@ -15,6 +15,7 @@ const NIXOS_FLAKE_DIR: &str = "/etc/nixos/nixos";
 const BCACHEFS_TOOLS_REPO: &str = "github:koverstreet/bcachefs-tools";
 const BCACHEFS_REF_STATE: &str = "/var/lib/nasty/bcachefs-tools-ref";
 const BCACHEFS_SWITCH_RESULT: &str = "/var/lib/nasty/bcachefs-switch-result";
+const UPDATE_WEBUI_CHANGED: &str = "/var/lib/nasty/update-webui-changed";
 
 // TODO: Remove token-based auth once the repo is public.
 // The token file is only needed for private repo access.
@@ -67,6 +68,8 @@ pub struct UpdateStatus {
     pub log: String,
     /// True when the activated system has a different kernel than the booted one
     pub reboot_required: bool,
+    /// True when the webui store path changed during this update (browser reload needed)
+    pub webui_changed: bool,
 }
 
 pub struct UpdateService;
@@ -158,6 +161,8 @@ impl UpdateService {
             r#"#!/bin/bash
 set -euo pipefail
 export PATH="/run/current-system/sw/bin:$PATH"
+# Capture current webui store path before rebuild so we can detect if it changed.
+WEBUI_BEFORE=$(grep 'nasty-webui' /etc/nginx/nginx.conf 2>/dev/null | head -1 || echo "")
 echo "==> Pulling latest source..."
 cd {LOCAL_REPO}
 
@@ -195,6 +200,14 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
 
 echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {LOCAL_FLAKE}
+
+# Detect if the webui store path changed so the frontend knows whether to prompt a reload.
+WEBUI_AFTER=$(grep 'nasty-webui' /etc/nginx/nginx.conf 2>/dev/null | head -1 || echo "")
+if [ -n "$WEBUI_BEFORE" ] && [ "$WEBUI_BEFORE" != "$WEBUI_AFTER" ]; then
+    echo "true" > {UPDATE_WEBUI_CHANGED}
+else
+    echo "false" > {UPDATE_WEBUI_CHANGED}
+fi
 
 # Write the upstream SHA to the writable version path.
 # The flake bakes the local hw-config commit SHA into /etc/nasty-version, which
@@ -507,7 +520,7 @@ echo "==> bcachefs-tools switch complete!"
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
-        UpdateStatus { state, log, reboot_required: is_reboot_required().await }
+        UpdateStatus { state, log, reboot_required: is_reboot_required().await, webui_changed: false }
     }
 
     /// Get the current status of a running/completed update
@@ -582,10 +595,22 @@ echo "==> bcachefs-tools switch complete!"
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
+        // Read hint file written by the update script.
+        // Default to true when state is success and the file is missing (conservative).
+        let webui_changed = if state == "success" {
+            tokio::fs::read_to_string(UPDATE_WEBUI_CHANGED).await
+                .ok()
+                .map(|s| s.trim() == "true")
+                .unwrap_or(true)
+        } else {
+            false
+        };
+
         UpdateStatus {
             state,
             log,
             reboot_required: is_reboot_required().await,
+            webui_changed,
         }
     }
 }

@@ -68,6 +68,15 @@
 		saving = false;
 	}
 
+	async function saveClock24h(val: boolean) {
+		if (!settings) return;
+		settings.clock_24h = val;
+		await withToast(
+			() => client.call('system.settings.update', { clock_24h: val }),
+			val ? '24-hour clock enabled' : '12-hour clock enabled'
+		);
+	}
+
 	async function saveNetwork() {
 		savingNetwork = true;
 		const nameservers = netNameservers
@@ -94,115 +103,132 @@
 {#if !settings}
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
-	<div class="max-w-xl space-y-8">
+	<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
 
-		<!-- System -->
-		<section class="rounded-lg border border-border p-6">
-			<h2 class="mb-4 text-lg font-semibold">System</h2>
+		<!-- Left column -->
+		<div class="flex flex-col gap-6">
 
-			<div class="mb-4">
-				<div class="mb-1 text-sm text-muted-foreground">Current Hostname</div>
-				<div class="text-sm font-medium">{info?.hostname ?? '—'}</div>
-			</div>
+			<!-- System -->
+			<section class="rounded-lg border border-border p-5">
+				<h2 class="mb-4 text-base font-semibold">System</h2>
 
-			<div class="mb-4">
-				<label for="hostname" class="mb-1 block text-sm text-muted-foreground">Set Hostname</label>
-				<input
-					id="hostname"
-					type="text"
-					bind:value={hostnameInput}
-					class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-					placeholder="nasty"
-				/>
-			</div>
-
-			<Button size="sm" onclick={saveHostname} disabled={savingHostname}>
-				{savingHostname ? 'Saving...' : 'Apply Hostname'}
-			</Button>
-		</section>
-
-		<!-- Date & Time -->
-		<section class="rounded-lg border border-border p-6">
-			<h2 class="mb-4 text-lg font-semibold">Date & Time</h2>
-
-			<div class="mb-4">
-				<div class="mb-1 text-sm text-muted-foreground">NTP Synchronization</div>
-				<div class="flex items-center gap-2">
-					<span class="inline-block h-2 w-2 rounded-full {info?.ntp_synced ? 'bg-green-400' : 'bg-yellow-400'}"></span>
-					<span class="text-sm">{info?.ntp_synced ? 'Synchronized' : 'Not synchronized'}</span>
+				<div class="mb-4 flex items-center justify-between">
+					<span class="text-sm text-muted-foreground">Hostname</span>
+					<span class="text-sm font-medium font-mono">{info?.hostname ?? '—'}</span>
 				</div>
-			</div>
 
-			<div class="mb-4">
-				<div class="mb-1 text-sm text-muted-foreground">Active Timezone</div>
-				<div class="text-sm font-medium">{info?.timezone ?? '—'}</div>
-			</div>
+				<div class="flex gap-2">
+					<input
+						id="hostname"
+						type="text"
+						bind:value={hostnameInput}
+						class="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+						placeholder="nasty"
+					/>
+					<Button size="sm" onclick={saveHostname} disabled={savingHostname}>
+						{savingHostname ? 'Saving…' : 'Apply'}
+					</Button>
+				</div>
+			</section>
 
-			<div class="mb-4">
-				<label for="timezone" class="mb-1 block text-sm text-muted-foreground">Set Timezone</label>
-				<select
-					id="timezone"
-					bind:value={settings.timezone}
-					class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-				>
-					{#each timezones as tz}
-						<option value={tz}>{tz}</option>
-					{/each}
-				</select>
-			</div>
+			<!-- Date & Time -->
+			<section class="rounded-lg border border-border p-5">
+				<h2 class="mb-4 text-base font-semibold">Date & Time</h2>
 
-			<Button size="sm" onclick={saveTimezone} disabled={saving}>
-				{saving ? 'Saving...' : 'Apply Timezone'}
-			</Button>
-		</section>
+				<div class="mb-3 flex items-center justify-between">
+					<span class="text-sm text-muted-foreground">NTP Synchronization</span>
+					<div class="flex items-center gap-1.5">
+						<span class="inline-block h-2 w-2 rounded-full {info?.ntp_synced ? 'bg-green-400' : 'bg-yellow-400'}"></span>
+						<span class="text-sm">{info?.ntp_synced ? 'Synchronized' : 'Not synchronized'}</span>
+					</div>
+				</div>
 
-		<!-- Network -->
+				<div class="mb-3 flex items-center justify-between">
+					<span class="text-sm text-muted-foreground">Active Timezone</span>
+					<span class="text-sm font-medium font-mono">{info?.timezone ?? '—'}</span>
+				</div>
+
+				<div class="mb-4 flex items-center justify-between">
+					<span class="text-sm text-muted-foreground">Clock Format</span>
+					<div class="flex rounded-md border border-border text-xs">
+						<button
+							onclick={() => saveClock24h(true)}
+							class="rounded-l-md px-3 py-1 font-medium transition-colors {settings.clock_24h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						>24h</button>
+						<button
+							onclick={() => saveClock24h(false)}
+							class="rounded-r-md px-3 py-1 font-medium transition-colors {!settings.clock_24h ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						>AM/PM</button>
+					</div>
+				</div>
+
+				<div class="flex gap-2">
+					<select
+						id="timezone"
+						bind:value={settings.timezone}
+						class="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+					>
+						{#each timezones as tz}
+							<option value={tz}>{tz}</option>
+						{/each}
+					</select>
+					<Button size="sm" onclick={saveTimezone} disabled={saving}>
+						{saving ? 'Saving…' : 'Apply'}
+					</Button>
+				</div>
+			</section>
+
+		</div>
+
+		<!-- Right column: Network -->
 		{#if network}
-		<section class="rounded-lg border border-border p-6">
-			<h2 class="mb-4 text-lg font-semibold">Network</h2>
+		<section class="rounded-lg border border-border p-5">
+			<h2 class="mb-4 text-base font-semibold">Network</h2>
 
 			{#if network.live_addresses.length > 0}
-				<div class="mb-4">
-					<div class="mb-1 text-sm text-muted-foreground">Active Address</div>
-					<div class="text-sm font-medium font-mono">
-						{network.live_addresses.join(', ')}
-						{#if network.live_gateway}
-							<span class="ml-2 text-muted-foreground">via {network.live_gateway}</span>
-						{/if}
+				<div class="mb-4 flex items-start justify-between gap-4">
+					<span class="shrink-0 text-sm text-muted-foreground">Active Address</span>
+					<div class="text-right">
+						<div class="text-sm font-medium font-mono">
+							{network.live_addresses.join(', ')}
+							{#if network.live_gateway}
+								<span class="ml-1 text-muted-foreground">via {network.live_gateway}</span>
+							{/if}
+						</div>
+						<div class="text-xs text-muted-foreground">{network.interface || '—'}</div>
 					</div>
-					<div class="mt-0.5 text-xs text-muted-foreground">Interface: {network.interface || '\u2014'}</div>
 				</div>
 			{/if}
 
 			<div class="mb-4">
 				<div class="mb-2 text-sm text-muted-foreground">Mode</div>
-				<div class="flex w-fit rounded-md border border-border">
+				<div class="flex w-fit rounded-md border border-border text-sm">
 					<button
 						onclick={() => { netDhcp = true; netChanged = true; }}
-						class="rounded-l-md px-4 py-1.5 text-sm font-medium transition-colors {netDhcp ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						class="rounded-l-md px-4 py-1.5 font-medium transition-colors {netDhcp ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
 					>DHCP</button>
 					<button
 						onclick={() => { netDhcp = false; netChanged = true; }}
-						class="rounded-r-md px-4 py-1.5 text-sm font-medium transition-colors {!netDhcp ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						class="rounded-r-md px-4 py-1.5 font-medium transition-colors {!netDhcp ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
 					>Static</button>
 				</div>
 			</div>
 
 			{#if !netDhcp}
-				<div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<div class="mb-4 grid grid-cols-2 gap-3">
 					<div>
-						<label for="net-address" class="mb-1 block text-sm text-muted-foreground">IP Address</label>
+						<label for="net-address" class="mb-1 block text-xs text-muted-foreground">IP Address</label>
 						<input
 							id="net-address"
 							type="text"
 							bind:value={netAddress}
 							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 							placeholder="192.168.1.100"
 						/>
 					</div>
 					<div>
-						<label for="net-prefix" class="mb-1 block text-sm text-muted-foreground">Prefix Length</label>
+						<label for="net-prefix" class="mb-1 block text-xs text-muted-foreground">Prefix Length</label>
 						<input
 							id="net-prefix"
 							type="number"
@@ -210,29 +236,29 @@
 							max="32"
 							bind:value={netPrefix}
 							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 							placeholder="24"
 						/>
 					</div>
 					<div>
-						<label for="net-gateway" class="mb-1 block text-sm text-muted-foreground">Gateway</label>
+						<label for="net-gateway" class="mb-1 block text-xs text-muted-foreground">Gateway</label>
 						<input
 							id="net-gateway"
 							type="text"
 							bind:value={netGateway}
 							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 							placeholder="192.168.1.1"
 						/>
 					</div>
 					<div>
-						<label for="net-dns" class="mb-1 block text-sm text-muted-foreground">DNS Servers</label>
+						<label for="net-dns" class="mb-1 block text-xs text-muted-foreground">DNS Servers</label>
 						<input
 							id="net-dns"
 							type="text"
 							bind:value={netNameservers}
 							oninput={() => { netChanged = true; }}
-							class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 							placeholder="1.1.1.1, 8.8.8.8"
 						/>
 					</div>
@@ -247,7 +273,7 @@
 			{/if}
 
 			<Button size="sm" onclick={saveNetwork} disabled={savingNetwork || !netChanged}>
-				{savingNetwork ? 'Applying...' : 'Apply Network'}
+				{savingNetwork ? 'Applying…' : 'Apply Network'}
 			</Button>
 		</section>
 		{/if}
