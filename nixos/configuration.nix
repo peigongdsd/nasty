@@ -48,6 +48,21 @@
 
   networking.hostName = "nasty";
 
+  # Show network info on the TTY login prompt so users know how to connect.
+  # \4 and \6 are agetty escape codes that expand to the live IPv4/IPv6 address.
+  services.getty.helpLine = lib.mkForce ''
+
+    ┌─────────────────────────────────────────────┐
+    │           NASty — Storage with attitude      │
+    ├─────────────────────────────────────────────┤
+    │  WebUI:   https://\4                        │
+    │  IPv6:    https://[\6]                      │
+    │                                              │
+    │  Default login:  admin / admin               │
+    │  Change password in WebUI → Users            │
+    └─────────────────────────────────────────────┘
+  '';
+
   # Enable the NASty module with all protocols
   services.nasty = {
     enable = true;
