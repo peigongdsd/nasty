@@ -270,22 +270,22 @@
 	<p class="text-muted-foreground">Loading...</p>
 {:else}
 	<!-- Tab bar -->
-	<div class="mb-6 flex gap-1 rounded-lg border border-border bg-secondary/40 p-1">
+	<div class="flex border-b border-border mb-6">
 		<button
 			onclick={() => activeTab = 'system'}
-			class="px-4 py-1.5 text-sm font-medium transition-all rounded-md
+			class="px-5 py-2 text-sm font-medium transition-colors rounded-t-md -mb-px
 				{activeTab === 'system'
-					? 'bg-card text-foreground shadow-sm border border-border'
-					: 'text-muted-foreground hover:text-foreground hover:bg-card/50'}"
+					? 'border-t border-l border-r border-border bg-card text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
 		>
 			System
 		</button>
 		<button
 			onclick={() => activeTab = 'bcachefs'}
-			class="flex items-center gap-2 px-4 py-1.5 text-sm font-medium transition-all rounded-md
+			class="flex items-center gap-2 px-5 py-2 text-sm font-medium transition-colors rounded-t-md -mb-px
 				{activeTab === 'bcachefs'
-					? 'bg-card text-foreground shadow-sm border border-border'
-					: 'text-muted-foreground hover:text-foreground hover:bg-card/50'}"
+					? 'border-t border-l border-r border-border bg-card text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
 		>
 			bcachefs
 			{#if bcachefsInfo?.is_custom}
