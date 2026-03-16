@@ -60,13 +60,14 @@
       Type = "oneshot";
       RemainAfterExit = true;
     };
+    path = [ pkgs.iproute2 pkgs.gawk pkgs.coreutils ];
     script = ''
       # Try routing-based detection first (most accurate)
-      IP=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null \
+      IP=$(ip -4 route get 1.1.1.1 2>/dev/null \
         | awk '{for(i=1;i<=NF;i++) if ($i=="src") {print $(i+1); exit}}')
       # Fallback: first non-loopback address on any interface
       if [ -z "$IP" ]; then
-        IP=$(${pkgs.iproute2}/bin/ip -4 addr show \
+        IP=$(ip -4 addr show \
           | awk '/inet / && !/127\./ {print $2}' | cut -d/ -f1 | head -1)
       fi
       IP=''${IP:-"(not yet assigned)"}
