@@ -1063,10 +1063,10 @@ async fn read_pool_devices(_uuid: &str, device_paths: &[String]) -> Vec<PoolDevi
             if let Some(pos) = lower.find(key) {
                 let rest = &line[pos + key.len()..];
                 let rest = rest.trim_start_matches(|c: char| c == ':' || c == ' ' || c == '\t');
-                // Take first token, strip trailing punctuation
+                // Take first token, strip surrounding punctuation
                 if let Some(tok) = rest.split_whitespace().next() {
-                    let tok = tok.trim_matches(|c: char| c == ')' || c == ',' || c == ';');
-                    if !tok.is_empty() && tok != "(none)" && tok != "none" {
+                    let tok = tok.trim_matches(|c: char| c == '(' || c == ')' || c == ',' || c == ';');
+                    if !tok.is_empty() && tok != "none" {
                         return Some(tok.to_string());
                     }
                 }

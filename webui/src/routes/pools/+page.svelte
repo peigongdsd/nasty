@@ -833,7 +833,8 @@
 										</td>
 										<td class="p-2 font-mono text-xs text-muted-foreground">{dev.data_allowed ?? '—'}</td>
 										<td class="p-2 font-mono text-xs text-muted-foreground">{dev.has_data ?? '—'}</td>
-										<td class="flex flex-wrap gap-1.5 p-2">
+										<td class="p-2 w-px whitespace-nowrap">
+											<div class="flex gap-1.5 items-center">
 											{#if pool.mounted}
 												{#if dev.state === 'rw'}
 													<Button variant="secondary" size="xs" onclick={() => setDeviceState(pool.name, dev.path, 'ro')}>Set RO</Button>
@@ -846,6 +847,7 @@
 												{/if}
 												<Button variant="destructive" size="xs" onclick={() => removeDevice(pool.name, dev.path)}>Remove</Button>
 											{/if}
+											</div>
 										</td>
 									</tr>
 								{/each}
