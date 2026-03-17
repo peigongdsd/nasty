@@ -15,12 +15,12 @@
     (pkgs.runCommand "nasty-limine-bg.png" {
       nativeBuildInputs = [ pkgs.librsvg pkgs.imagemagick ];
     } ''
-      rsvg-convert -w 320 -h 320 \
+      rsvg-convert -w 260 -h 260 \
         ${../webui/src/lib/assets/nasty-white.svg} \
         -o /tmp/logo.png
       magick \
         -size 1920x1080 xc:'#0f1117' \
-        /tmp/logo.png -gravity center -composite \
+        /tmp/logo.png -gravity SouthEast -geometry +60+60 -composite \
         PNG24:$out
     '')
   ];
