@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use nasty_common::{HasId, StateDir};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{debug, info, warn};
@@ -31,7 +32,7 @@ pub enum NvmeofError {
 
 // ── Data types ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NvmeofSubsystem {
     pub id: String,
     pub nqn: String,
@@ -42,14 +43,14 @@ pub struct NvmeofSubsystem {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Namespace {
     pub nsid: u32,
     pub device_path: String,
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Port {
     pub port_id: u16,
     pub transport: String,
@@ -60,7 +61,7 @@ pub struct Port {
 
 // ── Requests ────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSubsystemRequest {
     /// Short name appended to NQN prefix
     pub name: String,
@@ -68,7 +69,7 @@ pub struct CreateSubsystemRequest {
 }
 
 /// Simplified request: creates subsystem + namespace + port in one shot
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct QuickCreateRequest {
     /// Short name for the NQN
     pub name: String,
@@ -80,25 +81,25 @@ pub struct QuickCreateRequest {
     pub port: Option<u16>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSubsystemRequest {
     pub id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddNamespaceRequest {
     pub subsystem_id: String,
     /// Block device path (e.g. /dev/sdc)
     pub device_path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveNamespaceRequest {
     pub subsystem_id: String,
     pub nsid: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddPortRequest {
     pub subsystem_id: String,
     /// "tcp" or "rdma"
@@ -109,19 +110,19 @@ pub struct AddPortRequest {
     pub addr_family: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemovePortRequest {
     pub subsystem_id: String,
     pub port_id: u16,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddHostRequest {
     pub subsystem_id: String,
     pub host_nqn: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveHostRequest {
     pub subsystem_id: String,
     pub host_nqn: String,

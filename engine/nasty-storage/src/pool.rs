@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
@@ -28,7 +29,7 @@ pub enum PoolError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Pool {
     pub name: String,
     pub uuid: String,
@@ -43,7 +44,7 @@ pub struct Pool {
 }
 
 /// Filesystem-level bcachefs options for a pool.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PoolOptions {
     pub compression: Option<String>,
     pub background_compression: Option<String>,
@@ -61,7 +62,7 @@ pub struct PoolOptions {
 }
 
 /// A device within a pool, with its per-device bcachefs configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PoolDevice {
     pub path: String,
     /// Hierarchical label (e.g. "ssd.fast", "hdd.archive").
@@ -81,7 +82,7 @@ pub struct PoolDevice {
 }
 
 /// Specifies a device and its per-device options for pool creation.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DeviceSpec {
     pub path: String,
     /// Hierarchical label (e.g. "ssd.fast", "hdd.archive").
@@ -90,7 +91,7 @@ pub struct DeviceSpec {
     pub durability: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreatePoolRequest {
     pub name: String,
     pub devices: Vec<DeviceSpec>,
@@ -112,7 +113,7 @@ fn default_replicas() -> u32 {
     1
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DestroyPoolRequest {
     pub name: String,
     pub force: Option<bool>,
@@ -120,7 +121,7 @@ pub struct DestroyPoolRequest {
 
 /// Update runtime-mutable filesystem options on a mounted pool.
 /// Options are written directly to sysfs (/sys/fs/bcachefs/<uuid>/options/).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdatePoolOptionsRequest {
     pub name: String,
     pub compression: Option<String>,
@@ -134,21 +135,21 @@ pub struct UpdatePoolOptionsRequest {
 }
 
 /// Add a device to an existing pool.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceAddRequest {
     pub pool: String,
     pub device: DeviceSpec,
 }
 
 /// Remove/evacuate/online/offline a device in a pool.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceActionRequest {
     pub pool: String,
     pub device: String,
 }
 
 /// Set a label on a device in a pool.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceSetLabelRequest {
     pub pool: String,
     pub device: String,
@@ -156,7 +157,7 @@ pub struct DeviceSetLabelRequest {
 }
 
 /// Change the persistent state of a device within a pool.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DeviceSetStateRequest {
     pub pool: String,
     pub device: String,
@@ -165,7 +166,7 @@ pub struct DeviceSetStateRequest {
 }
 
 /// Detailed filesystem usage from `bcachefs fs usage`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FsUsage {
     /// Raw output from `bcachefs fs usage`, structured where possible.
     pub raw: String,
@@ -179,7 +180,7 @@ pub struct FsUsage {
     pub reserved_bytes: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeviceUsage {
     pub path: String,
     pub used_bytes: u64,
@@ -188,14 +189,14 @@ pub struct DeviceUsage {
 }
 
 /// Scrub operation status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScrubStatus {
     pub running: bool,
     pub raw: String,
 }
 
 /// Reconcile (background work) status.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReconcileStatus {
     pub raw: String,
 }
@@ -1113,7 +1114,7 @@ fn extract_first_bytes(line: &str) -> Option<u64> {
     after_colon.split_whitespace().next()?.parse().ok()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BlockDevice {
     pub path: String,
     pub size_bytes: u64,

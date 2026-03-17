@@ -5,11 +5,12 @@ pub mod protocol;
 pub mod settings;
 pub mod update;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub struct SystemService;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SystemInfo {
     pub hostname: String,
     pub version: String,
@@ -26,19 +27,19 @@ pub struct SystemInfo {
     pub ntp_synced: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SystemHealth {
     pub status: String,
     pub services: Vec<ServiceStatus>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct ServiceStatus {
     pub name: String,
     pub running: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SystemStats {
     pub cpu: CpuStats,
     pub memory: MemoryStats,
@@ -46,7 +47,7 @@ pub struct SystemStats {
     pub disk_io: Vec<DiskIoStats>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct DiskIoStats {
     pub name: String,
     pub read_bytes: u64,
@@ -56,7 +57,7 @@ pub struct DiskIoStats {
     pub io_in_progress: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct CpuStats {
     pub count: u32,
     pub load_1: f64,
@@ -64,7 +65,7 @@ pub struct CpuStats {
     pub load_15: f64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct MemoryStats {
     pub total_bytes: u64,
     pub used_bytes: u64,
@@ -73,7 +74,7 @@ pub struct MemoryStats {
     pub swap_used_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct NetIfStats {
     pub name: String,
     pub rx_bytes: u64,
@@ -85,7 +86,7 @@ pub struct NetIfStats {
     pub addresses: Vec<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct DiskHealth {
     pub device: String,
     pub model: String,
@@ -99,7 +100,7 @@ pub struct DiskHealth {
     pub attributes: Vec<SmartAttribute>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct SmartAttribute {
     pub id: u32,
     pub name: String,

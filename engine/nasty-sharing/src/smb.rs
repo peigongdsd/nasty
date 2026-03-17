@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use nasty_common::{HasId, StateDir};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -28,7 +29,7 @@ pub enum SmbError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SmbShare {
     pub id: String,
     pub name: String,
@@ -48,7 +49,7 @@ impl HasId for SmbShare {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSmbShareRequest {
     pub name: String,
     pub path: String,
@@ -61,7 +62,7 @@ pub struct CreateSmbShareRequest {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateSmbShareRequest {
     pub id: String,
     pub name: Option<String>,
@@ -74,7 +75,7 @@ pub struct UpdateSmbShareRequest {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSmbShareRequest {
     pub id: String,
 }

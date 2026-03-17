@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -5,7 +6,7 @@ use tokio::sync::RwLock;
 const STATE_PATH: &str = "/var/lib/nasty/alerts.json";
 const STATE_DIR: &str = "/var/lib/nasty";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AlertRule {
     pub id: String,
     pub name: String,
@@ -16,7 +17,7 @@ pub struct AlertRule {
     pub severity: AlertSeverity,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertMetric {
     PoolUsagePercent,
@@ -27,7 +28,7 @@ pub enum AlertMetric {
     SwapUsagePercent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertCondition {
     Above,
@@ -35,14 +36,14 @@ pub enum AlertCondition {
     Equals,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AlertSeverity {
     Warning,
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ActiveAlert {
     pub rule_id: String,
     pub rule_name: String,
@@ -303,7 +304,7 @@ pub struct DiskHealthSummary {
     pub health_passed: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AlertRuleUpdate {
     pub id: String,
     #[serde(default)]

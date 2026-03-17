@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use nasty_common::{HasId, StateDir};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
@@ -25,7 +26,7 @@ pub enum IscsiError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct IscsiTarget {
     pub id: String,
     pub iqn: String,
@@ -36,13 +37,13 @@ pub struct IscsiTarget {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Portal {
     pub ip: String,
     pub port: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Lun {
     pub lun_id: u32,
     /// Path to block device or file used as backstore
@@ -54,7 +55,7 @@ pub struct Lun {
     pub size_bytes: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Acl {
     /// Initiator IQN allowed to connect
     pub initiator_iqn: String,
@@ -70,7 +71,7 @@ impl HasId for IscsiTarget {
 
 // ── Requests ────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateTargetRequest {
     /// Short name used to generate the IQN: iqn.2137-01.com.nasty:<name>
     pub name: String,
@@ -80,7 +81,7 @@ pub struct CreateTargetRequest {
 }
 
 /// Simplified request: creates target + LUN in one shot
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct QuickCreateRequest {
     /// Short name for the IQN
     pub name: String,
@@ -88,12 +89,12 @@ pub struct QuickCreateRequest {
     pub device_path: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteTargetRequest {
     pub id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddLunRequest {
     pub target_id: String,
     /// Block device path (/dev/sdb) or file path (/mnt/nasty/pool/disk.img)
@@ -104,13 +105,13 @@ pub struct AddLunRequest {
     pub size_bytes: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveLunRequest {
     pub target_id: String,
     pub lun_id: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddAclRequest {
     pub target_id: String,
     pub initiator_iqn: String,
@@ -118,7 +119,7 @@ pub struct AddAclRequest {
     pub password: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveAclRequest {
     pub target_id: String,
     pub initiator_iqn: String,

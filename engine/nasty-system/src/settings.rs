@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -5,7 +6,7 @@ use tokio::sync::RwLock;
 const STATE_PATH: &str = "/var/lib/nasty/settings.json";
 const STATE_DIR: &str = "/var/lib/nasty";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Settings {
     #[serde(default = "default_timezone")]
     pub timezone: String,
@@ -32,7 +33,7 @@ impl Default for Settings {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SettingsUpdate {
     pub timezone: Option<String>,
     pub hostname: Option<String>,

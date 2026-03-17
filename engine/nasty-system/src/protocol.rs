@@ -3,13 +3,14 @@
 //! Persists state to `/var/lib/nasty/protocols.json` so boot-time services
 //! know which protocols to start.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 const STATE_PATH: &str = "/var/lib/nasty/protocols.json";
 const SMB_NASTY_CONF: &str = "/etc/samba/smb.nasty.conf";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Nfs,
@@ -87,7 +88,7 @@ impl Protocol {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProtocolStatus {
     pub name: String,
     pub display_name: String,

@@ -4,13 +4,14 @@
 //! and generates `/etc/nixos/nixos/networking.nix` for NixOS persistence.
 //! Changes are applied immediately via `ip` commands without a full nixos-rebuild.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 const JSON_PATH: &str = "/var/lib/nasty/networking.json";
 const NIX_PATH: &str = "/etc/nixos/nixos/networking.nix";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NetworkConfig {
     pub dhcp: bool,
     #[serde(default)]

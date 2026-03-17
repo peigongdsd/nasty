@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "nasty-api",
+    "nasty-apidoc",
     "nasty-common",
     "nasty-storage",
     "nasty-sharing",
@@ -33,3 +34,4 @@ portable-pty = "0.9"
 rusqlite = { version = "0.34", features = ["bundled"] }
 libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+schemars = "1"

@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use nasty_common::{HasId, StateDir};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -26,7 +27,7 @@ pub enum NfsError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NfsShare {
     pub id: String,
     pub path: String,
@@ -41,7 +42,7 @@ impl HasId for NfsShare {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NfsClient {
     /// Network or host: "192.168.1.0/24", "10.0.0.5", "*"
     pub host: String,
@@ -49,7 +50,7 @@ pub struct NfsClient {
     pub options: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateNfsShareRequest {
     pub path: String,
     pub comment: Option<String>,
@@ -57,7 +58,7 @@ pub struct CreateNfsShareRequest {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateNfsShareRequest {
     pub id: String,
     pub comment: Option<String>,
@@ -65,7 +66,7 @@ pub struct UpdateNfsShareRequest {
     pub enabled: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteNfsShareRequest {
     pub id: String,
 }

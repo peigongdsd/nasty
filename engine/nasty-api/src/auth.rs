@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tracing::info;
@@ -17,7 +18,7 @@ pub struct User {
     pub role: Role,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
@@ -27,7 +28,7 @@ pub enum Role {
     Operator,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Session {
     pub token: String,
     pub username: String,
@@ -40,7 +41,7 @@ pub struct Session {
     pub owner: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ApiToken {
     pub id: String,
     pub name: String,
@@ -56,7 +57,7 @@ pub struct ApiToken {
     pub expires_at: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ApiTokenInfo {
     pub id: String,
     pub name: String,
@@ -375,7 +376,7 @@ impl AuthService {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct UserInfo {
     pub username: String,
     pub role: Role,

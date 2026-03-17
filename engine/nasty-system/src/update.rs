@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
@@ -24,7 +25,7 @@ const UPDATE_WEBUI_CHANGED: &str = "/var/lib/nasty/update-webui-changed";
 const GITHUB_TOKEN_PATH: &str = "/var/lib/nasty/github-token";
 const GITHUB_API_REPO: &str = "https://api.github.com/repos/nasty-project/nasty/commits/main";
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct BcachefsToolsInfo {
     /// The ref in flake.lock original (e.g. "v1.37.0", "master", commit sha)
     pub pinned_ref: Option<String>,
@@ -40,7 +41,7 @@ pub struct BcachefsToolsInfo {
     pub kernel_rust: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct BcachefsToolsSwitchRequest {
     /// A git ref: tag (v1.37.0), branch (master), or commit hash
     pub git_ref: String,
@@ -56,14 +57,14 @@ pub enum UpdateError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct UpdateInfo {
     pub current_version: String,
     pub latest_version: Option<String>,
     pub update_available: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct UpdateStatus {
     /// "idle", "running", "success", "failed"
     pub state: String,

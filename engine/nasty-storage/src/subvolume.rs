@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use nasty_common::{HasId, StateDir};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
@@ -44,14 +45,14 @@ pub enum SubvolumeError {
     Io(#[from] std::io::Error),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum SubvolumeType {
     Filesystem,
     Block,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Subvolume {
     pub name: String,
     pub pool: String,
@@ -72,7 +73,7 @@ pub struct Subvolume {
     pub properties: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Snapshot {
     pub name: String,
     pub subvolume: String,
@@ -115,7 +116,7 @@ fn state_dir() -> StateDir {
     StateDir::new(STATE_DIR)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSubvolumeRequest {
     pub pool: String,
     pub name: String,
@@ -130,13 +131,13 @@ fn default_type() -> SubvolumeType {
     SubvolumeType::Filesystem
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSubvolumeRequest {
     pub pool: String,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSnapshotRequest {
     pub pool: String,
     pub subvolume: String,
@@ -144,14 +145,14 @@ pub struct CreateSnapshotRequest {
     pub read_only: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSnapshotRequest {
     pub pool: String,
     pub subvolume: String,
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct CloneSnapshotRequest {
     pub pool: String,
     pub subvolume: String,
@@ -159,14 +160,14 @@ pub struct CloneSnapshotRequest {
     pub new_name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ResizeSubvolumeRequest {
     pub pool: String,
     pub name: String,
     pub volsize_bytes: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetPropertiesRequest {
     pub pool: String,
     pub name: String,
@@ -174,7 +175,7 @@ pub struct SetPropertiesRequest {
     pub properties: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemovePropertiesRequest {
     pub pool: String,
     pub name: String,
@@ -182,7 +183,7 @@ pub struct RemovePropertiesRequest {
     pub keys: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindByPropertyRequest {
     /// Optional pool to restrict the search to.
     pub pool: Option<String>,
