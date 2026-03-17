@@ -468,6 +468,13 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(e) => invalid(req, e),
         },
+        "pool.device.set_label" => match parse_params(req) {
+            Ok(p) => match state.pools.device_set_label(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
 
         // ── Pool health & monitoring ─────────────────────────────
         "pool.usage" => match require_str(req, "name") {

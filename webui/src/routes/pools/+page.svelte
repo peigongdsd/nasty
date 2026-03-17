@@ -42,6 +42,27 @@
 	let showAddPartitions = $state(false);
 	let editErasureCode = $state(false);
 
+	// Inline label editing: key is "poolName|devicePath"
+	let editingLabel: string | null = $state(null);
+	let editLabelValue = $state('');
+
+	async function saveDeviceLabel(poolName: string, devicePath: string) {
+		const key = `${poolName}|${devicePath}`;
+		if (editingLabel !== key) return;
+		editingLabel = null;
+		const label = editLabelValue.trim();
+		await withToast(
+			() => client.call('pool.device.set_label', { pool: poolName, device: devicePath, label }),
+			`Label updated for ${devicePath}`
+		);
+		await refresh();
+	}
+
+	function startEditLabel(poolName: string, dev: PoolDevice) {
+		editingLabel = `${poolName}|${dev.path}`;
+		editLabelValue = dev.label ?? '';
+	}
+
 	let healthPool: string | null = $state(null);
 	let fsUsage: FsUsage | null = $state(null);
 	let scrubStatus: ScrubStatus | null = $state(null);
@@ -956,7 +977,25 @@
 												<span class="ml-1 rounded bg-secondary px-1 py-0.5 text-[10px] text-muted-foreground">discard</span>
 											{/if}
 										</td>
-										<td class="p-2 text-xs">{dev.label ?? '—'}</td>
+										<td class="p-2 text-xs">
+										{#if pool.mounted && editingLabel === `${pool.name}|${dev.path}`}
+											<input
+												class="w-28 rounded border border-input bg-background px-1.5 py-0.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+												bind:value={editLabelValue}
+												onblur={() => saveDeviceLabel(pool.name, dev.path)}
+												onkeydown={(e) => { if (e.key === 'Enter') saveDeviceLabel(pool.name, dev.path); if (e.key === 'Escape') editingLabel = null; }}
+												autofocus
+											/>
+										{:else}
+											<button
+												class="rounded px-1 py-0.5 text-left hover:bg-secondary {dev.label ? '' : 'text-muted-foreground'} {pool.mounted ? 'cursor-text' : 'cursor-default'}"
+												onclick={() => { if (pool.mounted) startEditLabel(pool.name, dev); }}
+												title={pool.mounted ? 'Click to edit label' : ''}
+											>
+												{dev.label ?? '—'}
+											</button>
+										{/if}
+									</td>
 										<td class="p-2">
 											{#if dev.state !== null}
 												{@const ds = devDisplayState(dev)}

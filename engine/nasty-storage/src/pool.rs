@@ -147,6 +147,14 @@ pub struct DeviceActionRequest {
     pub device: String,
 }
 
+/// Set a label on a device in a pool.
+#[derive(Debug, Deserialize)]
+pub struct DeviceSetLabelRequest {
+    pub pool: String,
+    pub device: String,
+    pub label: String,
+}
+
 /// Change the persistent state of a device within a pool.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceSetStateRequest {
@@ -846,6 +854,63 @@ impl PoolService {
         cmd::run_ok("bcachefs", &["device", "offline", &req.device])
             .await
             .map_err(PoolError::CommandFailed)?;
+
+        self.get(&req.pool).await
+    }
+
+    /// Set the label on a device of a mounted pool via the bcachefs sysfs interface.
+    ///
+    /// Labels drive tiering target selection (e.g. "ssd.fast", "hdd.archive").
+    /// The sysfs entry `/sys/fs/bcachefs/<uuid>/dev-<N>/label` is writable on a
+    /// live filesystem; we find the right dev-N by matching the `block` symlink.
+    pub async fn device_set_label(&self, req: DeviceSetLabelRequest) -> Result<Pool, PoolError> {
+        let pool = self.get(&req.pool).await?;
+        if !pool.mounted {
+            return Err(PoolError::CommandFailed(
+                "pool must be mounted to set a device label".to_string(),
+            ));
+        }
+
+        // Validate: device must be a member of the pool
+        if !pool.devices.iter().any(|d| d.path == req.device) {
+            return Err(PoolError::CommandFailed(format!(
+                "{} is not a member of pool '{}'", req.device, req.pool
+            )));
+        }
+
+        // Find the sysfs dev-N directory whose `block` symlink resolves to our device.
+        // The symlink target ends with the kernel device name (e.g. "sdc").
+        let dev_name = req.device.trim_start_matches("/dev/");
+        let sysfs_base = format!("/sys/fs/bcachefs/{}", pool.uuid);
+        let mut label_path: Option<std::path::PathBuf> = None;
+
+        let mut rd = tokio::fs::read_dir(&sysfs_base).await.map_err(|e| {
+            PoolError::CommandFailed(format!("failed to read sysfs {sysfs_base}: {e}"))
+        })?;
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            let name = entry.file_name();
+            if !name.to_string_lossy().starts_with("dev-") {
+                continue;
+            }
+            let block_link = entry.path().join("block");
+            if let Ok(target) = tokio::fs::read_link(&block_link).await {
+                if target.file_name().map(|n| n == dev_name).unwrap_or(false) {
+                    label_path = Some(entry.path().join("label"));
+                    break;
+                }
+            }
+        }
+
+        let label_path = label_path.ok_or_else(|| {
+            PoolError::CommandFailed(format!(
+                "could not find sysfs entry for {} in pool '{}'", req.device, req.pool
+            ))
+        })?;
+
+        info!("Setting label '{}' on {} in pool '{}'", req.label, req.device, req.pool);
+        tokio::fs::write(&label_path, &req.label).await.map_err(|e| {
+            PoolError::CommandFailed(format!("failed to write sysfs label: {e}"))
+        })?;
 
         self.get(&req.pool).await
     }
