@@ -272,8 +272,10 @@ in {
          # → type 'benchmark' for fio storage tests and perf profiling
 
        perf profiling
-         perf record -e 'bcachefs:*' -- sleep 5 && perf script
-         perf record -g -p $(pgrep -f bcachefs) && perf report
+         perf top                                                  live per-symbol CPU usage (all processes)
+         perf top -p $(pgrep -f bcachefs)                         live CPU usage scoped to bcachefs process
+         perf record -e 'bcachefs:*' -- sleep 5 && perf script    capture bcachefs tracepoints
+         perf record -g -p $(pgrep -f bcachefs) && perf report    call-graph profile of bcachefs process
 
        kernel oops symbolization (bcachefs crash)
          # From an oops line like: RIP: 0010:bch2_btree_node_get+0x8d/0x5f0 [bcachefs]
