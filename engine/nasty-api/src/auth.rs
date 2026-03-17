@@ -443,8 +443,10 @@ async fn load_state() -> AuthState {
 }
 
 async fn save_state(state: &AuthState) -> Result<(), AuthError> {
+    use std::os::unix::fs::PermissionsExt;
     tokio::fs::create_dir_all(STATE_DIR).await?;
     let json = serde_json::to_string_pretty(state).unwrap();
     tokio::fs::write(STATE_PATH, json).await?;
+    tokio::fs::set_permissions(STATE_PATH, std::fs::Permissions::from_mode(0o600)).await?;
     Ok(())
 }
