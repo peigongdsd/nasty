@@ -696,21 +696,18 @@ impl PoolService {
             return Err(PoolError::DeviceNotFound(req.device.path.clone()));
         }
 
-        // Reject only if the device is actively in use (mounted or member of a live pool).
-        // A stale bcachefs superblock left over from a prior removal is not a real conflict —
-        // we wipe it automatically so the user can re-add the device without a separate Wipe step.
+        // Reject if the device is actively in use (mounted or member of a live pool).
         let known_devices = self.list_devices().await?;
         if known_devices.iter().any(|d| d.path == req.device.path && d.in_use) {
             return Err(PoolError::DeviceInUse(req.device.path.clone()));
         }
+        // Reject if the device has a filesystem signature (including stale bcachefs superblocks
+        // left over after removal). The user must explicitly wipe it via Disks → Wipe first.
         if is_device_bcachefs(&req.device.path).await {
-            info!(
-                "Wiping stale bcachefs superblock from {} before re-adding to pool '{}'",
-                req.device.path, req.pool
-            );
-            cmd::run_ok("wipefs", &["-a", &req.device.path])
-                .await
-                .map_err(|e| PoolError::CommandFailed(format!("failed to wipe stale superblock on {}: {e}", req.device.path)))?;
+            return Err(PoolError::CommandFailed(format!(
+                "{} has an existing bcachefs superblock. Go to Disks → Wipe to erase it before adding it to a pool.",
+                req.device.path
+            )));
         }
 
         let mut args: Vec<String> = vec!["device".into(), "add".into()];
