@@ -6,16 +6,26 @@
     ./networking.nix
   ];
 
-  # Boot loader — UEFI with systemd-boot
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.systemd-boot.configurationLimit = 10;
-  boot.loader.systemd-boot.consoleMode = "auto";
+  # Boot loader — UEFI with Limine
+  boot.loader.limine.enable = true;
+  boot.loader.limine.maxGenerations = 10;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # Restrict /boot (EFI) partition to root-only access.
-  # nixos-generate-config defaults to fmask=0022 (world-readable), which causes
-  # systemd-boot to warn that the random seed file is a security hole.
-  fileSystems."/boot".options = lib.mkForce [ "fmask=0077" "dmask=0077" ];
+  boot.loader.limine.style.wallpapers = [
+    (pkgs.runCommand "nasty-limine-bg.png" {
+      nativeBuildInputs = [ pkgs.librsvg pkgs.imagemagick ];
+    } ''
+      rsvg-convert -w 320 -h 320 \
+        ${../webui/src/lib/assets/nasty-white.svg} \
+        -o /tmp/logo.png
+      magick \
+        -size 1920x1080 xc:'#0f1117' \
+        /tmp/logo.png -gravity center -composite \
+        PNG24:$out
+    '')
+  ];
+  boot.loader.limine.style.wallpaperStyle = "stretched";
+  boot.loader.limine.style.interface.branding = "NASty";
 
   networking.hostName = "nasty";
 
