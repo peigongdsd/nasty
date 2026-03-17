@@ -90,10 +90,15 @@ impl Protocol {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProtocolStatus {
+    /// Machine-readable protocol identifier (e.g. `nfs`, `smb`, `iscsi`).
     pub name: String,
+    /// Human-readable display name (e.g. `NFS`, `SMB`, `iSCSI`).
     pub display_name: String,
+    /// Whether the protocol is enabled in persistent state.
     pub enabled: bool,
+    /// Whether the protocol's systemd service is currently active.
     pub running: bool,
+    /// Whether this is a system-level service (SSH, Avahi, SMART) rather than a storage protocol.
     pub system_service: bool,
 }
 

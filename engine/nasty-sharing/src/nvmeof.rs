@@ -34,28 +34,43 @@ pub enum NvmeofError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NvmeofSubsystem {
+    /// Unique subsystem identifier (UUID).
     pub id: String,
+    /// NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`).
     pub nqn: String,
+    /// Block device namespaces exposed by this subsystem.
     pub namespaces: Vec<Namespace>,
+    /// Transport ports this subsystem is reachable on.
     pub ports: Vec<Port>,
+    /// NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false).
     pub allowed_hosts: Vec<String>,
+    /// Whether any host NQN is permitted to connect without explicit ACL entries.
     pub allow_any_host: bool,
+    /// Whether this subsystem is active in nvmet configfs.
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Namespace {
+    /// Namespace ID (1-based, auto-assigned).
     pub nsid: u32,
+    /// Block device path backing this namespace (e.g. `/dev/loop0`).
     pub device_path: String,
+    /// Whether the namespace is enabled in configfs.
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Port {
+    /// nvmet configfs port ID (unique across all subsystems on this host).
     pub port_id: u16,
+    /// Transport type (e.g. `tcp`, `rdma`).
     pub transport: String,
+    /// Listening IP address (e.g. `0.0.0.0` for all interfaces).
     pub addr: String,
+    /// TCP/RDMA port number as a string (default NVMe-oF port is `4420`).
     pub service_id: String,
+    /// Address family (`ipv4` or `ipv6`).
     pub addr_family: String,
 }
 
@@ -65,6 +80,7 @@ pub struct Port {
 pub struct CreateSubsystemRequest {
     /// Short name appended to NQN prefix
     pub name: String,
+    /// Whether any host NQN is permitted to connect (default: true).
     pub allow_any_host: Option<bool>,
 }
 
@@ -83,11 +99,13 @@ pub struct QuickCreateRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSubsystemRequest {
+    /// ID of the NVMe-oF subsystem to delete.
     pub id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddNamespaceRequest {
+    /// ID of the subsystem to add the namespace to.
     pub subsystem_id: String,
     /// Block device path (e.g. /dev/sdc)
     pub device_path: String,
@@ -95,36 +113,47 @@ pub struct AddNamespaceRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveNamespaceRequest {
+    /// ID of the subsystem from which to remove the namespace.
     pub subsystem_id: String,
+    /// Namespace ID to remove.
     pub nsid: u32,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddPortRequest {
+    /// ID of the subsystem to add the port to.
     pub subsystem_id: String,
     /// "tcp" or "rdma"
     pub transport: Option<String>,
+    /// Listening IP address (default `0.0.0.0`).
     pub addr: Option<String>,
     /// Port number (default 4420)
     pub service_id: Option<u16>,
+    /// Address family (`ipv4` or `ipv6`; default `ipv4`).
     pub addr_family: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemovePortRequest {
+    /// ID of the subsystem from which to remove the port.
     pub subsystem_id: String,
+    /// Port ID to remove.
     pub port_id: u16,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddHostRequest {
+    /// ID of the subsystem to which to grant access.
     pub subsystem_id: String,
+    /// NQN of the host to allow.
     pub host_nqn: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveHostRequest {
+    /// ID of the subsystem from which to revoke access.
     pub subsystem_id: String,
+    /// NQN of the host to disallow.
     pub host_nqn: String,
 }
 

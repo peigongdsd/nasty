@@ -13,20 +13,28 @@ const NIX_PATH: &str = "/etc/nixos/nixos/networking.nix";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NetworkConfig {
+    /// Whether DHCP is enabled; if false, static address/gateway are used.
     pub dhcp: bool,
+    /// Network interface name to configure (e.g. `eth0`). Auto-detected if empty.
     #[serde(default)]
     pub interface: String,
+    /// Static IPv4 address (required when `dhcp` is false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+    /// Subnet prefix length, e.g. `24` for a /24 (required when `dhcp` is false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prefix_length: Option<u8>,
+    /// Default gateway IPv4 address (required when `dhcp` is false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gateway: Option<String>,
+    /// DNS nameserver addresses written to `/etc/resolv.conf`.
     #[serde(default)]
     pub nameservers: Vec<String>,
     // Live state — populated at read time, ignored on write
+    /// Currently assigned addresses on the interface in CIDR notation (read-only).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub live_addresses: Vec<String>,
+    /// Currently active default gateway (read-only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub live_gateway: Option<String>,
 }

@@ -28,18 +28,27 @@ pub enum IscsiError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct IscsiTarget {
+    /// Unique target identifier (UUID).
     pub id: String,
+    /// iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`).
     pub iqn: String,
+    /// Optional human-readable alias for the target.
     pub alias: Option<String>,
+    /// Network portals (IP:port) the target listens on.
     pub portals: Vec<Portal>,
+    /// Logical units exposed by this target.
     pub luns: Vec<Lun>,
+    /// Initiator ACL entries controlling which hosts may connect.
     pub acls: Vec<Acl>,
+    /// Whether the target is currently active in LIO.
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Portal {
+    /// IP address the portal listens on (use `0.0.0.0` for all interfaces).
     pub ip: String,
+    /// TCP port number (default iSCSI port is 3260).
     pub port: u16,
 }
 
@@ -59,7 +68,9 @@ pub struct Lun {
 pub struct Acl {
     /// Initiator IQN allowed to connect
     pub initiator_iqn: String,
+    /// CHAP username for this initiator (optional).
     pub userid: Option<String>,
+    /// CHAP password for this initiator (optional).
     pub password: Option<String>,
 }
 
@@ -75,6 +86,7 @@ impl HasId for IscsiTarget {
 pub struct CreateTargetRequest {
     /// Short name used to generate the IQN: iqn.2137-01.com.nasty:<name>
     pub name: String,
+    /// Optional human-readable alias for the target.
     pub alias: Option<String>,
     /// Defaults to 0.0.0.0:3260
     pub portals: Option<Vec<Portal>>,
@@ -91,6 +103,7 @@ pub struct QuickCreateRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteTargetRequest {
+    /// ID of the iSCSI target to delete.
     pub id: String,
 }
 
@@ -107,21 +120,29 @@ pub struct AddLunRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveLunRequest {
+    /// ID of the target from which to remove the LUN.
     pub target_id: String,
+    /// LUN ID to remove.
     pub lun_id: u32,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AddAclRequest {
+    /// ID of the target to add the ACL to.
     pub target_id: String,
+    /// Initiator IQN to allow.
     pub initiator_iqn: String,
+    /// Optional CHAP username for this initiator.
     pub userid: Option<String>,
+    /// Optional CHAP password for this initiator.
     pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemoveAclRequest {
+    /// ID of the target from which to remove the ACL.
     pub target_id: String,
+    /// Initiator IQN to disallow.
     pub initiator_iqn: String,
 }
 

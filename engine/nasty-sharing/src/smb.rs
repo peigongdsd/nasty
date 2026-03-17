@@ -31,15 +31,25 @@ pub enum SmbError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SmbShare {
+    /// Unique share identifier (UUID).
     pub id: String,
+    /// Samba share name used in `\\server\name` UNC paths.
     pub name: String,
+    /// Absolute filesystem path being shared (must be under `/storage/`).
     pub path: String,
+    /// Optional description shown in share listings.
     pub comment: Option<String>,
+    /// Whether the share is read-only.
     pub read_only: bool,
+    /// Whether the share is visible in network browse lists.
     pub browseable: bool,
+    /// Whether unauthenticated guest access is allowed.
     pub guest_ok: bool,
+    /// Usernames allowed to connect (empty means no restriction beyond authentication).
     pub valid_users: Vec<String>,
+    /// Additional raw Samba parameters written to the share section.
     pub extra_params: HashMap<String, String>,
+    /// Whether the share is active in `smb.nasty.conf`.
     pub enabled: bool,
 }
 
@@ -51,27 +61,45 @@ impl HasId for SmbShare {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSmbShareRequest {
+    /// Samba share name (1–80 characters, no special characters).
     pub name: String,
+    /// Absolute path to share (must exist and be under `/storage/`).
     pub path: String,
+    /// Optional description.
     pub comment: Option<String>,
+    /// Whether the share is read-only (default: false).
     pub read_only: Option<bool>,
+    /// Whether the share appears in browse lists (default: true).
     pub browseable: Option<bool>,
+    /// Whether guest access is allowed (default: false).
     pub guest_ok: Option<bool>,
+    /// Allowed usernames; empty means no per-user restriction.
     pub valid_users: Option<Vec<String>>,
+    /// Additional raw Samba parameters for this share section.
     pub extra_params: Option<HashMap<String, String>>,
+    /// Whether to enable the share immediately (default: true).
     pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateSmbShareRequest {
+    /// ID of the share to update.
     pub id: String,
+    /// New share name (optional; must be unique).
     pub name: Option<String>,
+    /// New description (optional).
     pub comment: Option<String>,
+    /// Update read-only flag (optional).
     pub read_only: Option<bool>,
+    /// Update browseable flag (optional).
     pub browseable: Option<bool>,
+    /// Update guest access flag (optional).
     pub guest_ok: Option<bool>,
+    /// Replacement allowed-users list (optional).
     pub valid_users: Option<Vec<String>>,
+    /// Replacement extra Samba parameters (optional).
     pub extra_params: Option<HashMap<String, String>>,
+    /// Enable or disable the share (optional).
     pub enabled: Option<bool>,
 }
 

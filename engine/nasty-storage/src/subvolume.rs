@@ -54,16 +54,26 @@ pub enum SubvolumeType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Subvolume {
+    /// Subvolume name (unique within the pool).
     pub name: String,
+    /// Name of the pool that contains this subvolume.
     pub pool: String,
+    /// Whether this is a filesystem or block-backed subvolume.
     pub subvolume_type: SubvolumeType,
+    /// Absolute filesystem path to the subvolume directory.
     pub path: String,
+    /// Disk usage in bytes (filesystem subvolumes only, from `du`).
     pub used_bytes: Option<u64>,
+    /// Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`).
     pub compression: Option<String>,
+    /// Free-text description or notes for this subvolume.
     pub comments: Option<String>,
     // Block-specific
+    /// Size of the backing sparse image in bytes (block subvolumes only).
     pub volsize_bytes: Option<u64>,
+    /// Loop device path currently attached to the backing image (block subvolumes only).
     pub block_device: Option<String>,
+    /// Names of snapshots belonging to this subvolume.
     pub snapshots: Vec<String>,
     /// Token name that created this subvolume; None for subvolumes created by human users.
     pub owner: Option<String>,
@@ -75,10 +85,15 @@ pub struct Subvolume {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Snapshot {
+    /// Snapshot name (unique within the parent subvolume).
     pub name: String,
+    /// Name of the parent subvolume.
     pub subvolume: String,
+    /// Name of the pool that contains this snapshot.
     pub pool: String,
+    /// Absolute filesystem path to the snapshot directory.
     pub path: String,
+    /// Whether this snapshot is read-only.
     pub read_only: bool,
     /// Loop device path if this snapshot's vol.img is currently attached (block snapshots only).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,12 +133,18 @@ fn state_dir() -> StateDir {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSubvolumeRequest {
+    /// Name of the pool to create the subvolume in.
     pub pool: String,
+    /// Name for the new subvolume.
     pub name: String,
+    /// Whether to create a filesystem or block-backed subvolume (default: filesystem).
     #[serde(default = "default_type")]
     pub subvolume_type: SubvolumeType,
+    /// Size of the block backing image in bytes (required for block subvolumes).
     pub volsize_bytes: Option<u64>,
+    /// Compression algorithm to set on the subvolume (e.g. `lz4`, `zstd`).
     pub compression: Option<String>,
+    /// Optional description for the subvolume.
     pub comments: Option<String>,
 }
 
@@ -133,43 +154,61 @@ fn default_type() -> SubvolumeType {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSubvolumeRequest {
+    /// Name of the pool containing the subvolume.
     pub pool: String,
+    /// Name of the subvolume to delete.
     pub name: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateSnapshotRequest {
+    /// Name of the pool containing the subvolume.
     pub pool: String,
+    /// Name of the subvolume to snapshot.
     pub subvolume: String,
+    /// Name for the new snapshot.
     pub name: String,
+    /// Whether to create a read-only snapshot (default: true).
     pub read_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeleteSnapshotRequest {
+    /// Name of the pool containing the snapshot.
     pub pool: String,
+    /// Name of the parent subvolume.
     pub subvolume: String,
+    /// Name of the snapshot to delete.
     pub name: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CloneSnapshotRequest {
+    /// Name of the pool containing the snapshot.
     pub pool: String,
+    /// Name of the parent subvolume.
     pub subvolume: String,
+    /// Name of the snapshot to clone.
     pub snapshot: String,
+    /// Name for the new writable subvolume created from the snapshot.
     pub new_name: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ResizeSubvolumeRequest {
+    /// Name of the pool containing the subvolume.
     pub pool: String,
+    /// Name of the block subvolume to resize.
     pub name: String,
+    /// New size of the backing sparse image in bytes.
     pub volsize_bytes: u64,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetPropertiesRequest {
+    /// Name of the pool containing the subvolume.
     pub pool: String,
+    /// Name of the subvolume to update.
     pub name: String,
     /// Key-value pairs to set (merged with existing properties).
     pub properties: HashMap<String, String>,
@@ -177,7 +216,9 @@ pub struct SetPropertiesRequest {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RemovePropertiesRequest {
+    /// Name of the pool containing the subvolume.
     pub pool: String,
+    /// Name of the subvolume to update.
     pub name: String,
     /// Property keys to remove.
     pub keys: Vec<String>,
@@ -187,7 +228,9 @@ pub struct RemovePropertiesRequest {
 pub struct FindByPropertyRequest {
     /// Optional pool to restrict the search to.
     pub pool: Option<String>,
+    /// xattr property key to match against.
     pub key: String,
+    /// Value that the property key must equal.
     pub value: String,
 }
 

@@ -16,8 +16,11 @@ pub enum Role { Admin, ReadOnly, Operator }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct Session {
+    /// Session or API token value.
     pub token: String,
+    /// Username of the authenticated user.
     pub username: String,
+    /// Role assigned to this session.
     pub role: Role,
     /// If set, token can only see subvolumes in this pool.
     pub pool: Option<String>,
@@ -25,12 +28,17 @@ pub struct Session {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ApiToken {
+    /// Unique token identifier.
     pub id: String,
+    /// Human-readable token name.
     pub name: String,
     /// The actual token value — shown only once on creation.
     pub token: String,
+    /// Role assigned to this token.
     pub role: Role,
+    /// Unix timestamp (seconds) when the token was created.
     pub created_at: u64,
+    /// Pool this token is scoped to, if any.
     pub pool: Option<String>,
     /// Unix timestamp after which the token is rejected. None = never expires.
     pub expires_at: Option<u64>,
@@ -38,30 +46,43 @@ pub struct ApiToken {
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ApiTokenInfo {
+    /// Unique token identifier.
     pub id: String,
+    /// Human-readable token name.
     pub name: String,
+    /// Role assigned to this token.
     pub role: Role,
+    /// Unix timestamp (seconds) when the token was created.
     pub created_at: u64,
+    /// Pool this token is scoped to, if any.
     pub pool: Option<String>,
+    /// Unix timestamp after which the token is rejected. None = never expires.
     pub expires_at: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct UserInfo {
+    /// Login username.
     pub username: String,
+    /// Role assigned to this user.
     pub role: Role,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct CreateUserRequest {
+    /// Login username for the new user.
     pub username: String,
+    /// Initial password for the new user.
     pub password: String,
+    /// Role to assign to the new user.
     pub role: Role,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ChangePasswordRequest {
+    /// Username of the account to update.
     pub username: String,
+    /// New password to set.
     pub new_password: String,
 }
 

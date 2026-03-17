@@ -29,10 +29,15 @@ pub enum NfsError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct NfsShare {
+    /// Unique share identifier (UUID).
     pub id: String,
+    /// Absolute filesystem path being exported (must be under `/storage/`).
     pub path: String,
+    /// Optional description of the share.
     pub comment: Option<String>,
+    /// List of allowed clients and their export options.
     pub clients: Vec<NfsClient>,
+    /// Whether the share is currently active in `/etc/exports.d/nasty.exports`.
     pub enabled: bool,
 }
 
@@ -52,17 +57,25 @@ pub struct NfsClient {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateNfsShareRequest {
+    /// Absolute path to export (must exist and be under `/storage/`).
     pub path: String,
+    /// Optional description.
     pub comment: Option<String>,
+    /// Allowed clients and their export options.
     pub clients: Vec<NfsClient>,
+    /// Whether to enable the share immediately (default: true).
     pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdateNfsShareRequest {
+    /// ID of the share to update.
     pub id: String,
+    /// New description (optional).
     pub comment: Option<String>,
+    /// Replacement client list (optional; replaces entire list when provided).
     pub clients: Option<Vec<NfsClient>>,
+    /// Enable or disable the share (optional).
     pub enabled: Option<bool>,
 }
 

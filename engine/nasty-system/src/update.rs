@@ -59,8 +59,11 @@ pub enum UpdateError {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct UpdateInfo {
+    /// Currently installed version (short commit SHA or `dev`).
     pub current_version: String,
+    /// Latest upstream version, if the check has been performed.
     pub latest_version: Option<String>,
+    /// Whether a newer version is available. None if the check has not been run yet.
     pub update_available: Option<bool>,
 }
 

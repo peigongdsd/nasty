@@ -78,9 +78,9 @@ Return the current session's username and role.
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `pool` | string | no | If set, token can only see subvolumes in this pool. |
-| `role` | `Role` | yes |  |
-| `token` | string | yes |  |
-| `username` | string | yes |  |
+| `role` | `Role` | yes | Role assigned to this session. |
+| `token` | string | yes | Session or API token value. |
+| `username` | string | yes | Username of the authenticated user. |
 
 
 ### `auth.logout`
@@ -100,8 +100,8 @@ Change a user's password. Admins can change any user; users can change their own
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `new_password` | string | yes |  |
-| `username` | string | yes |  |
+| `new_password` | string | yes | New password to set. |
+| `username` | string | yes | Username of the account to update. |
 
 
 ### `auth.create_user`
@@ -114,9 +114,9 @@ Create a new local user account.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `password` | string | yes |  |
-| `role` | `Role` | yes |  |
-| `username` | string | yes |  |
+| `password` | string | yes | Initial password for the new user. |
+| `role` | `Role` | yes | Role to assign to the new user. |
+| `username` | string | yes | Login username for the new user. |
 
 
 ### `auth.delete_user`
@@ -162,12 +162,12 @@ Create a long-lived API token. Returns the token value — shown only once.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `created_at` | integer | yes |  |
+| `created_at` | integer | yes | Unix timestamp (seconds) when the token was created. |
 | `expires_at` | integer | no | Unix timestamp after which the token is rejected. None = never expires. |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `pool` | string | no |  |
-| `role` | `Role` | yes |  |
+| `id` | string | yes | Unique token identifier. |
+| `name` | string | yes | Human-readable token name. |
+| `pool` | string | no | Pool this token is scoped to, if any. |
+| `role` | `Role` | yes | Role assigned to this token. |
 | `token` | string | yes | The actual token value — shown only once on creation. |
 
 
@@ -195,13 +195,13 @@ Return hostname, OS version, uptime, bcachefs-tools version info.
 | `bcachefs_commit` | string | no | Short (12-char) commit SHA of the pinned bcachefs-tools in flake.lock |
 | `bcachefs_is_custom` | boolean | yes | True when the user has overridden the default bcachefs-tools version |
 | `bcachefs_pinned_ref` | string | no | The ref stored in the state file: tag name (e.g. "v1.37.1") or short SHA |
-| `bcachefs_version` | string | yes |  |
-| `hostname` | string | yes |  |
-| `kernel` | string | yes |  |
-| `ntp_synced` | boolean | yes |  |
-| `timezone` | string | yes |  |
-| `uptime_seconds` | integer | yes |  |
-| `version` | string | yes |  |
+| `bcachefs_version` | string | yes | Output of `bcachefs version` (first line). |
+| `hostname` | string | yes | System hostname. |
+| `kernel` | string | yes | Running Linux kernel version string. |
+| `ntp_synced` | boolean | yes | Whether the system clock is NTP-synchronized. |
+| `timezone` | string | yes | IANA timezone string (e.g. `America/New_York`). |
+| `uptime_seconds` | integer | yes | System uptime in seconds. |
+| `version` | string | yes | NASty engine version string. |
 
 
 ### `system.health`
@@ -214,8 +214,8 @@ Return health status of all systemd services.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `services` | `ServiceStatus`[] | yes |  |
-| `status` | string | yes |  |
+| `services` | `ServiceStatus`[] | yes | Status of individual systemd services. |
+| `status` | string | yes | Overall health status string (e.g. `ok`, `degraded`). |
 
 
 ### `system.stats`
@@ -228,10 +228,10 @@ Return current CPU, memory, network interface, and disk I/O statistics.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `cpu` | `CpuStats` | yes |  |
-| `disk_io` | `DiskIoStats`[] | yes |  |
-| `memory` | `MemoryStats` | yes |  |
-| `network` | `NetIfStats`[] | yes |  |
+| `cpu` | `CpuStats` | yes | CPU core count and load averages. |
+| `disk_io` | `DiskIoStats`[] | yes | Per-disk I/O statistics. |
+| `memory` | `MemoryStats` | yes | Memory and swap usage. |
+| `network` | `NetIfStats`[] | yes | Per-interface network statistics. |
 
 
 ### `system.disks`
@@ -282,9 +282,9 @@ Return current version and latest available version.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `current_version` | string | yes |  |
-| `latest_version` | string | no |  |
-| `update_available` | boolean | no |  |
+| `current_version` | string | yes | Currently installed version (short commit SHA or `dev`). |
+| `latest_version` | string | no | Latest upstream version, if the check has been performed. |
+| `update_available` | boolean | no | Whether a newer version is available. None if the check has not been run yet. |
 
 
 ### `system.update.check`
@@ -297,9 +297,9 @@ Check for available updates against the upstream repository.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `current_version` | string | yes |  |
-| `latest_version` | string | no |  |
-| `update_available` | boolean | no |  |
+| `current_version` | string | yes | Currently installed version (short commit SHA or `dev`). |
+| `latest_version` | string | no | Latest upstream version, if the check has been performed. |
+| `update_available` | boolean | no | Whether a newer version is available. None if the check has not been run yet. |
 
 
 ### `system.update.apply`
@@ -393,9 +393,9 @@ Return current system settings.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clock_24h` | boolean | no |  |
-| `hostname` | string | no |  |
-| `timezone` | string | no |  |
+| `clock_24h` | boolean | no | Whether to display clocks in 24-hour format. |
+| `hostname` | string | no | System hostname. |
+| `timezone` | string | no | IANA timezone string applied to the system (e.g. `UTC`, `America/New_York`). |
 
 
 ### `system.settings.update`
@@ -408,17 +408,17 @@ Update system settings. Only provided fields are changed.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clock_24h` | boolean | no |  |
-| `hostname` | string | no |  |
-| `timezone` | string | no |  |
+| `clock_24h` | boolean | no | Whether to use 24-hour clock display (optional). |
+| `hostname` | string | no | New hostname to set (optional). |
+| `timezone` | string | no | New IANA timezone to apply (optional). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clock_24h` | boolean | no |  |
-| `hostname` | string | no |  |
-| `timezone` | string | no |  |
+| `clock_24h` | boolean | no | Whether to display clocks in 24-hour format. |
+| `hostname` | string | no | System hostname. |
+| `timezone` | string | no | IANA timezone string applied to the system (e.g. `UTC`, `America/New_York`). |
 
 
 ### `system.settings.timezones`
@@ -444,14 +444,14 @@ Return current network configuration including live interface state.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `address` | string | no |  |
-| `dhcp` | boolean | yes |  |
-| `gateway` | string | no |  |
-| `interface` | string | no |  |
-| `live_addresses` | string[] | no |  |
-| `live_gateway` | string | no |  |
-| `nameservers` | string[] | no |  |
-| `prefix_length` | integer | no |  |
+| `address` | string | no | Static IPv4 address (required when `dhcp` is false). |
+| `dhcp` | boolean | yes | Whether DHCP is enabled; if false, static address/gateway are used. |
+| `gateway` | string | no | Default gateway IPv4 address (required when `dhcp` is false). |
+| `interface` | string | no | Network interface name to configure (e.g. `eth0`). Auto-detected if empty. |
+| `live_addresses` | string[] | no | Currently assigned addresses on the interface in CIDR notation (read-only). |
+| `live_gateway` | string | no | Currently active default gateway (read-only). |
+| `nameservers` | string[] | no | DNS nameserver addresses written to `/etc/resolv.conf`. |
+| `prefix_length` | integer | no | Subnet prefix length, e.g. `24` for a /24 (required when `dhcp` is false). |
 
 
 ### `system.network.update`
@@ -464,14 +464,14 @@ Update network configuration (DHCP or static). Applied immediately without reboo
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `address` | string | no |  |
-| `dhcp` | boolean | yes |  |
-| `gateway` | string | no |  |
-| `interface` | string | no |  |
-| `live_addresses` | string[] | no |  |
-| `live_gateway` | string | no |  |
-| `nameservers` | string[] | no |  |
-| `prefix_length` | integer | no |  |
+| `address` | string | no | Static IPv4 address (required when `dhcp` is false). |
+| `dhcp` | boolean | yes | Whether DHCP is enabled; if false, static address/gateway are used. |
+| `gateway` | string | no | Default gateway IPv4 address (required when `dhcp` is false). |
+| `interface` | string | no | Network interface name to configure (e.g. `eth0`). Auto-detected if empty. |
+| `live_addresses` | string[] | no | Currently assigned addresses on the interface in CIDR notation (read-only). |
+| `live_gateway` | string | no | Currently active default gateway (read-only). |
+| `nameservers` | string[] | no | DNS nameserver addresses written to `/etc/resolv.conf`. |
+| `prefix_length` | integer | no | Subnet prefix length, e.g. `24` for a /24 (required when `dhcp` is false). |
 
 
 ## Protocols & Services
@@ -499,11 +499,11 @@ Enable a protocol service. Available names: `nfs`, `smb`, `iscsi`, `nvmeof`, `ss
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `display_name` | string | yes |  |
-| `enabled` | boolean | yes |  |
-| `name` | string | yes |  |
-| `running` | boolean | yes |  |
-| `system_service` | boolean | yes |  |
+| `display_name` | string | yes | Human-readable display name (e.g. `NFS`, `SMB`, `iSCSI`). |
+| `enabled` | boolean | yes | Whether the protocol is enabled in persistent state. |
+| `name` | string | yes | Machine-readable protocol identifier (e.g. `nfs`, `smb`, `iscsi`). |
+| `running` | boolean | yes | Whether the protocol's systemd service is currently active. |
+| `system_service` | boolean | yes | Whether this is a system-level service (SSH, Avahi, SMART) rather than a storage protocol. |
 
 
 ### `service.protocol.disable`
@@ -518,11 +518,11 @@ Disable a protocol service.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `display_name` | string | yes |  |
-| `enabled` | boolean | yes |  |
-| `name` | string | yes |  |
-| `running` | boolean | yes |  |
-| `system_service` | boolean | yes |  |
+| `display_name` | string | yes | Human-readable display name (e.g. `NFS`, `SMB`, `iSCSI`). |
+| `enabled` | boolean | yes | Whether the protocol is enabled in persistent state. |
+| `name` | string | yes | Machine-readable protocol identifier (e.g. `nfs`, `smb`, `iscsi`). |
+| `running` | boolean | yes | Whether the protocol's systemd service is currently active. |
+| `system_service` | boolean | yes | Whether this is a system-level service (SSH, Avahi, SMART) rather than a storage protocol. |
 
 
 ## Alert Rules
@@ -548,25 +548,25 @@ Create a new alert rule.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `condition` | `AlertCondition` | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `metric` | `AlertMetric` | yes |  |
-| `name` | string | yes |  |
-| `severity` | `AlertSeverity` | yes |  |
-| `threshold` | number | yes |  |
+| `condition` | `AlertCondition` | yes | Comparison operator applied between the metric value and the threshold. |
+| `enabled` | boolean | yes | Whether the rule is active and evaluated. |
+| `id` | string | yes | Unique rule identifier. |
+| `metric` | `AlertMetric` | yes | The system metric this rule monitors. |
+| `name` | string | yes | Human-readable rule name. |
+| `severity` | `AlertSeverity` | yes | Severity level when the rule fires. |
+| `threshold` | number | yes | Threshold value the metric is compared against. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `condition` | `AlertCondition` | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `metric` | `AlertMetric` | yes |  |
-| `name` | string | yes |  |
-| `severity` | `AlertSeverity` | yes |  |
-| `threshold` | number | yes |  |
+| `condition` | `AlertCondition` | yes | Comparison operator applied between the metric value and the threshold. |
+| `enabled` | boolean | yes | Whether the rule is active and evaluated. |
+| `id` | string | yes | Unique rule identifier. |
+| `metric` | `AlertMetric` | yes | The system metric this rule monitors. |
+| `name` | string | yes | Human-readable rule name. |
+| `severity` | `AlertSeverity` | yes | Severity level when the rule fires. |
+| `threshold` | number | yes | Threshold value the metric is compared against. |
 
 
 ### `alert.rules.update`
@@ -579,23 +579,23 @@ Update an existing alert rule. Only provided fields are changed.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `enabled` | boolean | no |  |
-| `id` | string | yes |  |
-| `name` | string | no |  |
-| `severity` | `AlertSeverity` \| null | no |  |
-| `threshold` | number | no |  |
+| `enabled` | boolean | no | Enable or disable the rule (optional). |
+| `id` | string | yes | ID of the rule to update. |
+| `name` | string | no | New name for the rule (optional). |
+| `severity` | `AlertSeverity` \| null | no | New severity level (optional). |
+| `threshold` | number | no | New threshold value (optional). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `condition` | `AlertCondition` | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `metric` | `AlertMetric` | yes |  |
-| `name` | string | yes |  |
-| `severity` | `AlertSeverity` | yes |  |
-| `threshold` | number | yes |  |
+| `condition` | `AlertCondition` | yes | Comparison operator applied between the metric value and the threshold. |
+| `enabled` | boolean | yes | Whether the rule is active and evaluated. |
+| `id` | string | yes | Unique rule identifier. |
+| `metric` | `AlertMetric` | yes | The system metric this rule monitors. |
+| `name` | string | yes | Human-readable rule name. |
+| `severity` | `AlertSeverity` | yes | Severity level when the rule fires. |
+| `threshold` | number | yes | Threshold value the metric is compared against. |
 
 
 ### `alert.rules.delete`
@@ -654,15 +654,15 @@ Get a single pool by name.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.create`
@@ -675,31 +675,31 @@ Format and mount a new bcachefs pool.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `background_target` | string | no |  |
-| `compression` | string | no |  |
-| `devices` | `DeviceSpec`[] | yes |  |
-| `encryption` | boolean | no |  |
-| `erasure_code` | boolean | no |  |
+| `background_target` | string | no | Target label for background migration. |
+| `compression` | string | no | Inline compression algorithm (e.g. `lz4`, `zstd`, `none`). |
+| `devices` | `DeviceSpec`[] | yes | Devices to include in the pool. |
+| `encryption` | boolean | no | Whether to enable encryption at format time. |
+| `erasure_code` | boolean | no | Whether to enable erasure coding. |
 | `foreground_target` | string | no | Tiering targets set at format time. |
 | `label` | string | no | Filesystem-wide label (used as default when no per-device labels set). |
-| `metadata_target` | string | no |  |
-| `name` | string | yes |  |
-| `promote_target` | string | no |  |
-| `replicas` | integer | no |  |
+| `metadata_target` | string | no | Target label for metadata placement. |
+| `name` | string | yes | Name for the new pool; becomes the mount point directory under `/storage/`. |
+| `promote_target` | string | no | Target label for data promotion (cache tier). |
+| `replicas` | integer | no | Number of data replicas (default 1). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.destroy`
@@ -712,8 +712,8 @@ Unmount and unregister a pool. Does not wipe the devices.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `force` | boolean | no |  |
-| `name` | string | yes |  |
+| `force` | boolean | no | If true, wipe bcachefs superblocks from all member devices after unmounting. |
+| `name` | string | yes | Name of the pool to destroy. |
 
 
 ### `pool.mount`
@@ -728,15 +728,15 @@ Mount a known pool.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.unmount`
@@ -758,29 +758,29 @@ Update runtime-mutable bcachefs filesystem options (written to sysfs).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `background_compression` | string | no |  |
-| `background_target` | string | no |  |
-| `compression` | string | no |  |
-| `erasure_code` | boolean | no |  |
-| `error_action` | string | no |  |
-| `foreground_target` | string | no |  |
-| `metadata_target` | string | no |  |
-| `name` | string | yes |  |
-| `promote_target` | string | no |  |
+| `background_compression` | string | no | Background recompression algorithm. |
+| `background_target` | string | no | Target label for background migration. |
+| `compression` | string | no | Inline compression algorithm (e.g. `lz4`, `zstd`, `none`). |
+| `erasure_code` | boolean | no | Whether to enable erasure coding. |
+| `error_action` | string | no | Action on unrecoverable read errors (`continue`, `ro`, `panic`). |
+| `foreground_target` | string | no | Target label for foreground (new) writes. |
+| `metadata_target` | string | no | Target label for metadata placement. |
+| `name` | string | yes | Name of the pool to update. |
+| `promote_target` | string | no | Target label for data promotion (cache tier). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.usage`
@@ -823,8 +823,8 @@ Return current scrub status.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `raw` | string | yes |  |
-| `running` | boolean | yes |  |
+| `raw` | string | yes | Raw text output from the bcachefs scrub status command. |
+| `running` | boolean | yes | Whether a scrub is currently in progress. |
 
 
 ### `pool.reconcile.status`
@@ -839,7 +839,7 @@ Return bcachefs background work (reconcile) status.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `raw` | string | yes |  |
+| `raw` | string | yes | Raw text output from the bcachefs reconcile status command. |
 
 
 ### `bcachefs.usage`
@@ -873,22 +873,22 @@ Add a device to an existing mounted pool.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | `DeviceSpec` | yes |  |
-| `pool` | string | yes |  |
+| `device` | `DeviceSpec` | yes | Device to add, with optional label and durability settings. |
+| `pool` | string | yes | Name of the pool to add the device to. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.device.remove`
@@ -901,22 +901,22 @@ Remove a device from a pool. The device should be fully evacuated first.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.device.evacuate`
@@ -929,8 +929,8 @@ Evacuate all data from a device to the remaining pool members. Long-running — 
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 
 
 ### `pool.device.set_state`
@@ -943,23 +943,23 @@ Set persistent device state (`rw`, `ro`, `failed`, `spare`).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 | `state` | string | yes | One of: rw, ro, failed, spare |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.device.set_label`
@@ -972,23 +972,23 @@ Set or update the hierarchical label on a device in a mounted pool. Written live
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `label` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `label` | string | yes | New hierarchical label (e.g. `ssd.fast`, `hdd.archive`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.device.online`
@@ -1001,22 +1001,22 @@ Bring a device back online.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ### `pool.device.offline`
@@ -1029,22 +1029,22 @@ Take a device offline.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device` | string | yes |  |
-| `pool` | string | yes |  |
+| `device` | string | yes | Absolute path of the block device (e.g. `/dev/sdb`). |
+| `pool` | string | yes | Name of the pool containing the device. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 
 ## Subvolumes
@@ -1085,19 +1085,19 @@ Get a single subvolume.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.create`
@@ -1110,30 +1110,30 @@ Create a new bcachefs subvolume (filesystem or block-backed).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
-| `subvolume_type` | `SubvolumeType` | no |  |
-| `volsize_bytes` | integer | no |  |
+| `comments` | string | no | Optional description for the subvolume. |
+| `compression` | string | no | Compression algorithm to set on the subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Name for the new subvolume. |
+| `pool` | string | yes | Name of the pool to create the subvolume in. |
+| `subvolume_type` | `SubvolumeType` | no | Whether to create a filesystem or block-backed subvolume (default: filesystem). |
+| `volsize_bytes` | integer | no | Size of the block backing image in bytes (required for block subvolumes). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.delete`
@@ -1146,8 +1146,8 @@ Delete a subvolume and all its snapshots.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
+| `name` | string | yes | Name of the subvolume to delete. |
+| `pool` | string | yes | Name of the pool containing the subvolume. |
 
 
 ### `subvolume.attach`
@@ -1162,19 +1162,19 @@ Attach the loop device for a block subvolume (mounts `vol.img` via losetup).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.detach`
@@ -1189,19 +1189,19 @@ Detach the loop device for a block subvolume.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.resize`
@@ -1214,27 +1214,27 @@ Resize a block subvolume's backing image.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
-| `volsize_bytes` | integer | yes |  |
+| `name` | string | yes | Name of the block subvolume to resize. |
+| `pool` | string | yes | Name of the pool containing the subvolume. |
+| `volsize_bytes` | integer | yes | New size of the backing sparse image in bytes. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.set_properties`
@@ -1247,27 +1247,27 @@ Set arbitrary key-value metadata on a subvolume (stored as POSIX xattrs in the `
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
+| `name` | string | yes | Name of the subvolume to update. |
+| `pool` | string | yes | Name of the pool containing the subvolume. |
 | `properties` | object | yes | Key-value pairs to set (merged with existing properties). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.remove_properties`
@@ -1281,26 +1281,26 @@ Remove specific metadata keys from a subvolume.
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `keys` | string[] | yes | Property keys to remove. |
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
+| `name` | string | yes | Name of the subvolume to update. |
+| `pool` | string | yes | Name of the pool containing the subvolume. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ### `subvolume.find_by_property`
@@ -1313,9 +1313,9 @@ Find subvolumes matching a specific metadata key-value pair.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `key` | string | yes |  |
+| `key` | string | yes | xattr property key to match against. |
 | `pool` | string | no | Optional pool to restrict the search to. |
-| `value` | string | yes |  |
+| `value` | string | yes | Value that the property key must equal. |
 
 **Returns:**
 
@@ -1347,21 +1347,21 @@ Create a snapshot of a subvolume.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
-| `read_only` | boolean | no |  |
-| `subvolume` | string | yes |  |
+| `name` | string | yes | Name for the new snapshot. |
+| `pool` | string | yes | Name of the pool containing the subvolume. |
+| `read_only` | boolean | no | Whether to create a read-only snapshot (default: true). |
+| `subvolume` | string | yes | Name of the subvolume to snapshot. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `block_device` | string | no | Loop device path if this snapshot's vol.img is currently attached (block snapshots only). |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `subvolume` | string | yes |  |
+| `name` | string | yes | Snapshot name (unique within the parent subvolume). |
+| `path` | string | yes | Absolute filesystem path to the snapshot directory. |
+| `pool` | string | yes | Name of the pool that contains this snapshot. |
+| `read_only` | boolean | yes | Whether this snapshot is read-only. |
+| `subvolume` | string | yes | Name of the parent subvolume. |
 
 
 ### `snapshot.delete`
@@ -1374,9 +1374,9 @@ Delete a snapshot.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `pool` | string | yes |  |
-| `subvolume` | string | yes |  |
+| `name` | string | yes | Name of the snapshot to delete. |
+| `pool` | string | yes | Name of the pool containing the snapshot. |
+| `subvolume` | string | yes | Name of the parent subvolume. |
 
 
 ### `snapshot.clone`
@@ -1389,28 +1389,28 @@ Clone a snapshot into a new independent subvolume.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `new_name` | string | yes |  |
-| `pool` | string | yes |  |
-| `snapshot` | string | yes |  |
-| `subvolume` | string | yes |  |
+| `new_name` | string | yes | Name for the new writable subvolume created from the snapshot. |
+| `pool` | string | yes | Name of the pool containing the snapshot. |
+| `snapshot` | string | yes | Name of the snapshot to clone. |
+| `subvolume` | string | yes | Name of the parent subvolume. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 
 ## NFS Shares
@@ -1438,11 +1438,11 @@ Get an NFS share by ID.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `path` | string | yes |  |
+| `clients` | `NfsClient`[] | yes | List of allowed clients and their export options. |
+| `comment` | string | no | Optional description of the share. |
+| `enabled` | boolean | yes | Whether the share is currently active in `/etc/exports.d/nasty.exports`. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `path` | string | yes | Absolute filesystem path being exported (must be under `/storage/`). |
 
 
 ### `share.nfs.create`
@@ -1455,20 +1455,20 @@ Create an NFS share.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | no |  |
-| `path` | string | yes |  |
+| `clients` | `NfsClient`[] | yes | Allowed clients and their export options. |
+| `comment` | string | no | Optional description. |
+| `enabled` | boolean | no | Whether to enable the share immediately (default: true). |
+| `path` | string | yes | Absolute path to export (must exist and be under `/storage/`). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `path` | string | yes |  |
+| `clients` | `NfsClient`[] | yes | List of allowed clients and their export options. |
+| `comment` | string | no | Optional description of the share. |
+| `enabled` | boolean | yes | Whether the share is currently active in `/etc/exports.d/nasty.exports`. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `path` | string | yes | Absolute filesystem path being exported (must be under `/storage/`). |
 
 
 ### `share.nfs.update`
@@ -1481,20 +1481,20 @@ Update an NFS share.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | no |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | no |  |
-| `id` | string | yes |  |
+| `clients` | `NfsClient`[] | no | Replacement client list (optional; replaces entire list when provided). |
+| `comment` | string | no | New description (optional). |
+| `enabled` | boolean | no | Enable or disable the share (optional). |
+| `id` | string | yes | ID of the share to update. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `path` | string | yes |  |
+| `clients` | `NfsClient`[] | yes | List of allowed clients and their export options. |
+| `comment` | string | no | Optional description of the share. |
+| `enabled` | boolean | yes | Whether the share is currently active in `/etc/exports.d/nasty.exports`. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `path` | string | yes | Absolute filesystem path being exported (must be under `/storage/`). |
 
 
 ### `share.nfs.delete`
@@ -1531,16 +1531,16 @@ Get an SMB share by ID.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `extra_params` | object | yes |  |
-| `guest_ok` | boolean | yes |  |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `valid_users` | string[] | yes |  |
+| `browseable` | boolean | yes | Whether the share is visible in network browse lists. |
+| `comment` | string | no | Optional description shown in share listings. |
+| `enabled` | boolean | yes | Whether the share is active in `smb.nasty.conf`. |
+| `extra_params` | object | yes | Additional raw Samba parameters written to the share section. |
+| `guest_ok` | boolean | yes | Whether unauthenticated guest access is allowed. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `name` | string | yes | Samba share name used in `\\server\name` UNC paths. |
+| `path` | string | yes | Absolute filesystem path being shared (must be under `/storage/`). |
+| `read_only` | boolean | yes | Whether the share is read-only. |
+| `valid_users` | string[] | yes | Usernames allowed to connect (empty means no restriction beyond authentication). |
 
 
 ### `share.smb.create`
@@ -1553,30 +1553,30 @@ Create an SMB share.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | no |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | no |  |
-| `extra_params` | object | no |  |
-| `guest_ok` | boolean | no |  |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `read_only` | boolean | no |  |
-| `valid_users` | string[] | no |  |
+| `browseable` | boolean | no | Whether the share appears in browse lists (default: true). |
+| `comment` | string | no | Optional description. |
+| `enabled` | boolean | no | Whether to enable the share immediately (default: true). |
+| `extra_params` | object | no | Additional raw Samba parameters for this share section. |
+| `guest_ok` | boolean | no | Whether guest access is allowed (default: false). |
+| `name` | string | yes | Samba share name (1–80 characters, no special characters). |
+| `path` | string | yes | Absolute path to share (must exist and be under `/storage/`). |
+| `read_only` | boolean | no | Whether the share is read-only (default: false). |
+| `valid_users` | string[] | no | Allowed usernames; empty means no per-user restriction. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `extra_params` | object | yes |  |
-| `guest_ok` | boolean | yes |  |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `valid_users` | string[] | yes |  |
+| `browseable` | boolean | yes | Whether the share is visible in network browse lists. |
+| `comment` | string | no | Optional description shown in share listings. |
+| `enabled` | boolean | yes | Whether the share is active in `smb.nasty.conf`. |
+| `extra_params` | object | yes | Additional raw Samba parameters written to the share section. |
+| `guest_ok` | boolean | yes | Whether unauthenticated guest access is allowed. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `name` | string | yes | Samba share name used in `\\server\name` UNC paths. |
+| `path` | string | yes | Absolute filesystem path being shared (must be under `/storage/`). |
+| `read_only` | boolean | yes | Whether the share is read-only. |
+| `valid_users` | string[] | yes | Usernames allowed to connect (empty means no restriction beyond authentication). |
 
 
 ### `share.smb.update`
@@ -1589,30 +1589,30 @@ Update an SMB share.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | no |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | no |  |
-| `extra_params` | object | no |  |
-| `guest_ok` | boolean | no |  |
-| `id` | string | yes |  |
-| `name` | string | no |  |
-| `read_only` | boolean | no |  |
-| `valid_users` | string[] | no |  |
+| `browseable` | boolean | no | Update browseable flag (optional). |
+| `comment` | string | no | New description (optional). |
+| `enabled` | boolean | no | Enable or disable the share (optional). |
+| `extra_params` | object | no | Replacement extra Samba parameters (optional). |
+| `guest_ok` | boolean | no | Update guest access flag (optional). |
+| `id` | string | yes | ID of the share to update. |
+| `name` | string | no | New share name (optional; must be unique). |
+| `read_only` | boolean | no | Update read-only flag (optional). |
+| `valid_users` | string[] | no | Replacement allowed-users list (optional). |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `extra_params` | object | yes |  |
-| `guest_ok` | boolean | yes |  |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `valid_users` | string[] | yes |  |
+| `browseable` | boolean | yes | Whether the share is visible in network browse lists. |
+| `comment` | string | no | Optional description shown in share listings. |
+| `enabled` | boolean | yes | Whether the share is active in `smb.nasty.conf`. |
+| `extra_params` | object | yes | Additional raw Samba parameters written to the share section. |
+| `guest_ok` | boolean | yes | Whether unauthenticated guest access is allowed. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `name` | string | yes | Samba share name used in `\\server\name` UNC paths. |
+| `path` | string | yes | Absolute filesystem path being shared (must be under `/storage/`). |
+| `read_only` | boolean | yes | Whether the share is read-only. |
+| `valid_users` | string[] | yes | Usernames allowed to connect (empty means no restriction beyond authentication). |
 
 
 ### `share.smb.delete`
@@ -1649,13 +1649,13 @@ Get an iSCSI target by ID.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.create_quick`
@@ -1675,13 +1675,13 @@ Create an iSCSI target + LUN in one call.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.create`
@@ -1694,7 +1694,7 @@ Create an iSCSI target (no LUNs). Add LUNs separately.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `alias` | string | no |  |
+| `alias` | string | no | Optional human-readable alias for the target. |
 | `name` | string | yes | Short name used to generate the IQN: iqn.2137-01.com.nasty:<name> |
 | `portals` | `Portal`[] | no | Defaults to 0.0.0.0:3260 |
 
@@ -1702,13 +1702,13 @@ Create an iSCSI target (no LUNs). Add LUNs separately.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.delete`
@@ -1739,13 +1739,13 @@ Add a LUN to an iSCSI target.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.remove_lun`
@@ -1760,13 +1760,13 @@ Remove a LUN from an iSCSI target.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.add_acl`
@@ -1779,22 +1779,22 @@ Allow an iSCSI initiator IQN to connect.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `initiator_iqn` | string | yes |  |
-| `password` | string | no |  |
-| `target_id` | string | yes |  |
-| `userid` | string | no |  |
+| `initiator_iqn` | string | yes | Initiator IQN to allow. |
+| `password` | string | no | Optional CHAP password for this initiator. |
+| `target_id` | string | yes | ID of the target to add the ACL to. |
+| `userid` | string | no | Optional CHAP username for this initiator. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ### `share.iscsi.remove_acl`
@@ -1809,13 +1809,13 @@ Remove an iSCSI initiator ACL.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
 ## NVMe-oF Subsystems
@@ -1843,13 +1843,13 @@ Get an NVMe-oF subsystem by ID.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.create_quick`
@@ -1871,13 +1871,13 @@ Create an NVMe-oF subsystem + namespace + port in one call.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.create`
@@ -1890,20 +1890,20 @@ Create an NVMe-oF subsystem (empty).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | no |  |
+| `allow_any_host` | boolean | no | Whether any host NQN is permitted to connect (default: true). |
 | `name` | string | yes | Short name appended to NQN prefix |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.delete`
@@ -1926,19 +1926,19 @@ Add a namespace (block device) to a subsystem.
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `device_path` | string | yes | Block device path (e.g. /dev/sdc) |
-| `subsystem_id` | string | yes |  |
+| `subsystem_id` | string | yes | ID of the subsystem to add the namespace to. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.remove_namespace`
@@ -1953,13 +1953,13 @@ Remove a namespace from a subsystem.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.add_port`
@@ -1972,23 +1972,23 @@ Add a transport port to a subsystem.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `addr` | string | no |  |
-| `addr_family` | string | no |  |
+| `addr` | string | no | Listening IP address (default `0.0.0.0`). |
+| `addr_family` | string | no | Address family (`ipv4` or `ipv6`; default `ipv4`). |
 | `service_id` | integer | no | Port number (default 4420) |
-| `subsystem_id` | string | yes |  |
+| `subsystem_id` | string | yes | ID of the subsystem to add the port to. |
 | `transport` | string | no | "tcp" or "rdma" |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.remove_port`
@@ -2003,13 +2003,13 @@ Remove a transport port from a subsystem.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.add_host`
@@ -2022,20 +2022,20 @@ Allow a host NQN to connect to a subsystem.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `host_nqn` | string | yes |  |
-| `subsystem_id` | string | yes |  |
+| `host_nqn` | string | yes | NQN of the host to allow. |
+| `subsystem_id` | string | yes | ID of the subsystem to which to grant access. |
 
 **Returns:**
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ### `share.nvmeof.remove_host`
@@ -2050,13 +2050,13 @@ Disallow a host NQN from a subsystem.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
 ---
@@ -2068,21 +2068,21 @@ Disallow a host NQN from a subsystem.
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `initiator_iqn` | string | yes | Initiator IQN allowed to connect |
-| `password` | string | no |  |
-| `userid` | string | no |  |
+| `password` | string | no | CHAP password for this initiator (optional). |
+| `userid` | string | no | CHAP username for this initiator (optional). |
 
 ### `ActiveAlert`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `current_value` | number | yes |  |
-| `message` | string | yes |  |
-| `metric` | `AlertMetric` | yes |  |
-| `rule_id` | string | yes |  |
-| `rule_name` | string | yes |  |
-| `severity` | `AlertSeverity` | yes |  |
-| `source` | string | yes |  |
-| `threshold` | number | yes |  |
+| `current_value` | number | yes | Current metric value at the time the alert was evaluated. |
+| `message` | string | yes | Human-readable description of the alert condition. |
+| `metric` | `AlertMetric` | yes | Metric that triggered the alert. |
+| `rule_id` | string | yes | ID of the rule that triggered this alert. |
+| `rule_name` | string | yes | Name of the rule that triggered this alert. |
+| `severity` | `AlertSeverity` | yes | Severity level of the alert. |
+| `source` | string | yes | Identifier of the specific resource that triggered the alert (e.g. pool name, device path). |
+| `threshold` | number | yes | Threshold value configured in the rule. |
 
 ### `AlertCondition`
 
@@ -2096,13 +2096,13 @@ Enum: `pool_usage_percent`, `cpu_load_percent`, `memory_usage_percent`, `disk_te
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `condition` | `AlertCondition` | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `metric` | `AlertMetric` | yes |  |
-| `name` | string | yes |  |
-| `severity` | `AlertSeverity` | yes |  |
-| `threshold` | number | yes |  |
+| `condition` | `AlertCondition` | yes | Comparison operator applied between the metric value and the threshold. |
+| `enabled` | boolean | yes | Whether the rule is active and evaluated. |
+| `id` | string | yes | Unique rule identifier. |
+| `metric` | `AlertMetric` | yes | The system metric this rule monitors. |
+| `name` | string | yes | Human-readable rule name. |
+| `severity` | `AlertSeverity` | yes | Severity level when the rule fires. |
+| `threshold` | number | yes | Threshold value the metric is compared against. |
 
 ### `AlertSeverity`
 
@@ -2112,34 +2112,34 @@ Enum: `warning`, `critical`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `created_at` | integer | yes |  |
-| `expires_at` | integer | no |  |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `pool` | string | no |  |
-| `role` | `Role` | yes |  |
+| `created_at` | integer | yes | Unix timestamp (seconds) when the token was created. |
+| `expires_at` | integer | no | Unix timestamp after which the token is rejected. None = never expires. |
+| `id` | string | yes | Unique token identifier. |
+| `name` | string | yes | Human-readable token name. |
+| `pool` | string | no | Pool this token is scoped to, if any. |
+| `role` | `Role` | yes | Role assigned to this token. |
 
 ### `BlockDevice`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `dev_type` | string | yes |  |
+| `dev_type` | string | yes | lsblk device type: `disk` or `part`. |
 | `device_class` | string | yes | Device speed class: "nvme", "ssd", or "hdd". |
-| `fs_type` | string | no |  |
-| `in_use` | boolean | yes |  |
-| `mount_point` | string | no |  |
-| `path` | string | yes |  |
+| `fs_type` | string | no | Filesystem type detected on the device (e.g. `bcachefs`, `ext4`). |
+| `in_use` | boolean | yes | Whether the device is currently in use (mounted, in a pool, or has partitions in use). |
+| `mount_point` | string | no | Current mount point, if mounted. |
+| `path` | string | yes | Absolute path of the block device (e.g. `/dev/sda`). |
 | `rotational` | boolean | yes | Whether the underlying disk spins (false for NVMe/SSD, true for HDD). |
-| `size_bytes` | integer | yes |  |
+| `size_bytes` | integer | yes | Total capacity in bytes. |
 
 ### `CpuStats`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `count` | integer | yes |  |
-| `load_1` | number | yes |  |
-| `load_15` | number | yes |  |
-| `load_5` | number | yes |  |
+| `count` | integer | yes | Number of logical CPU cores. |
+| `load_1` | number | yes | 1-minute load average. |
+| `load_15` | number | yes | 15-minute load average. |
+| `load_5` | number | yes | 5-minute load average. |
 
 ### `DeviceSpec`
 
@@ -2147,54 +2147,54 @@ Enum: `warning`, `critical`
 |-------|------|:--------:|-------------|
 | `durability` | integer | no | Durability: 0 = cache, 1 = normal, 2 = hardware RAID. |
 | `label` | string | no | Hierarchical label (e.g. "ssd.fast", "hdd.archive"). |
-| `path` | string | yes |  |
+| `path` | string | yes | Absolute block device path (e.g. `/dev/sda`). |
 
 ### `DeviceUsage`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `free_bytes` | integer | yes |  |
-| `path` | string | yes |  |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
+| `free_bytes` | integer | yes | Bytes available on this device. |
+| `path` | string | yes | Block device path. |
+| `total_bytes` | integer | yes | Total capacity of this device in bytes. |
+| `used_bytes` | integer | yes | Bytes currently used on this device. |
 
 ### `DiskHealth`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `attributes` | `SmartAttribute`[] | yes |  |
-| `capacity_bytes` | integer | yes |  |
-| `device` | string | yes |  |
-| `firmware` | string | yes |  |
-| `health_passed` | boolean | yes |  |
-| `model` | string | yes |  |
-| `power_on_hours` | integer | no |  |
-| `serial` | string | yes |  |
-| `smart_status` | string | yes |  |
-| `temperature_c` | integer | no |  |
+| `attributes` | `SmartAttribute`[] | yes | ATA SMART attribute table (may be empty for NVMe drives). |
+| `capacity_bytes` | integer | yes | Total drive capacity in bytes. |
+| `device` | string | yes | Block device path (e.g. `/dev/sda`). |
+| `firmware` | string | yes | Drive firmware version string. |
+| `health_passed` | boolean | yes | Whether the SMART overall-health self-assessment test passed. |
+| `model` | string | yes | Drive model name reported by SMART. |
+| `power_on_hours` | integer | no | Accumulated powered-on time in hours. |
+| `serial` | string | yes | Drive serial number. |
+| `smart_status` | string | yes | Human-readable SMART health status (`PASSED` or `FAILED`). |
+| `temperature_c` | integer | no | Current drive temperature in degrees Celsius. |
 
 ### `DiskIoStats`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `io_in_progress` | integer | yes |  |
-| `name` | string | yes |  |
-| `read_bytes` | integer | yes |  |
-| `read_ios` | integer | yes |  |
-| `write_bytes` | integer | yes |  |
-| `write_ios` | integer | yes |  |
+| `io_in_progress` | integer | yes | Number of I/O operations currently in progress. |
+| `name` | string | yes | Kernel device name (e.g. `sda`, `nvme0n1`). |
+| `read_bytes` | integer | yes | Cumulative bytes read since boot (from `/proc/diskstats`). |
+| `read_ios` | integer | yes | Cumulative read I/O operations completed since boot. |
+| `write_bytes` | integer | yes | Cumulative bytes written since boot. |
+| `write_ios` | integer | yes | Cumulative write I/O operations completed since boot. |
 
 ### `IscsiTarget`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes |  |
-| `alias` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `iqn` | string | yes |  |
-| `luns` | `Lun`[] | yes |  |
-| `portals` | `Portal`[] | yes |  |
+| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
+| `alias` | string | no | Optional human-readable alias for the target. |
+| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
+| `id` | string | yes | Unique target identifier (UUID). |
+| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
+| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
+| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 ### `Lun`
 
@@ -2210,32 +2210,32 @@ Enum: `warning`, `critical`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `swap_total_bytes` | integer | yes |  |
-| `swap_used_bytes` | integer | yes |  |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
+| `available_bytes` | integer | yes | RAM available for allocation without swapping. |
+| `swap_total_bytes` | integer | yes | Total swap space in bytes. |
+| `swap_used_bytes` | integer | yes | Swap space currently in use. |
+| `total_bytes` | integer | yes | Total installed RAM in bytes. |
+| `used_bytes` | integer | yes | RAM currently in use (total minus available). |
 
 ### `Namespace`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `device_path` | string | yes |  |
-| `enabled` | boolean | yes |  |
-| `nsid` | integer | yes |  |
+| `device_path` | string | yes | Block device path backing this namespace (e.g. `/dev/loop0`). |
+| `enabled` | boolean | yes | Whether the namespace is enabled in configfs. |
+| `nsid` | integer | yes | Namespace ID (1-based, auto-assigned). |
 
 ### `NetIfStats`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `addresses` | string[] | yes |  |
-| `name` | string | yes |  |
-| `rx_bytes` | integer | yes |  |
-| `rx_packets` | integer | yes |  |
-| `speed_mbps` | integer | no |  |
-| `tx_bytes` | integer | yes |  |
-| `tx_packets` | integer | yes |  |
-| `up` | boolean | yes |  |
+| `addresses` | string[] | yes | IPv4 and IPv6 addresses in CIDR notation (e.g. `192.168.1.10/24`). |
+| `name` | string | yes | Network interface name (e.g. `eth0`, `ens3`). |
+| `rx_bytes` | integer | yes | Cumulative bytes received since boot. |
+| `rx_packets` | integer | yes | Cumulative packets received since boot. |
+| `speed_mbps` | integer | no | Link speed in Mbit/s (None if unavailable, e.g. virtual interfaces). |
+| `tx_bytes` | integer | yes | Cumulative bytes transmitted since boot. |
+| `tx_packets` | integer | yes | Cumulative packets transmitted since boot. |
+| `up` | boolean | yes | Whether the interface's operstate is `up`. |
 
 ### `NfsClient`
 
@@ -2248,37 +2248,37 @@ Enum: `warning`, `critical`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `clients` | `NfsClient`[] | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `path` | string | yes |  |
+| `clients` | `NfsClient`[] | yes | List of allowed clients and their export options. |
+| `comment` | string | no | Optional description of the share. |
+| `enabled` | boolean | yes | Whether the share is currently active in `/etc/exports.d/nasty.exports`. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `path` | string | yes | Absolute filesystem path being exported (must be under `/storage/`). |
 
 ### `NvmeofSubsystem`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes |  |
-| `allowed_hosts` | string[] | yes |  |
-| `enabled` | boolean | yes |  |
-| `id` | string | yes |  |
-| `namespaces` | `Namespace`[] | yes |  |
-| `nqn` | string | yes |  |
-| `ports` | `Port`[] | yes |  |
+| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
+| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
+| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
+| `id` | string | yes | Unique subsystem identifier (UUID). |
+| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
+| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
+| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 ### `Pool`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `available_bytes` | integer | yes |  |
-| `devices` | `PoolDevice`[] | yes |  |
-| `mount_point` | string | no |  |
-| `mounted` | boolean | yes |  |
-| `name` | string | yes |  |
+| `available_bytes` | integer | yes | Bytes available for writing. |
+| `devices` | `PoolDevice`[] | yes | Member devices of the pool. |
+| `mount_point` | string | no | Absolute path where the pool is mounted (e.g. `/storage/tank`). |
+| `mounted` | boolean | yes | Whether the pool is currently mounted. |
+| `name` | string | yes | Human-readable pool name, derived from the mount point directory. |
 | `options` | `PoolOptions` | yes | Filesystem-level options read from sysfs or show-super. |
-| `total_bytes` | integer | yes |  |
-| `used_bytes` | integer | yes |  |
-| `uuid` | string | yes |  |
+| `total_bytes` | integer | yes | Total usable capacity in bytes. |
+| `used_bytes` | integer | yes | Bytes currently in use. |
+| `uuid` | string | yes | bcachefs filesystem UUID. |
 
 ### `PoolDevice`
 
@@ -2298,46 +2298,46 @@ Used for target-based tiering. |
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `background_compression` | string | no |  |
-| `background_target` | string | no |  |
-| `compression` | string | no |  |
-| `data_checksum` | string | no |  |
-| `data_replicas` | integer | no |  |
-| `encrypted` | boolean | no |  |
-| `erasure_code` | boolean | no |  |
-| `error_action` | string | no |  |
-| `foreground_target` | string | no |  |
-| `metadata_checksum` | string | no |  |
-| `metadata_replicas` | integer | no |  |
-| `metadata_target` | string | no |  |
-| `promote_target` | string | no |  |
+| `background_compression` | string | no | Background recompression algorithm applied by the background worker. |
+| `background_target` | string | no | Target label for background migration writes. |
+| `compression` | string | no | Foreground (inline) compression algorithm (e.g. `lz4`, `zstd`, `none`). |
+| `data_checksum` | string | no | Checksum algorithm for data (e.g. `crc32c`, `xxhash`). |
+| `data_replicas` | integer | no | Number of replicas for data extents. |
+| `encrypted` | boolean | no | Whether the filesystem is encrypted at rest. |
+| `erasure_code` | boolean | no | Whether erasure coding (EC) is enabled on the filesystem. |
+| `error_action` | string | no | Action on unrecoverable read errors (`continue`, `ro`, `panic`). |
+| `foreground_target` | string | no | Target label for foreground (new) writes. |
+| `metadata_checksum` | string | no | Checksum algorithm for metadata. |
+| `metadata_replicas` | integer | no | Number of replicas for metadata (btree) extents. |
+| `metadata_target` | string | no | Target label for metadata placement. |
+| `promote_target` | string | no | Target label for data promotion (cache tier). |
 
 ### `Port`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `addr` | string | yes |  |
-| `addr_family` | string | yes |  |
-| `port_id` | integer | yes |  |
-| `service_id` | string | yes |  |
-| `transport` | string | yes |  |
+| `addr` | string | yes | Listening IP address (e.g. `0.0.0.0` for all interfaces). |
+| `addr_family` | string | yes | Address family (`ipv4` or `ipv6`). |
+| `port_id` | integer | yes | nvmet configfs port ID (unique across all subsystems on this host). |
+| `service_id` | string | yes | TCP/RDMA port number as a string (default NVMe-oF port is `4420`). |
+| `transport` | string | yes | Transport type (e.g. `tcp`, `rdma`). |
 
 ### `Portal`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `ip` | string | yes |  |
-| `port` | integer | yes |  |
+| `ip` | string | yes | IP address the portal listens on (use `0.0.0.0` for all interfaces). |
+| `port` | integer | yes | TCP port number (default iSCSI port is 3260). |
 
 ### `ProtocolStatus`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `display_name` | string | yes |  |
-| `enabled` | boolean | yes |  |
-| `name` | string | yes |  |
-| `running` | boolean | yes |  |
-| `system_service` | boolean | yes |  |
+| `display_name` | string | yes | Human-readable display name (e.g. `NFS`, `SMB`, `iSCSI`). |
+| `enabled` | boolean | yes | Whether the protocol is enabled in persistent state. |
+| `name` | string | yes | Machine-readable protocol identifier (e.g. `nfs`, `smb`, `iscsi`). |
+| `running` | boolean | yes | Whether the protocol's systemd service is currently active. |
+| `system_service` | boolean | yes | Whether this is a system-level service (SSH, Avahi, SMART) rather than a storage protocol. |
 
 ### `Role`
 
@@ -2347,64 +2347,64 @@ Enum: `admin`, `readonly`, `operator`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `name` | string | yes |  |
-| `running` | boolean | yes |  |
+| `name` | string | yes | systemd service name. |
+| `running` | boolean | yes | Whether the service is currently active/running. |
 
 ### `SmartAttribute`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `failing` | boolean | yes |  |
-| `id` | integer | yes |  |
-| `name` | string | yes |  |
-| `raw_value` | integer | yes |  |
-| `threshold` | integer | yes |  |
-| `value` | integer | yes |  |
-| `worst` | integer | yes |  |
+| `failing` | boolean | yes | Whether this attribute is currently at or below its failure threshold. |
+| `id` | integer | yes | ATA attribute ID (1–255). |
+| `name` | string | yes | Attribute name (e.g. `Raw_Read_Error_Rate`). |
+| `raw_value` | integer | yes | Raw (vendor-specific) attribute value. |
+| `threshold` | integer | yes | Failure threshold; attribute is failing when value drops below this. |
+| `value` | integer | yes | Normalized current value (higher is better for most attributes). |
+| `worst` | integer | yes | Worst normalized value ever recorded. |
 
 ### `SmbShare`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `browseable` | boolean | yes |  |
-| `comment` | string | no |  |
-| `enabled` | boolean | yes |  |
-| `extra_params` | object | yes |  |
-| `guest_ok` | boolean | yes |  |
-| `id` | string | yes |  |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `valid_users` | string[] | yes |  |
+| `browseable` | boolean | yes | Whether the share is visible in network browse lists. |
+| `comment` | string | no | Optional description shown in share listings. |
+| `enabled` | boolean | yes | Whether the share is active in `smb.nasty.conf`. |
+| `extra_params` | object | yes | Additional raw Samba parameters written to the share section. |
+| `guest_ok` | boolean | yes | Whether unauthenticated guest access is allowed. |
+| `id` | string | yes | Unique share identifier (UUID). |
+| `name` | string | yes | Samba share name used in `\\server\name` UNC paths. |
+| `path` | string | yes | Absolute filesystem path being shared (must be under `/storage/`). |
+| `read_only` | boolean | yes | Whether the share is read-only. |
+| `valid_users` | string[] | yes | Usernames allowed to connect (empty means no restriction beyond authentication). |
 
 ### `Snapshot`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
 | `block_device` | string | no | Loop device path if this snapshot's vol.img is currently attached (block snapshots only). |
-| `name` | string | yes |  |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
-| `read_only` | boolean | yes |  |
-| `subvolume` | string | yes |  |
+| `name` | string | yes | Snapshot name (unique within the parent subvolume). |
+| `path` | string | yes | Absolute filesystem path to the snapshot directory. |
+| `pool` | string | yes | Name of the pool that contains this snapshot. |
+| `read_only` | boolean | yes | Whether this snapshot is read-only. |
+| `subvolume` | string | yes | Name of the parent subvolume. |
 
 ### `Subvolume`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `block_device` | string | no |  |
-| `comments` | string | no |  |
-| `compression` | string | no |  |
-| `name` | string | yes |  |
+| `block_device` | string | no | Loop device path currently attached to the backing image (block subvolumes only). |
+| `comments` | string | no | Free-text description or notes for this subvolume. |
+| `compression` | string | no | Compression algorithm applied to this subvolume (e.g. `lz4`, `zstd`). |
+| `name` | string | yes | Subvolume name (unique within the pool). |
 | `owner` | string | no | Token name that created this subvolume; None for subvolumes created by human users. |
-| `path` | string | yes |  |
-| `pool` | string | yes |  |
+| `path` | string | yes | Absolute filesystem path to the subvolume directory. |
+| `pool` | string | yes | Name of the pool that contains this subvolume. |
 | `properties` | object | no | Arbitrary key-value metadata stored as POSIX xattrs (user.* namespace).
 Used by nasty-csi to track CSI volume metadata without sidecar files. |
-| `snapshots` | string[] | yes |  |
-| `subvolume_type` | `SubvolumeType` | yes |  |
-| `used_bytes` | integer | no |  |
-| `volsize_bytes` | integer | no |  |
+| `snapshots` | string[] | yes | Names of snapshots belonging to this subvolume. |
+| `subvolume_type` | `SubvolumeType` | yes | Whether this is a filesystem or block-backed subvolume. |
+| `used_bytes` | integer | no | Disk usage in bytes (filesystem subvolumes only, from `du`). |
+| `volsize_bytes` | integer | no | Size of the backing sparse image in bytes (block subvolumes only). |
 
 ### `SubvolumeType`
 
@@ -2414,6 +2414,6 @@ Enum: `filesystem`, `block`
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `role` | `Role` | yes |  |
-| `username` | string | yes |  |
+| `role` | `Role` | yes | Role assigned to this user. |
+| `username` | string | yes | Login username. |
 

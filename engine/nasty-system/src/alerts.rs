@@ -8,12 +8,19 @@ const STATE_DIR: &str = "/var/lib/nasty";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AlertRule {
+    /// Unique rule identifier.
     pub id: String,
+    /// Human-readable rule name.
     pub name: String,
+    /// Whether the rule is active and evaluated.
     pub enabled: bool,
+    /// The system metric this rule monitors.
     pub metric: AlertMetric,
+    /// Comparison operator applied between the metric value and the threshold.
     pub condition: AlertCondition,
+    /// Threshold value the metric is compared against.
     pub threshold: f64,
+    /// Severity level when the rule fires.
     pub severity: AlertSeverity,
 }
 
@@ -45,13 +52,21 @@ pub enum AlertSeverity {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ActiveAlert {
+    /// ID of the rule that triggered this alert.
     pub rule_id: String,
+    /// Name of the rule that triggered this alert.
     pub rule_name: String,
+    /// Severity level of the alert.
     pub severity: AlertSeverity,
+    /// Metric that triggered the alert.
     pub metric: AlertMetric,
+    /// Human-readable description of the alert condition.
     pub message: String,
+    /// Current metric value at the time the alert was evaluated.
     pub current_value: f64,
+    /// Threshold value configured in the rule.
     pub threshold: f64,
+    /// Identifier of the specific resource that triggered the alert (e.g. pool name, device path).
     pub source: String,
 }
 
@@ -306,13 +321,18 @@ pub struct DiskHealthSummary {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AlertRuleUpdate {
+    /// ID of the rule to update.
     pub id: String,
+    /// New name for the rule (optional).
     #[serde(default)]
     pub name: Option<String>,
+    /// Enable or disable the rule (optional).
     #[serde(default)]
     pub enabled: Option<bool>,
+    /// New threshold value (optional).
     #[serde(default)]
     pub threshold: Option<f64>,
+    /// New severity level (optional).
     #[serde(default)]
     pub severity: Option<AlertSeverity>,
 }

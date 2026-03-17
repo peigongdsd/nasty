@@ -8,9 +8,12 @@ const STATE_DIR: &str = "/var/lib/nasty";
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Settings {
+    /// IANA timezone string applied to the system (e.g. `UTC`, `America/New_York`).
     #[serde(default = "default_timezone")]
     pub timezone: String,
+    /// System hostname.
     pub hostname: Option<String>,
+    /// Whether to display clocks in 24-hour format.
     #[serde(default = "default_clock_24h")]
     pub clock_24h: bool,
 }
@@ -35,8 +38,11 @@ impl Default for Settings {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SettingsUpdate {
+    /// New IANA timezone to apply (optional).
     pub timezone: Option<String>,
+    /// New hostname to set (optional).
     pub hostname: Option<String>,
+    /// Whether to use 24-hour clock display (optional).
     pub clock_24h: Option<bool>,
 }
 

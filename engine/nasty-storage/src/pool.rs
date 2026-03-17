@@ -31,13 +31,21 @@ pub enum PoolError {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Pool {
+    /// Human-readable pool name, derived from the mount point directory.
     pub name: String,
+    /// bcachefs filesystem UUID.
     pub uuid: String,
+    /// Member devices of the pool.
     pub devices: Vec<PoolDevice>,
+    /// Absolute path where the pool is mounted (e.g. `/storage/tank`).
     pub mount_point: Option<String>,
+    /// Whether the pool is currently mounted.
     pub mounted: bool,
+    /// Total usable capacity in bytes.
     pub total_bytes: u64,
+    /// Bytes currently in use.
     pub used_bytes: u64,
+    /// Bytes available for writing.
     pub available_bytes: u64,
     /// Filesystem-level options read from sysfs or show-super.
     pub options: PoolOptions,
@@ -46,18 +54,31 @@ pub struct Pool {
 /// Filesystem-level bcachefs options for a pool.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct PoolOptions {
+    /// Foreground (inline) compression algorithm (e.g. `lz4`, `zstd`, `none`).
     pub compression: Option<String>,
+    /// Background recompression algorithm applied by the background worker.
     pub background_compression: Option<String>,
+    /// Number of replicas for data extents.
     pub data_replicas: Option<u32>,
+    /// Number of replicas for metadata (btree) extents.
     pub metadata_replicas: Option<u32>,
+    /// Checksum algorithm for data (e.g. `crc32c`, `xxhash`).
     pub data_checksum: Option<String>,
+    /// Checksum algorithm for metadata.
     pub metadata_checksum: Option<String>,
+    /// Target label for foreground (new) writes.
     pub foreground_target: Option<String>,
+    /// Target label for background migration writes.
     pub background_target: Option<String>,
+    /// Target label for data promotion (cache tier).
     pub promote_target: Option<String>,
+    /// Target label for metadata placement.
     pub metadata_target: Option<String>,
+    /// Whether erasure coding (EC) is enabled on the filesystem.
     pub erasure_code: Option<bool>,
+    /// Whether the filesystem is encrypted at rest.
     pub encrypted: Option<bool>,
+    /// Action on unrecoverable read errors (`continue`, `ro`, `panic`).
     pub error_action: Option<String>,
 }
 
@@ -84,6 +105,7 @@ pub struct PoolDevice {
 /// Specifies a device and its per-device options for pool creation.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DeviceSpec {
+    /// Absolute block device path (e.g. `/dev/sda`).
     pub path: String,
     /// Hierarchical label (e.g. "ssd.fast", "hdd.archive").
     pub label: Option<String>,
@@ -93,19 +115,28 @@ pub struct DeviceSpec {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreatePoolRequest {
+    /// Name for the new pool; becomes the mount point directory under `/storage/`.
     pub name: String,
+    /// Devices to include in the pool.
     pub devices: Vec<DeviceSpec>,
+    /// Number of data replicas (default 1).
     #[serde(default = "default_replicas")]
     pub replicas: u32,
+    /// Inline compression algorithm (e.g. `lz4`, `zstd`, `none`).
     pub compression: Option<String>,
+    /// Whether to enable encryption at format time.
     pub encryption: Option<bool>,
     /// Filesystem-wide label (used as default when no per-device labels set).
     pub label: Option<String>,
     /// Tiering targets set at format time.
     pub foreground_target: Option<String>,
+    /// Target label for metadata placement.
     pub metadata_target: Option<String>,
+    /// Target label for background migration.
     pub background_target: Option<String>,
+    /// Target label for data promotion (cache tier).
     pub promote_target: Option<String>,
+    /// Whether to enable erasure coding.
     pub erasure_code: Option<bool>,
 }
 
@@ -115,7 +146,9 @@ fn default_replicas() -> u32 {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DestroyPoolRequest {
+    /// Name of the pool to destroy.
     pub name: String,
+    /// If true, wipe bcachefs superblocks from all member devices after unmounting.
     pub force: Option<bool>,
 }
 
@@ -123,43 +156,61 @@ pub struct DestroyPoolRequest {
 /// Options are written directly to sysfs (/sys/fs/bcachefs/<uuid>/options/).
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UpdatePoolOptionsRequest {
+    /// Name of the pool to update.
     pub name: String,
+    /// Inline compression algorithm (e.g. `lz4`, `zstd`, `none`).
     pub compression: Option<String>,
+    /// Background recompression algorithm.
     pub background_compression: Option<String>,
+    /// Target label for foreground (new) writes.
     pub foreground_target: Option<String>,
+    /// Target label for background migration.
     pub background_target: Option<String>,
+    /// Target label for data promotion (cache tier).
     pub promote_target: Option<String>,
+    /// Target label for metadata placement.
     pub metadata_target: Option<String>,
+    /// Action on unrecoverable read errors (`continue`, `ro`, `panic`).
     pub error_action: Option<String>,
+    /// Whether to enable erasure coding.
     pub erasure_code: Option<bool>,
 }
 
 /// Add a device to an existing pool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceAddRequest {
+    /// Name of the pool to add the device to.
     pub pool: String,
+    /// Device to add, with optional label and durability settings.
     pub device: DeviceSpec,
 }
 
 /// Remove/evacuate/online/offline a device in a pool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceActionRequest {
+    /// Name of the pool containing the device.
     pub pool: String,
+    /// Absolute path of the block device (e.g. `/dev/sdb`).
     pub device: String,
 }
 
 /// Set a label on a device in a pool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DeviceSetLabelRequest {
+    /// Name of the pool containing the device.
     pub pool: String,
+    /// Absolute path of the block device (e.g. `/dev/sdb`).
     pub device: String,
+    /// New hierarchical label (e.g. `ssd.fast`, `hdd.archive`).
     pub label: String,
 }
 
 /// Change the persistent state of a device within a pool.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DeviceSetStateRequest {
+    /// Name of the pool containing the device.
     pub pool: String,
+    /// Absolute path of the block device (e.g. `/dev/sdb`).
     pub device: String,
     /// One of: rw, ro, failed, spare
     pub state: String,
@@ -182,22 +233,29 @@ pub struct FsUsage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DeviceUsage {
+    /// Block device path.
     pub path: String,
+    /// Bytes currently used on this device.
     pub used_bytes: u64,
+    /// Bytes available on this device.
     pub free_bytes: u64,
+    /// Total capacity of this device in bytes.
     pub total_bytes: u64,
 }
 
 /// Scrub operation status.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ScrubStatus {
+    /// Whether a scrub is currently in progress.
     pub running: bool,
+    /// Raw text output from the bcachefs scrub status command.
     pub raw: String,
 }
 
 /// Reconcile (background work) status.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReconcileStatus {
+    /// Raw text output from the bcachefs reconcile status command.
     pub raw: String,
 }
 
@@ -1116,11 +1174,17 @@ fn extract_first_bytes(line: &str) -> Option<u64> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BlockDevice {
+    /// Absolute path of the block device (e.g. `/dev/sda`).
     pub path: String,
+    /// Total capacity in bytes.
     pub size_bytes: u64,
+    /// lsblk device type: `disk` or `part`.
     pub dev_type: String,
+    /// Current mount point, if mounted.
     pub mount_point: Option<String>,
+    /// Filesystem type detected on the device (e.g. `bcachefs`, `ext4`).
     pub fs_type: Option<String>,
+    /// Whether the device is currently in use (mounted, in a pool, or has partitions in use).
     pub in_use: bool,
     /// Whether the underlying disk spins (false for NVMe/SSD, true for HDD).
     pub rotational: bool,
