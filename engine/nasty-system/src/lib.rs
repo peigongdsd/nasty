@@ -18,6 +18,8 @@ pub struct SystemInfo {
     pub bcachefs_version: String,
     /// Short (12-char) commit SHA of the pinned bcachefs-tools in flake.lock
     pub bcachefs_commit: Option<String>,
+    /// The ref stored in the state file: tag name (e.g. "v1.37.1") or short SHA
+    pub bcachefs_pinned_ref: Option<String>,
     /// True when the user has overridden the default bcachefs-tools version
     pub bcachefs_is_custom: bool,
     pub timezone: String,
@@ -122,7 +124,11 @@ impl SystemService {
         let kernel = kernel_version();
         let bcachefs_version = bcachefs_version().await;
         let bcachefs_commit = read_bcachefs_commit().await;
-        let bcachefs_is_custom = tokio::fs::metadata("/var/lib/nasty/bcachefs-tools-ref").await.is_ok();
+        let bcachefs_pinned_ref = tokio::fs::read_to_string("/var/lib/nasty/bcachefs-tools-ref").await
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let bcachefs_is_custom = bcachefs_pinned_ref.is_some();
         let uptime = uptime_seconds();
         let (timezone, ntp_synced) = timedatectl_info().await;
 
@@ -133,6 +139,7 @@ impl SystemService {
             kernel,
             bcachefs_version,
             bcachefs_commit,
+            bcachefs_pinned_ref,
             bcachefs_is_custom,
             timezone,
             ntp_synced,

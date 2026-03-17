@@ -426,9 +426,14 @@ nix flake lock --override-input bcachefs-tools "{input_url}"
 # just pinned in flake.lock. Store the SHA so future system updates re-use
 # the same commit rather than advancing with the branch tip.
 RESOLVED_SHA=$(python3 -c "import json,sys; d=json.load(open('flake.lock')); print(d['nodes']['bcachefs-tools']['locked']['rev'])" 2>/dev/null || true)
-if [ -n "$RESOLVED_SHA" ] && [ "{git_ref}" != "{default_ref}" ]; then
-    echo "$RESOLVED_SHA" > {BCACHEFS_REF_STATE}
-    echo "==> Pinned to commit $RESOLVED_SHA"
+if [ "{git_ref}" != "{default_ref}" ]; then
+    if echo "{git_ref}" | grep -qE '^v[0-9]'; then
+        echo "{git_ref}" > {BCACHEFS_REF_STATE}
+        echo "==> Pinned to tag {git_ref}"
+    elif [ -n "$RESOLVED_SHA" ]; then
+        echo "$RESOLVED_SHA" > {BCACHEFS_REF_STATE}
+        echo "==> Pinned to commit $RESOLVED_SHA"
+    fi
 fi
 # Commit the updated flake.lock so the tree stays clean for the next rebuild
 git add flake.lock
