@@ -320,7 +320,7 @@ in {
         section "System"
         echo "  OS:      $(nixos-version 2>/dev/null || echo unknown)"
         echo "  Kernel:  $(uname -r)"
-        echo "  Uptime:  $(uptime -p)"
+        echo "  Uptime:  $(awk '{s=int($1); d=int(s/86400); h=int((s%86400)/3600); m=int((s%3600)/60); if(d>0) printf "%dd %dh %dm\n",d,h,m; else if(h>0) printf "%dh %dm\n",h,m; else printf "%dm\n",m}' /proc/uptime)"
         echo "  Memory:  $(free -h | awk '/^Mem/ {print $3 " used / " $2 " total"}')"
 
         section "Block Devices"
@@ -344,7 +344,7 @@ in {
         cat /var/lib/nasty/protocols.json 2>/dev/null | ${pkgs.jq}/bin/jq . || echo "  (not found)"
 
         section "Engine State — Subvolumes"
-        count=$(ls /var/lib/nasty/subvolumes/*.json 2>/dev/null | wc -l || echo 0)
+        count=$(find /var/lib/nasty/subvolumes -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
         echo "  $count subvolume(s)"
         for f in /var/lib/nasty/subvolumes/*.json; do
           [ -f "$f" ] || continue
@@ -353,7 +353,7 @@ in {
 
         section "Engine State — Shares"
         for proto in nfs smb iscsi nvmeof; do
-          count=$(ls /var/lib/nasty/shares/$proto/*.json 2>/dev/null | wc -l || echo 0)
+          count=$(find /var/lib/nasty/shares/$proto -maxdepth 1 -name '*.json' 2>/dev/null | wc -l)
           [ "$count" -gt 0 ] || continue
           echo "  $proto ($count share(s)):"
           for f in /var/lib/nasty/shares/$proto/*.json; do
@@ -370,7 +370,7 @@ in {
 
         section "Services"
         for svc in nasty-engine nfs-server samba-smbd target nvmet_tcp sshd; do
-          state=$(systemctl is-active "$svc.service" 2>/dev/null || echo inactive)
+          state=$(systemctl is-active "$svc.service" 2>/dev/null || true)
           printf "  %-20s %s\n" "$svc" "$state"
         done
 
