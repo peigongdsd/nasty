@@ -45,7 +45,19 @@ pub struct SettingsService {
 
 impl SettingsService {
     pub async fn new() -> Self {
-        let settings = load().await;
+        let mut settings = load().await;
+        // Seed hostname from the running system if not yet persisted.
+        // This picks up whatever the installer configured (networking.hostName)
+        // so the settings page shows the real hostname from day one.
+        if settings.hostname.is_none() {
+            if let Ok(name) = tokio::fs::read_to_string("/proc/sys/kernel/hostname").await {
+                let name = name.trim().to_string();
+                if !name.is_empty() {
+                    settings.hostname = Some(name);
+                    let _ = save(&settings).await;
+                }
+            }
+        }
         Self {
             state: Arc::new(RwLock::new(settings)),
         }

@@ -212,7 +212,7 @@ in {
           SETTINGS=/var/lib/nasty/settings.json
           if [ -f "$SETTINGS" ]; then
             NAME=$(${pkgs.jq}/bin/jq -r '.hostname // ""' "$SETTINGS" 2>/dev/null)
-            [ -n "$NAME" ] && ${pkgs.systemd}/bin/hostnamectl set-hostname "$NAME"
+            [ -n "$NAME" ] && ${pkgs.systemd}/bin/hostnamectl set-hostname "$NAME" || true
           fi
         '';
       };
