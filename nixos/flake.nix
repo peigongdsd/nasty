@@ -69,11 +69,14 @@
         });
       in base.overrideAttrs (old: {
         passthru = old.passthru // {
-          kernelModule = args: (old.passthru.kernelModule args).overrideAttrs (kOld: {
-            postPatch = (kOld.postPatch or "") + ''
-              sed -i '/ccflags-y := -I/a ccflags-y += -DCONFIG_BCACHEFS_QUOTA' Makefile
-            '';
-          });
+          # kernelModule must keep the same named-attr signature that callPackage
+          # expects: { lib, stdenv, kernelModuleMakeFlags, kernel } -> drv.
+          kernelModule = { lib, stdenv, kernelModuleMakeFlags, kernel }:
+            (old.passthru.kernelModule { inherit lib stdenv kernelModuleMakeFlags kernel; }).overrideAttrs (kOld: {
+              postPatch = (kOld.postPatch or "") + ''
+                sed -i '/ccflags-y := -I/a ccflags-y += -DCONFIG_BCACHEFS_QUOTA' Makefile
+              '';
+            });
         };
       });
     in {
