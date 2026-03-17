@@ -5,7 +5,7 @@
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { getToken } from '$lib/auth';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
+	import { Maximize2, Minimize2 } from '@lucide/svelte';
 
 	import type { IDisposable } from '@xterm/xterm';
 
@@ -15,6 +15,7 @@
 	let ws: WebSocket | null = null;
 	let status = $state<'connecting' | 'connected' | 'disconnected'>('connecting');
 	let termListeners: IDisposable[] = [];
+	let fullscreen = $state(false);
 
 	onMount(() => {
 		term = new Terminal({
@@ -145,8 +146,8 @@
 	}
 </script>
 
-<div class="flex h-[calc(100vh-4rem)] flex-col">
-	<div class="mb-4 flex shrink-0 items-center gap-3">
+<div class="{fullscreen ? 'fixed inset-0 z-50 flex flex-col bg-[#0f1117] p-4' : 'flex h-full flex-col'}">
+	<div class="mb-2 flex shrink-0 items-center gap-3">
 		<span class="text-xs uppercase {
 			status === 'connected' ? 'text-green-400' :
 			status === 'connecting' ? 'text-amber-500' : 'text-muted-foreground'
@@ -154,8 +155,19 @@
 		{#if status === 'disconnected'}
 			<Button size="sm" onclick={reconnect}>Reconnect</Button>
 		{/if}
+		<button
+			onclick={() => { fullscreen = !fullscreen; setTimeout(() => fitAddon?.fit(), 0); }}
+			class="ml-auto flex items-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+			title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+		>
+			{#if fullscreen}
+				<Minimize2 size={14} />
+			{:else}
+				<Maximize2 size={14} />
+			{/if}
+		</button>
 	</div>
-	<div class="flex-1 overflow-hidden rounded-lg border border-border p-1" style="background: #0f1117" bind:this={terminalEl}></div>
+	<div class="flex-1 min-h-0 overflow-hidden rounded-lg border border-border p-1" style="background: #0f1117" bind:this={terminalEl}></div>
 </div>
 
 <style>
