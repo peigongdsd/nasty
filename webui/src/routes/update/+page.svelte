@@ -207,6 +207,7 @@
 		await withToast(async () => {
 			bcachefsInfo = await client.call<BcachefsToolsInfo>('bcachefs.tools.info');
 		});
+		sysInfoRefresh.trigger(); // keep sidebar bcachefs version in sync
 	}
 
 	async function loadBcachefsStatus() {
@@ -247,7 +248,6 @@
 					if (bcachefsStatus.state === 'success') {
 						// No page reload needed — only bcachefs-tools changed, not the webui JS.
 						bcachefsRef = '';
-						sysInfoRefresh.trigger(); // refresh sidebar version display
 						setTimeout(() => { bcachefsLogCollapsed = true; }, 5000);
 					}
 				}
@@ -435,7 +435,7 @@
 						<div class="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Pinned</div>
 						<div class="font-mono text-sm font-semibold">
 							{#if bcachefsInfo?.pinned_ref}
-								{bcachefsInfo.pinned_ref}{#if bcachefsInfo.pinned_rev} <span class="text-muted-foreground">({bcachefsInfo.pinned_rev})</span>{/if}
+								{bcachefsInfo.pinned_ref}{#if bcachefsInfo.pinned_rev && !/^[0-9a-f]+$/i.test(bcachefsInfo.pinned_ref)} <span class="text-muted-foreground">({bcachefsInfo.pinned_rev})</span>{/if}
 							{:else}
 								<span class="text-muted-foreground">unknown</span>
 							{/if}
