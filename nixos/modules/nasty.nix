@@ -227,18 +227,20 @@ in {
       echo ""
       echo "  Welcome to NASty!  |  $(hostname)  |  $(date '+%Y-%m-%d %H:%M %Z')"
       echo ""
-      echo "  Type 'help'       to show the NASty command reference."
-      echo "  Type 'debug'      to dump diagnostic info for bug reports."
+      echo "  Type 'help'       to show bcachefs command reference."
+      echo "  Type 'debug'      to show advanced debugging (perf, oops)."
       echo "  Type 'benchmark'  to show storage benchmark commands."
+      echo "  Type 'report'     to dump diagnostic info for bug reports."
       echo ""
 
-      help()      { cat /etc/nasty/debug-cheatsheet; }
-      debug()     { nasty-debug; }
+      help()      { cat /etc/nasty/help-cheatsheet; }
+      debug()     { cat /etc/nasty/debug-cheatsheet; }
       benchmark() { cat /etc/nasty/benchmark-cheatsheet; }
-      export -f help debug benchmark
+      report()    { nasty-report; }
+      export -f help debug benchmark report
     '';
 
-    environment.etc."nasty/debug-cheatsheet".text = ''
+    environment.etc."nasty/help-cheatsheet".text = ''
 
       ╔══════════════════════════════════════════════════════╗
       ║               NASty Command Reference                ║
@@ -269,7 +271,16 @@ in {
          iotop -o
          iostat -x 1
          dool -dny 1
-         # → type 'benchmark' for fio storage tests and perf profiling
+         # → type 'debug' for perf profiling and kernel oops symbolization
+         # → type 'benchmark' for fio storage tests
+
+    '';
+
+    environment.etc."nasty/debug-cheatsheet".text = ''
+
+      ╔══════════════════════════════════════════════════════╗
+      ║             NASty Advanced Debugging                 ║
+      ╚══════════════════════════════════════════════════════╝
 
        perf profiling
          perf top                                                  live per-symbol CPU usage (all processes)
@@ -350,7 +361,7 @@ in {
       jq                # JSON parsing (used by engine scripts)
       htop
 
-      (writeShellScriptBin "nasty-debug" ''
+      (writeShellScriptBin "nasty-report" ''
         set -euo pipefail
 
         SEP="─────────────────────────────────────────────────────"
@@ -431,7 +442,7 @@ in {
 
         echo ""
         echo "$SEP"
-        echo "  Share full output:  nasty-debug | nc termbin.com 9999"
+        echo "  Share full output:  report | nc termbin.com 9999"
         echo "$SEP"
         echo ""
       '')
