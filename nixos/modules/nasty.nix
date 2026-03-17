@@ -271,6 +271,10 @@ in {
          dool -dny 1
          # → type 'benchmark' for fio storage tests and perf profiling
 
+       perf profiling
+         perf record -e 'bcachefs:*' -- sleep 5 && perf script
+         perf record -g -p $(pgrep -f bcachefs) && perf report
+
        kernel oops symbolization (bcachefs crash)
          # From an oops line like: RIP: 0010:bch2_btree_node_get+0x8d/0x5f0 [bcachefs]
          faddr2line bch2_btree_node_get+0x8d/0x5f0
@@ -325,13 +329,8 @@ in {
          # Clean up test file afterwards
          rm -f /storage/<pool>/fiotest
 
-       perf profiling
-         perf record -e 'bcachefs:*' -- sleep 5 && perf script
-         perf record -g -p $(pgrep -f bcachefs) && perf report
-
        share results with devs
          fio ... | nc termbin.com 9999
-         perf script | nc termbin.com 9999
 
     '';
 
