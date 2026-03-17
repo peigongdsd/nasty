@@ -227,13 +227,15 @@ in {
       echo ""
       echo "  Welcome to NASty!  |  $(hostname)  |  $(date '+%Y-%m-%d %H:%M %Z')"
       echo ""
-      echo "  Type 'help'  to show the NASty command reference."
-      echo "  Type 'debug' to dump diagnostic info for bug reports."
+      echo "  Type 'help'       to show the NASty command reference."
+      echo "  Type 'debug'      to dump diagnostic info for bug reports."
+      echo "  Type 'benchmark'  to show storage benchmark commands."
       echo ""
 
-      help()  { cat /etc/nasty/debug-cheatsheet; }
-      debug() { nasty-debug; }
-      export -f help debug
+      help()      { cat /etc/nasty/debug-cheatsheet; }
+      debug()     { nasty-debug; }
+      benchmark() { cat /etc/nasty/benchmark-cheatsheet; }
+      export -f help debug benchmark
     '';
 
     environment.etc."nasty/debug-cheatsheet".text = ''
@@ -266,15 +268,8 @@ in {
        I/O monitoring
          iotop -o
          iostat -x 1
-         fio --name=seq-read    --ioengine=libaio --direct=1 --rw=read     --bs=1024k --iodepth=8  --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
-         fio --name=seq-write   --ioengine=libaio --direct=1 --rw=write    --bs=1024k --iodepth=8  --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
-         fio --name=rand-read   --ioengine=libaio --direct=1 --rw=randread --bs=4k    --iodepth=32 --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
-         fio --name=rand-write  --ioengine=libaio --direct=1 --rw=randwrite --bs=4k   --iodepth=32 --numjobs=1 --size=1g --runtime=5 --filename=/storage/<pool>/fiotest
          dool -dny 1
-
-       perf profiling
-         perf record -e 'bcachefs:*' -- sleep 5 && perf script
-         perf record -g -p $(pgrep -f bcachefs) && perf report
+         # → type 'benchmark' for fio storage tests and perf profiling
 
        kernel oops symbolization (bcachefs crash)
          # From an oops line like: RIP: 0010:bch2_btree_node_get+0x8d/0x5f0 [bcachefs]
@@ -291,6 +286,54 @@ in {
 
     '';
 
+
+    environment.etc."nasty/benchmark-cheatsheet".text = ''
+
+      ╔══════════════════════════════════════════════════════╗
+      ║            NASty Benchmark Reference                 ║
+      ╚══════════════════════════════════════════════════════╝
+
+       fio — storage tests  (replace <pool> with your pool name)
+         # Sequential read — large block, measures throughput
+         fio --name=seq-read \
+             --ioengine=libaio --direct=1 --rw=read \
+             --bs=1024k --iodepth=8 --numjobs=1 \
+             --size=1g --runtime=30 \
+             --filename=/storage/<pool>/fiotest
+
+         # Sequential write
+         fio --name=seq-write \
+             --ioengine=libaio --direct=1 --rw=write \
+             --bs=1024k --iodepth=8 --numjobs=1 \
+             --size=1g --runtime=30 \
+             --filename=/storage/<pool>/fiotest
+
+         # Random read — small block, measures IOPS
+         fio --name=rand-read \
+             --ioengine=libaio --direct=1 --rw=randread \
+             --bs=4k --iodepth=32 --numjobs=4 \
+             --size=1g --runtime=30 \
+             --filename=/storage/<pool>/fiotest
+
+         # Random write
+         fio --name=rand-write \
+             --ioengine=libaio --direct=1 --rw=randwrite \
+             --bs=4k --iodepth=32 --numjobs=4 \
+             --size=1g --runtime=30 \
+             --filename=/storage/<pool>/fiotest
+
+         # Clean up test file afterwards
+         rm -f /storage/<pool>/fiotest
+
+       perf profiling
+         perf record -e 'bcachefs:*' -- sleep 5 && perf script
+         perf record -g -p $(pgrep -f bcachefs) && perf report
+
+       share results with devs
+         fio ... | nc termbin.com 9999
+         perf script | nc termbin.com 9999
+
+    '';
 
     # Kernel modules for iSCSI/NVMe-oF are NOT auto-loaded at boot.
     # They are loaded on demand by the engine when the user enables
