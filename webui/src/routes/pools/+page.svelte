@@ -309,6 +309,9 @@
 	}
 
 	async function setDeviceState(poolName: string, devicePath: string, state: DeviceState) {
+		if (state === 'ro') {
+			if (!await confirm(`Set ${devicePath} read-only?`, `The device will stop accepting writes. Use Set RW to revert.`)) return;
+		}
 		await withToast(
 			() => client.call('pool.device.set_state', { pool: poolName, device: devicePath, state }),
 			`Device ${devicePath} set to ${state}`
@@ -741,10 +744,12 @@
 	<p class="text-muted-foreground">No pools configured yet.</p>
 {:else}
 	{#each pools as pool}
-		<Card class="mb-4 cursor-pointer" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
+		<Card class="mb-4">
 			<CardContent class="pt-4">
 				<div class="flex flex-wrap items-center justify-between gap-4">
-					<div class="flex items-center gap-3">
+					<div class="flex cursor-pointer items-center gap-3" role="button" tabindex="0"
+						onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}
+						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') expandedPool = expandedPool === pool.name ? null : pool.name; }}>
 						<strong class="text-lg">{pool.name}</strong>
 						<Badge variant={pool.mounted ? 'default' : 'destructive'}>
 							{pool.mounted ? 'Mounted' : 'Unmounted'}
@@ -753,7 +758,7 @@
 							<span class="font-mono text-xs text-muted-foreground">{pool.mount_point}</span>
 						{/if}
 					</div>
-					<div class="flex gap-2" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+					<div class="flex gap-2">
 						<Button variant="secondary" size="xs" onclick={() => expandedPool = expandedPool === pool.name ? null : pool.name}>
 							{expandedPool === pool.name ? 'Hide Details' : 'Details'}
 						</Button>

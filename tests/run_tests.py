@@ -59,7 +59,8 @@ async def main():
     parser.add_argument("--host",        required=True,       help="NASty appliance IP/hostname")
     parser.add_argument("--port",        type=int, default=443, help="WebUI HTTPS port (default 443)")
     parser.add_argument("--password",    default="admin",     help="Admin password (default 'admin')")
-    parser.add_argument("--pool",        default=None,        help="Pool name (auto-detected if omitted)")
+    parser.add_argument("--pool",        default=None,        help="Pool name (auto-detected if omitted; created if not found and --create-pool is set)")
+    parser.add_argument("--create-pool", action="store_true", help="Auto-create the pool using available unmounted block devices if it does not exist")
     parser.add_argument("--skip-nfs",       action="store_true")
     parser.add_argument("--skip-smb",       action="store_true")
     parser.add_argument("--skip-iscsi",     action="store_true")
@@ -114,6 +115,29 @@ async def main():
             sys.exit(1)
         pool_name = mounted[0]["name"]
         info(f"Auto-detected pool: {pool_name}")
+    elif args.create_pool:
+        # Create the pool if it doesn't already exist
+        pools = await client.call("pool.list")
+        existing = next((p for p in pools if p["name"] == pool_name), None)
+        if not existing:
+            info(f"Pool '{pool_name}' not found — discovering available devices...")
+            devices = await client.call("device.list")
+            available = [d for d in devices if not d.get("in_use")]
+            if not available:
+                fail("No available (unused) block devices found to create pool.")
+                await client.close()
+                sys.exit(1)
+            device_specs = [{"path": d["path"]} for d in available]
+            info(f"Creating pool '{pool_name}' on {[d['path'] for d in device_specs]}...")
+            try:
+                await client.call("pool.create", {"name": pool_name, "devices": device_specs})
+                ok(f"Pool '{pool_name}' created")
+            except Exception as e:
+                fail(f"Failed to create pool '{pool_name}': {e}")
+                await client.close()
+                sys.exit(1)
+        else:
+            info(f"Pool '{pool_name}' already exists")
 
     if args.delete_only:
         try:

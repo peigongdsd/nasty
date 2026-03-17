@@ -58,6 +58,7 @@ if [[ "$*" != *"--host"* ]]; then
     echo "  --port PORT        WebUI HTTPS port (default 443)"
     echo "  --password PW      Admin password (default 'admin')"
     echo "  --pool POOL        Pool name (auto-detected if omitted)"
+  echo "  --create-pool      Auto-create pool on available devices if it doesn't exist"
     echo "  --skip-subvolume   Skip subvolume lifecycle/properties/block tests"
     echo "  --skip-snapshots   Skip snapshot read_only and clone tests"
     echo "  --skip-storage     Skip compression and snapshot integrity tests"
