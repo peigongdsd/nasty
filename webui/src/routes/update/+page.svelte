@@ -26,6 +26,8 @@
 	let bcachefsStatus: UpdateStatus | null = $state(null);
 	let bcachefsRef = $state('');
 	let bcachefsSwitching = $state(false);
+	let bcachefsConfirm = $state(false);
+	let bcachefsConfirmTimer: ReturnType<typeof setTimeout> | null = null;
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
 	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = null;
 	let bcachefsLogCollapsed = $state(false);
@@ -107,6 +109,7 @@
 		stopPolling();
 		stopBcachefsPolling();
 		if (confirmTimer) clearTimeout(confirmTimer);
+		if (bcachefsConfirmTimer) clearTimeout(bcachefsConfirmTimer);
 	});
 
 	async function loadVersion() {
@@ -217,6 +220,18 @@
 				startBcachefsPolling();
 			}
 		});
+	}
+
+	function requestBcachefsSwitch() {
+		if (bcachefsConfirm) {
+			bcachefsConfirm = false;
+			if (bcachefsConfirmTimer) { clearTimeout(bcachefsConfirmTimer); bcachefsConfirmTimer = null; }
+			doBcachefsSwitch();
+		} else {
+			bcachefsConfirm = true;
+			if (bcachefsConfirmTimer) clearTimeout(bcachefsConfirmTimer);
+			bcachefsConfirmTimer = setTimeout(() => { bcachefsConfirm = false; }, 4000);
+		}
 	}
 
 	async function doBcachefsSwitch() {
@@ -462,6 +477,7 @@
 						class="h-9 w-96 rounded-md border border-input bg-background px-3 py-1 font-mono text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
 						placeholder="e.g. v1.38.0, master, 098dad22ef7725620930587a047813469fceedce"
 						bind:value={bcachefsRef}
+						oninput={() => { bcachefsConfirm = false; }}
 						disabled={bcachefsSwitching || bcachefsStatus?.state === 'running'}
 					/>
 					{#if bcachefsInfo?.default_ref}
@@ -499,11 +515,12 @@
 				{/if}
 
 				<Button
+					variant={bcachefsConfirm ? 'destructive' : 'default'}
 					size="sm"
-					onclick={doBcachefsSwitch}
+					onclick={requestBcachefsSwitch}
 					disabled={!bcachefsRef.trim() || bcachefsSwitching || bcachefsStatus?.state === 'running'}
 				>
-					{bcachefsSwitching ? 'Starting...' : 'Switch'}
+					{bcachefsSwitching ? 'Starting...' : bcachefsConfirm ? 'Confirm?' : 'Switch'}
 				</Button>
 			</CardContent>
 		</Card>
