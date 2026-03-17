@@ -301,6 +301,7 @@ in {
     environment.systemPackages = with pkgs; [
       util-linux        # lsblk, blkid, wipefs
       smartmontools     # smartctl for disk health
+      jq                # JSON parsing (used by engine scripts)
       htop
 
       (writeShellScriptBin "nasty-debug" ''
