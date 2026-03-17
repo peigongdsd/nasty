@@ -135,7 +135,7 @@
 	}
 
 	async function applyUpdate() {
-		if (!await confirm('Apply System Update?', 'NASty will fetch and apply the latest version. Services will restart and the page may reload. This can take several minutes.')) return;
+		if (!await confirm('Apply System Update?', 'NASty will fetch and apply the latest version. Services will restart. If the update includes UI changes, you will be prompted to reload the page. This can take several minutes.')) return;
 		doApplyUpdate();
 	}
 
