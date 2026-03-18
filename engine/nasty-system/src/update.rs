@@ -335,6 +335,8 @@ echo "==> Update complete!"
     }
 
     /// Reboot the system
+    /// Returns true if the booted kernel or kernel modules differ from the current system.
+    /// Indicates that a reboot is needed to activate a kernel or driver update.
     pub async fn reboot_required(&self) -> bool {
         is_reboot_required().await
     }
