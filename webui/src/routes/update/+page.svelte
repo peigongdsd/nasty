@@ -277,9 +277,9 @@
 
 <!-- Global banners — shown regardless of active tab -->
 
-{#if status?.reboot_required}
+{#if status?.reboot_required || bcachefsStatus?.reboot_required}
 	<div class="mb-4 rounded-lg border border-amber-800 bg-amber-950 px-4 py-3 text-sm text-amber-200">
-		A kernel update was installed. Use the <strong>Power → Restart</strong> button in the top bar to activate it.
+		A kernel module update was installed. Use the <strong>Power → Restart</strong> button in the top bar to activate it.
 	</div>
 {/if}
 
