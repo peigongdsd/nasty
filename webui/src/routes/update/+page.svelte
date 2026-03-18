@@ -101,6 +101,13 @@
 		await loadBcachefsInfo();
 		await loadBcachefsStatus();
 		loading = false;
+
+		const onReconnect = async () => {
+			await loadVersion();
+			await loadBcachefsInfo();
+		};
+		client.onReconnect(onReconnect);
+		return () => client.offReconnect(onReconnect);
 	});
 
 	onDestroy(() => {
