@@ -72,6 +72,18 @@
 		}
 	});
 
+	function checkRebootRequired() {
+		if (connected) {
+			getClient().call<boolean>('system.reboot_required').then((v) => {
+				if (v) rebootState.set(); else rebootState.clear();
+			}).catch(() => {});
+		}
+	}
+
+	$effect(() => {
+		if (connected) checkRebootRequired();
+	});
+
 	// Clock
 	let now = $state(new Date());
 	const clockFmt = $derived(new Intl.DateTimeFormat(undefined, {
@@ -82,7 +94,8 @@
 	onMount(() => {
 		tryConnect();
 		const tick = setInterval(() => { now = new Date(); }, 1000);
-		return () => { getClient().disconnect(); clearInterval(tick); };
+		const rebootPoll = setInterval(checkRebootRequired, 30_000);
+		return () => { getClient().disconnect(); clearInterval(tick); clearInterval(rebootPoll); };
 	});
 
 	async function tryConnect() {

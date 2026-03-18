@@ -335,6 +335,10 @@ echo "==> Update complete!"
     }
 
     /// Reboot the system
+    pub async fn reboot_required(&self) -> bool {
+        is_reboot_required().await
+    }
+
     pub async fn reboot(&self) -> Result<(), UpdateError> {
         info!("System reboot requested");
         let output = tokio::process::Command::new("systemctl")
