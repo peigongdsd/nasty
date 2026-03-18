@@ -24,3 +24,7 @@ result-*
 .env
 .env.local
 middleware/webui/
+
+# Claude Code
+.claude/
+CLAUDE.md
