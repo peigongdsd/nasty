@@ -24,6 +24,7 @@ export class NastyClient {
 	private nextId = 1;
 	private pending = new Map<number, PendingCall>();
 	private eventHandlers: EventHandler[] = [];
+	private reconnectHandlers: (() => void)[] = [];
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private _authenticated = false;
 	/** Set to true after the first successful auth; cleared by disconnect(). */
@@ -63,10 +64,14 @@ export class NastyClient {
 						this._authenticated = false;
 						reject(new Error(msg.error));
 					} else if (msg.authenticated) {
+						const wasReconnect = this._shouldReconnect;
 						this._authenticated = true;
 						this._shouldReconnect = true;
 						this._readyResolve?.();
 						this._readyResolve = null;
+						if (wasReconnect) {
+							for (const h of this.reconnectHandlers) h();
+						}
 						resolve(msg as AuthResult);
 					} else {
 						reject(new Error('Unexpected auth response'));
@@ -146,6 +151,15 @@ export class NastyClient {
 
 	offEvent(handler: EventHandler) {
 		this.eventHandlers = this.eventHandlers.filter((h) => h !== handler);
+	}
+
+	/** Called whenever the client successfully reconnects after a dropped connection. */
+	onReconnect(handler: () => void) {
+		this.reconnectHandlers.push(handler);
+	}
+
+	offReconnect(handler: () => void) {
+		this.reconnectHandlers = this.reconnectHandlers.filter((h) => h !== handler);
 	}
 
 	disconnect() {

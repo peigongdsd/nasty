@@ -93,9 +93,16 @@
 
 	onMount(() => {
 		tryConnect();
+		const onReconnect = () => { powering = false; };
+		getClient().onReconnect(onReconnect);
 		const tick = setInterval(() => { now = new Date(); }, 1000);
 		const rebootPoll = setInterval(checkRebootRequired, 30_000);
-		return () => { getClient().disconnect(); clearInterval(tick); clearInterval(rebootPoll); };
+		return () => {
+			getClient().offReconnect(onReconnect);
+			getClient().disconnect();
+			clearInterval(tick);
+			clearInterval(rebootPoll);
+		};
 	});
 
 	async function tryConnect() {
