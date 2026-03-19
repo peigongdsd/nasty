@@ -17,12 +17,11 @@ struct CachedInfo {
     bcachefs_version: String,
     bcachefs_commit: Option<String>,
     bcachefs_pinned_ref: Option<String>,
-    bcachefs_is_custom: bool,
     debug_symbols: bool,
     debug_checks: bool,
     /// Whether the RUNNING module is custom (version differs from default).
     bcachefs_is_custom_running: bool,
-    /// Whether the RUNNING module has debug checks (state file + no reboot pending).
+    /// Whether the RUNNING module has debug checks (sysfs reflects loaded module).
     bcachefs_debug_checks_running: bool,
 }
 
@@ -229,7 +228,6 @@ impl SystemService {
             bcachefs_has_debug_checks(),
             crate::update::read_flake_nix_default_ref_pub(),
         );
-        let bcachefs_is_custom = pinned_ref_raw.is_some();
         // Running state: compare actual loaded module against default.
         // Strip leading 'v' from default ref for comparison (e.g. "v1.37.2" vs "1.37.2").
         let default_bare = default_ref.strip_prefix('v').unwrap_or(&default_ref);
@@ -241,7 +239,6 @@ impl SystemService {
             bcachefs_version,
             bcachefs_commit,
             bcachefs_pinned_ref: pinned_ref_raw,
-            bcachefs_is_custom,
             debug_symbols,
             debug_checks,
             bcachefs_is_custom_running,
