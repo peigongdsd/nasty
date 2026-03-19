@@ -11,7 +11,7 @@ fn is_operator_allowed(method: &str) -> bool {
         || matches!(
             method,
             "subvolume.create" | "subvolume.delete" | "subvolume.attach" | "subvolume.detach"
-            | "subvolume.resize"
+            | "subvolume.resize" | "subvolume.clone"
             | "subvolume.set_properties" | "subvolume.remove_properties"
             | "snapshot.create" | "snapshot.delete" | "snapshot.clone"
         )
@@ -614,6 +614,20 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                     err(req, "access denied")
                 } else {
                     match state.subvolumes.resize(p, session.owner.as_deref()).await {
+                        Ok(v) => ok(req, v),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
+            Err(e) => invalid(req, e),
+        },
+
+        "subvolume.clone" => match parse_params::<nasty_storage::subvolume::CloneSubvolumeRequest>(req) {
+            Ok(p) => {
+                if session.pool.as_deref().map_or(false, |pool| pool != p.pool) {
+                    err(req, "access denied")
+                } else {
+                    match state.subvolumes.clone_subvolume(p, session.owner.as_deref()).await {
                         Ok(v) => ok(req, v),
                         Err(e) => err(req, e),
                     }

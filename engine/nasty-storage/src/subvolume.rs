@@ -250,6 +250,16 @@ pub struct CloneSnapshotRequest {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+pub struct CloneSubvolumeRequest {
+    /// Name of the pool containing the source subvolume.
+    pub pool: String,
+    /// Name of the subvolume to clone.
+    pub name: String,
+    /// Name for the new writable subvolume.
+    pub new_name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct ResizeSubvolumeRequest {
     /// Name of the pool containing the subvolume.
     pub pool: String,
@@ -910,6 +920,65 @@ impl SubvolumeService {
         // Note: bcachefs snapshot (writable clone) copies the source inode xattrs, so
         // user.nasty.* are already present. We overwrite them to clear comments and set
         // the correct owner for the new subvolume.
+        write_meta_xattrs(
+            &new_subvol_path,
+            &parent.subvolume_type,
+            parent.volsize_bytes,
+            parent.compression.as_deref(),
+            None,
+            owner_filter,
+        )?;
+
+        self.get(&req.pool, &req.new_name, None).await
+    }
+
+    /// Clone a subvolume into a new writable subvolume (COW).
+    /// Uses `bcachefs subvolume snapshot` without `-r`, creating a writable
+    /// snapshot that shares data blocks with the source via COW — O(1) and
+    /// the most natural clone primitive in bcachefs.
+    pub async fn clone_subvolume(
+        &self,
+        req: CloneSubvolumeRequest,
+        owner_filter: Option<&str>,
+    ) -> Result<Subvolume, SubvolumeError> {
+        if req.new_name.contains('@') {
+            return Err(SubvolumeError::CommandFailed(
+                "subvolume name may not contain '@'".to_string(),
+            ));
+        }
+
+        let parent = self.get(&req.pool, &req.name, owner_filter).await?;
+
+        let mount_point = self.pool_mount_point(&req.pool).await?;
+        let source_path = subvol_path(&mount_point, &req.name);
+        let new_subvol_path = subvol_path(&mount_point, &req.new_name);
+
+        if !Path::new(&source_path).exists() {
+            return Err(SubvolumeError::NotFound(req.name.clone()));
+        }
+        if Path::new(&new_subvol_path).exists() {
+            return Err(SubvolumeError::AlreadyExists(req.new_name.clone()));
+        }
+
+        // For block subvolumes, flush pending I/O before cloning
+        if parent.subvolume_type == SubvolumeType::Block {
+            if let Some(ref loop_dev) = parent.block_device {
+                info!("Flushing block device {} before clone", loop_dev);
+                if let Err(e) = cmd::run_ok("blockdev", &["--flushbufs", loop_dev]).await {
+                    warn!("Failed to flush {loop_dev} before clone, proceeding anyway: {e}");
+                }
+            }
+        }
+
+        info!(
+            "Cloning subvolume '{}/{}' to new subvolume '{}'",
+            req.pool, req.name, req.new_name
+        );
+        // Writable snapshot = COW clone
+        cmd::run_ok("bcachefs", &["subvolume", "snapshot", &source_path, &new_subvol_path])
+            .await
+            .map_err(SubvolumeError::CommandFailed)?;
+
         write_meta_xattrs(
             &new_subvol_path,
             &parent.subvolume_type,
