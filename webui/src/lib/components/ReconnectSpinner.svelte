@@ -10,36 +10,43 @@
 
 <div class="relative flex items-center justify-center" style="width: 220px; height: 220px;">
 	{#each rings as ring}
-		<!-- Comet trail -->
-		<div
-			class="absolute rounded-full"
-			style="
-				width: {ring.size}px; height: {ring.size}px;
-				background: conic-gradient(from {ring.startDeg}deg, transparent 40%, {ring.color}40 70%, {ring.color} 90%, {ring.head} 100%);
-				-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
-				mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
-				animation: spin {ring.dur}s linear infinite {ring.dir};
-			"
-		></div>
-		<!-- Comet head -->
+		{@const r = ring.size / 2}
+		{@const dotR = ring.dot / 2}
+		<!-- Head angle: conic-gradient "from Xdeg" means 100% lands at Xdeg (0deg = top, clockwise) -->
+		{@const headAngle = ring.startDeg}
+		{@const headRad = (headAngle - 90) * Math.PI / 180}
+		{@const dotX = r + r * Math.cos(headRad) - dotR}
+		{@const dotY = r + r * Math.sin(headRad) - dotR}
+
+		<!-- Comet trail + head as one spinning unit -->
 		<div
 			class="absolute"
 			style="
 				width: {ring.size}px; height: {ring.size}px;
 				animation: spin {ring.dur}s linear infinite {ring.dir};
-				rotate: {ring.startDeg}deg;
 			"
 		>
+			<!-- Trail -->
 			<div
-				class="absolute left-1/2 rounded-full"
+				class="absolute inset-0 rounded-full"
 				style="
-					top: -{ring.dot / 8}rem; width: {ring.dot}px; height: {ring.dot}px;
-					transform: translateX(-50%);
+					background: conic-gradient(from {ring.startDeg}deg, transparent 40%, {ring.color}40 70%, {ring.color} 90%, {ring.head} 100%);
+					-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
+					mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
+				"
+			></div>
+			<!-- Head dot — positioned at the gradient's 100% point -->
+			<div
+				class="absolute rounded-full"
+				style="
+					left: {dotX}px; top: {dotY}px;
+					width: {ring.dot}px; height: {ring.dot}px;
 					background: {ring.head};
 					box-shadow: 0 0 10px {ring.head}, 0 0 24px {ring.color}, 0 0 44px {ring.glow};
 				"
 			></div>
 		</div>
+
 		<!-- Static base ring -->
 		<div class="absolute rounded-full" style="width: {ring.size}px; height: {ring.size}px; border: 1px solid {ring.border};"></div>
 	{/each}
