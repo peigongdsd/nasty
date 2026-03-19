@@ -220,7 +220,7 @@ fi
 if [ -f "{BCACHEFS_DEBUG_CHECKS_STATE}" ]; then
     echo "==> Re-applying bcachefs debug checks..."
     cd {NIXOS_FLAKE_DIR}
-    sed -i 's|.*@NASTY_DEBUG_CHECKS@.*|                sed -i '"'"'/# Enable other features here?/a\\tccflags-y += -DCONFIG_BCACHEFS_DEBUG'"'"' src/fs/bcachefs/Makefile  # @NASTY_DEBUG_CHECKS@|' flake.nix
+    sed -i 's|.*@NASTY_DEBUG_CHECKS_LINE@.*|                echo "\tccflags-y += -DCONFIG_BCACHEFS_DEBUG" >> src/fs/bcachefs/Makefile  # @NASTY_DEBUG_CHECKS_LINE@|' flake.nix
     cd {LOCAL_REPO}
 fi
 
@@ -458,13 +458,13 @@ echo "==> Update complete!"
 
         let input_url = format!("{BCACHEFS_TOOLS_REPO}/{git_ref}");
 
-        // sed command to toggle debug checks flag in flake.nix.
-        // When enabled: replace the marker comment with a sed command that injects the flag.
-        // When disabled: restore the plain marker comment.
+        // Toggle debug checks in flake.nix by replacing the marker line.
+        // When enabled: marker becomes an echo that appends the flag to the DKMS Makefile.
+        // When disabled: marker is restored to a plain comment.
         let debug_checks_sed = if req.debug_checks {
-            r#"sed -i 's|.*@NASTY_DEBUG_CHECKS@.*|                sed -i '"'"'/# Enable other features here?/a\\tccflags-y += -DCONFIG_BCACHEFS_DEBUG'"'"' src/fs/bcachefs/Makefile  # @NASTY_DEBUG_CHECKS@|' flake.nix"#
+            r#"sed -i 's|.*@NASTY_DEBUG_CHECKS_LINE@.*|                echo "\tccflags-y += -DCONFIG_BCACHEFS_DEBUG" >> src/fs/bcachefs/Makefile  # @NASTY_DEBUG_CHECKS_LINE@|' flake.nix"#
         } else {
-            r#"sed -i 's|.*@NASTY_DEBUG_CHECKS@.*|                # @NASTY_DEBUG_CHECKS@|' flake.nix"#
+            r#"sed -i 's|.*@NASTY_DEBUG_CHECKS_LINE@.*|                # @NASTY_DEBUG_CHECKS_LINE@|' flake.nix"#
         };
         let debug_checks_state = if req.debug_checks {
             format!(r#"echo "1" > {BCACHEFS_DEBUG_CHECKS_STATE}"#)
