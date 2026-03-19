@@ -201,6 +201,13 @@ impl SystemService {
         *self.cached.write().await = None;
     }
 
+    /// Return cached debug_symbols and debug_checks for the loaded module.
+    /// Used by UpdateService to avoid re-running expensive detection on every page load.
+    pub async fn cached_debug_flags(&self) -> (bool, bool) {
+        let cached = self.get_cached_bcachefs().await;
+        (cached.debug_symbols, cached.debug_checks)
+    }
+
     async fn get_cached_bcachefs(&self) -> CachedInfo {
         {
             let guard = self.cached.read().await;

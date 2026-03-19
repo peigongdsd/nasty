@@ -391,14 +391,18 @@ echo "==> Update complete!"
         Ok(())
     }
 
-    pub async fn bcachefs_info(&self) -> BcachefsToolsInfo {
-        // Run subprocess calls and file reads concurrently — modinfo and bcachefs
-        // version are the expensive ones (xz-compressed kernel module decompression).
-        let ((_, kernel_rust), running_version, (lock_ref, pinned_rev), default_ref) = tokio::join!(
+    pub async fn bcachefs_info(&self, system: &crate::SystemService) -> BcachefsToolsInfo {
+        // Run subprocess calls and file reads concurrently.
+        let ((_, kernel_rust), running_version, (lock_ref, pinned_rev), default_ref, debug_checks, (debug_symbols, _)) = tokio::join!(
             bcachefs_version(),
             bcachefs_loaded_module_version(),
             read_flake_lock_bcachefs(),
             read_flake_nix_default_ref(),
+            // debug_checks from state file: reflects what will be built next (controls toggle)
+            read_debug_checks_enabled(),
+            // debug_symbols + debug_checks from cached module inspection (avoids
+            // expensive xz decompression on every page load)
+            system.cached_debug_flags(),
         );
         // Use the state file as the canonical display ref when the user has switched.
         // flake.lock's original.ref always mirrors flake.nix (not updated by --override-input),
@@ -417,10 +421,6 @@ echo "==> Update complete!"
             .filter(|s| !s.is_empty());
         let pinned_ref = state_ref.clone().or(lock_ref);
         let is_custom = state_ref.as_deref().map(|r| r != default_ref).unwrap_or(false);
-        // debug_checks from flake.nix marker: reflects what will be built next (controls toggle)
-        let debug_checks = read_debug_checks_enabled().await;
-        // debug_symbols from the loaded module: reflects actual state (read-only indicator)
-        let debug_symbols = crate::bcachefs_has_debug_symbols().await;
         BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, default_ref, kernel_rust, debug_symbols, debug_checks }
     }
 

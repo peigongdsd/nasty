@@ -239,7 +239,7 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         "system.reboot_required" => ok(req, state.updates.reboot_required().await),
 
         // ── bcachefs-tools version switching ──────────────────────
-        "bcachefs.tools.info" => ok(req, state.updates.bcachefs_info().await),
+        "bcachefs.tools.info" => ok(req, state.updates.bcachefs_info(&state.system).await),
         "bcachefs.tools.switch" => match parse_params::<nasty_system::update::BcachefsToolsSwitchRequest>(req) {
             Ok(p) => match state.updates.bcachefs_switch(p).await {
                 Ok(()) => {
