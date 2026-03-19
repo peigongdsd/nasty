@@ -39,6 +39,7 @@
 		Moon,
 		PanelLeftClose,
 		PanelLeftOpen,
+		Bug,
 	} from '@lucide/svelte';
 	import { refreshState } from '$lib/refresh.svelte';
 	import { rebootState } from '$lib/reboot.svelte';
@@ -77,7 +78,7 @@
 	}
 
 	// Version info (loaded once after connect)
-	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null; bcachefs_pinned_ref: string | null; bcachefs_is_custom: boolean } | null = $state(null);
+	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null; bcachefs_pinned_ref: string | null; bcachefs_is_custom: boolean; bcachefs_debug_checks: boolean } | null = $state(null);
 	let clock24h = $state(true);
 
 	$effect(() => {
@@ -235,7 +236,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="flex h-screen overflow-hidden">
+	<div class="relative flex h-screen overflow-hidden">
 		<!-- Sidebar -->
 		<aside class="flex {sidebarCollapsed ? 'w-[52px]' : 'w-[200px]'} shrink-0 flex-col border-r border-border bg-card transition-[width] duration-200">
 			<!-- Logo / collapse toggle -->
@@ -337,6 +338,15 @@
 							Kernel/driver update — click to restart
 						</button>
 					{/if}
+					{#if sysInfo?.bcachefs_debug_checks}
+						<a
+							href="/update"
+							class="flex items-center gap-2 rounded-md border-2 border-blue-500/70 px-3 py-1.5 text-sm text-blue-400 no-underline transition-all hover:bg-blue-500/10 hover:border-blue-400 hover:shadow-[0_0_16px_rgba(96,165,250,0.5)]"
+						>
+							<Bug size={15} />
+							Debug mode
+						</a>
+					{/if}
 				</div>
 
 				<div class="flex items-center gap-2.5">
@@ -427,21 +437,22 @@
 			</header>
 
 			<!-- Page content -->
-			<main class="relative flex-1 overflow-y-auto p-6">
+			<main class="flex-1 overflow-y-auto p-6">
 				{#if !connected}
 					<p class="text-muted-foreground">Connecting to engine...</p>
 				{:else}
 					{@render children()}
 				{/if}
-				{#if reconnecting}
-					<div class="absolute inset-0 z-40 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-						<div class="flex flex-col items-center gap-3">
-							<div class="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground/30 border-t-primary"></div>
-							<span class="text-sm text-muted-foreground">Reconnecting to engine...</span>
-						</div>
-					</div>
-				{/if}
 			</main>
 		</div>
+
+		{#if reconnecting}
+			<div class="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+				<div class="flex flex-col items-center gap-3">
+					<div class="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground/30 border-t-primary"></div>
+					<span class="text-sm text-muted-foreground">Reconnecting to engine...</span>
+				</div>
+			</div>
+		{/if}
 	</div>
 {/if}
