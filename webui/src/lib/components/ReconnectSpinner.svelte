@@ -61,5 +61,5 @@
 		<!-- Static base ring -->
 		<div class="absolute rounded-full" style="width: {ring.size}px; height: {ring.size}px; border: 1px solid {ring.border};"></div>
 	{/each}
-	<span class="text-sm text-muted-foreground">Reconnecting...</span>
+	<span class="text-sm text-muted-foreground animate-[pulse_3s_ease-in-out_infinite]">Reconnecting...</span>
 </div>
