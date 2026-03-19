@@ -46,6 +46,7 @@
 	import { rebootState } from '$lib/reboot.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
 	import { theme } from '$lib/theme.svelte';
+	import { terminalStatus } from '$lib/terminalStatus.svelte';
 
 	let { children } = $props();
 	let connected = $state(false);
@@ -317,6 +318,12 @@
 				<div class="flex items-center gap-2 text-base">
 					{#if currentNav.icon}{@const NavIcon = currentNav.icon}<NavIcon size={17} class="text-muted-foreground" />{/if}
 					<span class="font-medium">{currentNav.label}</span>
+					{#if currentNav.href === '/terminal' && terminalStatus.value !== 'idle'}
+						<span class="text-[0.65rem] uppercase tracking-wide {
+							terminalStatus.value === 'connected' ? 'text-green-400' :
+							terminalStatus.value === 'connecting' ? 'text-amber-500' : 'text-muted-foreground/50'
+						}">{terminalStatus.value}</span>
+					{/if}
 				</div>
 
 				<!-- Centered banners — reload and reboot notifications -->

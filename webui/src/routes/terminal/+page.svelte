@@ -6,6 +6,7 @@
 	import { getToken } from '$lib/auth';
 	import { Button } from '$lib/components/ui/button';
 	import { Maximize2, Minimize2 } from '@lucide/svelte';
+	import { terminalStatus } from '$lib/terminalStatus.svelte';
 
 	import type { IDisposable } from '@xterm/xterm';
 
@@ -14,6 +15,9 @@
 	let fitAddon: FitAddon | null = null;
 	let ws: WebSocket | null = null;
 	let status = $state<'connecting' | 'connected' | 'disconnected'>('connecting');
+
+	// Sync local status to shared store for top bar indicator
+	$effect(() => { terminalStatus.set(status); });
 	let termListeners: IDisposable[] = [];
 	let fullscreen = $state(false);
 
@@ -148,10 +152,6 @@
 
 <div class="{fullscreen ? 'fixed inset-0 z-50 flex flex-col bg-[#0f1117] p-4' : 'flex h-full flex-col'}">
 	<div class="mb-2 flex shrink-0 items-center gap-3">
-		<span class="text-xs uppercase {
-			status === 'connected' ? 'text-green-400' :
-			status === 'connecting' ? 'text-amber-500' : 'text-muted-foreground'
-		}">{status}</span>
 		{#if status === 'disconnected'}
 			<Button size="sm" onclick={reconnect}>Reconnect</Button>
 		{/if}
