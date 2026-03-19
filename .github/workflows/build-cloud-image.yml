@@ -36,10 +36,10 @@ jobs:
       - name: Add swap space
         if: matrix.arch == 'aarch64' && steps.check.outputs.skip != 'true'
         run: |
-          sudo fallocate -l 16G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          sudo fallocate -l 16G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
           echo "Swap enabled: $(swapon --show)"
 
       - uses: actions/checkout@v5
