@@ -304,7 +304,11 @@ in {
 
        bcachefs module: debug checks (CONFIG_BCACHEFS_DEBUG)
          # Debug-only module params (journal_seq_verify, inject_invalid_keys, etc.)
-         # are only compiled in when CONFIG_BCACHEFS_DEBUG is set:
+         # are only compiled in when CONFIG_BCACHEFS_DEBUG is set.
+         # /sys/module/ reflects the loaded module; modinfo reads the .ko on disk.
+         # Loaded module (survives DKMS rebuild until reboot):
+         test -e /sys/module/bcachefs/parameters/journal_seq_verify && echo "YES" || echo "NO"
+         # On-disk module (what will be loaded after reboot):
          modinfo bcachefs -F parm | grep -q journal_seq_verify && echo "YES" || echo "NO"
 
        share findings with devs

@@ -349,18 +349,12 @@ pub async fn bcachefs_has_debug_symbols() -> bool {
 
 /// Detect whether the loaded bcachefs kernel module was built with CONFIG_BCACHEFS_DEBUG.
 /// BCH_DEBUG_PARAMS_DEBUG() params (e.g. journal_seq_verify) are only compiled in
-/// when CONFIG_BCACHEFS_DEBUG is set, so their presence in modinfo is a reliable indicator.
+/// when CONFIG_BCACHEFS_DEBUG is set. We check /sys/module/ which reflects the actually
+/// loaded module, not the .ko on disk (which may have been rebuilt already).
 pub async fn bcachefs_has_debug_checks() -> bool {
-    let output = tokio::process::Command::new("modinfo")
-        .args(["bcachefs", "--field", "parm"])
-        .output()
-        .await;
-    match output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).contains("journal_seq_verify")
-        }
-        _ => false,
-    }
+    tokio::fs::metadata("/sys/module/bcachefs/parameters/journal_seq_verify")
+        .await
+        .is_ok()
 }
 
 async fn timedatectl_info() -> (String, bool) {
