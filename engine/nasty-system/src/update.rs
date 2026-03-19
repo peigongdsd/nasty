@@ -920,6 +920,16 @@ async fn bcachefs_version() -> (String, Option<bool>) {
     (version, kernel_rust)
 }
 
+/// Public wrapper for use by lib.rs cached info.
+pub async fn read_flake_nix_default_ref_pub() -> String {
+    read_flake_nix_default_ref().await
+}
+
+/// Public wrapper for use by lib.rs cached info.
+pub async fn is_reboot_required_pub() -> bool {
+    is_reboot_required().await
+}
+
 /// Parse flake.nix to extract the default bcachefs-tools ref from the input URL.
 async fn read_flake_nix_default_ref() -> String {
     let path = format!("{NIXOS_FLAKE_DIR}/flake.nix");

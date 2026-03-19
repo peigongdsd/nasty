@@ -20,6 +20,10 @@ struct CachedInfo {
     bcachefs_is_custom: bool,
     debug_symbols: bool,
     debug_checks: bool,
+    /// Whether the RUNNING module is custom (version differs from default).
+    bcachefs_is_custom_running: bool,
+    /// Whether the RUNNING module has debug checks (state file + no reboot pending).
+    bcachefs_debug_checks_running: bool,
 }
 
 pub struct SystemService {
@@ -42,7 +46,7 @@ pub struct SystemInfo {
     pub bcachefs_commit: Option<String>,
     /// The ref stored in the state file: tag name (e.g. "v1.37.1") or short SHA
     pub bcachefs_pinned_ref: Option<String>,
-    /// True when the user has overridden the default bcachefs-tools version
+    /// True when the RUNNING bcachefs module version differs from the default.
     pub bcachefs_is_custom: bool,
     /// IANA timezone string (e.g. `America/New_York`).
     pub timezone: String,
@@ -50,7 +54,8 @@ pub struct SystemInfo {
     pub ntp_synced: bool,
     /// Whether the loaded bcachefs kernel module contains debug symbols.
     pub bcachefs_debug_symbols: bool,
-    /// Whether the loaded bcachefs kernel module was built with CONFIG_BCACHEFS_DEBUG.
+    /// Whether the RUNNING bcachefs module was built with debug checks.
+    /// Only true when debug checks are configured AND the system has been rebooted into it.
     pub bcachefs_debug_checks: bool,
 }
 
@@ -204,7 +209,7 @@ impl SystemService {
             }
         }
         // Compute — run subprocess calls in parallel.
-        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks) = tokio::join!(
+        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks, default_ref, reboot_required) = tokio::join!(
             bcachefs_version(),
             read_bcachefs_commit(),
             async {
@@ -215,8 +220,16 @@ impl SystemService {
             },
             bcachefs_has_debug_symbols(),
             bcachefs_has_debug_checks(),
+            crate::update::read_flake_nix_default_ref_pub(),
+            crate::update::is_reboot_required_pub(),
         );
         let bcachefs_is_custom = pinned_ref_raw.is_some();
+        // Running state: compare actual loaded module against default.
+        // Strip leading 'v' from default ref for comparison (e.g. "v1.37.2" vs "1.37.2").
+        let default_bare = default_ref.strip_prefix('v').unwrap_or(&default_ref);
+        let bcachefs_is_custom_running = bcachefs_version != default_bare && bcachefs_version != "unknown";
+        // Debug checks running: state file exists AND we've rebooted into it (no pending reboot).
+        let bcachefs_debug_checks_running = debug_checks && !reboot_required;
         let info = CachedInfo {
             bcachefs_version,
             bcachefs_commit,
@@ -224,6 +237,8 @@ impl SystemService {
             bcachefs_is_custom,
             debug_symbols,
             debug_checks,
+            bcachefs_is_custom_running,
+            bcachefs_debug_checks_running,
         };
         *self.cached.write().await = Some(info.clone());
         info
@@ -245,11 +260,11 @@ impl SystemService {
             bcachefs_version: cached.bcachefs_version,
             bcachefs_commit: cached.bcachefs_commit,
             bcachefs_pinned_ref: cached.bcachefs_pinned_ref,
-            bcachefs_is_custom: cached.bcachefs_is_custom,
+            bcachefs_is_custom: cached.bcachefs_is_custom_running,
             timezone,
             ntp_synced,
             bcachefs_debug_symbols: cached.debug_symbols,
-            bcachefs_debug_checks: cached.debug_checks,
+            bcachefs_debug_checks: cached.bcachefs_debug_checks_running,
         }
     }
 
