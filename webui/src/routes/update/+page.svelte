@@ -319,9 +319,6 @@
 				{activeTab === 'bcachefs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 		>
 			bcachefs
-			{#if bcachefsInfo?.is_custom}
-				<span class="h-1.5 w-1.5 rounded-full {activeTab === 'bcachefs' ? 'bg-amber-300' : 'bg-amber-400'}"></span>
-			{/if}
 		</button>
 	</div>
 
