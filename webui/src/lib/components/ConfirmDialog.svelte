@@ -12,7 +12,7 @@
 </script>
 
 <Dialog bind:open={confirmState.open}>
-	<DialogContent class="max-w-sm">
+	<DialogContent class="max-w-lg">
 		<DialogHeader>
 			<DialogTitle>{confirmState.title}</DialogTitle>
 			{#if confirmState.message}
