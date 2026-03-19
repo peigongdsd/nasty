@@ -25,6 +25,8 @@
 	let bcachefsInfo: BcachefsToolsInfo | null = $state(null);
 	let bcachefsStatus: UpdateStatus | null = $state(null);
 	let bcachefsRef = $state('');
+	let bcachefsDebugSymbols = $state(false);
+	let bcachefsDebugChecks = $state(false);
 	let bcachefsSwitching = $state(false);
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
 	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -202,6 +204,10 @@
 	async function loadBcachefsInfo() {
 		await withToast(async () => {
 			bcachefsInfo = await client.call<BcachefsToolsInfo>('bcachefs.tools.info');
+			if (bcachefsInfo) {
+				bcachefsDebugSymbols = bcachefsInfo.debug_symbols;
+				bcachefsDebugChecks = bcachefsInfo.debug_checks;
+			}
 		});
 		sysInfoRefresh.trigger(); // keep sidebar bcachefs version in sync
 	}
@@ -232,7 +238,7 @@
 		bcachefsLogCollapsed = false;
 		bcachefsStatus = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const result = await withToast(
-			() => client.call('bcachefs.tools.switch', { git_ref: ref }),
+			() => client.call('bcachefs.tools.switch', { git_ref: ref, debug_symbols: bcachefsDebugSymbols, debug_checks: bcachefsDebugChecks }),
 			'bcachefs-tools switch started'
 		);
 		if (result !== undefined) {
@@ -499,6 +505,33 @@
 						branch tip. Use a specific tag or commit SHA for full control.
 					</div>
 				{/if}
+
+				<div class="mb-3 flex items-start gap-6">
+					<label class="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer">
+						<input
+							type="checkbox"
+							bind:checked={bcachefsDebugSymbols}
+							disabled={bcachefsSwitching || bcachefsStatus?.state === 'running'}
+							class="mt-0.5 rounded border-input"
+						/>
+						<span>
+							<span class="text-foreground font-medium">Debug symbols</span>
+							<span class="block text-xs text-muted-foreground/70 mt-0.5">Adds source-level debug info to the kernel module. No runtime cost, just a larger .ko file. Useful for readable stack traces in kernel panics and perf profiling.</span>
+						</span>
+					</label>
+					<label class="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer">
+						<input
+							type="checkbox"
+							bind:checked={bcachefsDebugChecks}
+							disabled={bcachefsSwitching || bcachefsStatus?.state === 'running'}
+							class="mt-0.5 rounded border-input"
+						/>
+						<span>
+							<span class="text-foreground font-medium">Debug checks</span>
+							<span class="block text-xs text-muted-foreground/70 mt-0.5">Enables extra runtime assertions inside bcachefs (btree locking, iterator validation, bkey verification). <strong>Has performance cost</strong> — use for development and debugging, not production.</span>
+						</span>
+					</label>
+				</div>
 
 				<Button
 					variant="default"

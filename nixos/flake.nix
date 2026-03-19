@@ -84,6 +84,8 @@
                 # block where CONFIG_BCACHEFS_FS is already set.
                 sed -i 's|# Enable other features here?|# Enable other features here?\n\tCONFIG_BCACHEFS_QUOTA := y\n\tccflags-y += -DCONFIG_BCACHEFS_QUOTA|' \
                   src/fs/bcachefs/Makefile
+                # @NASTY_DEBUG_SYMBOLS@
+                # @NASTY_DEBUG_CHECKS@
               '';
             });
         };
