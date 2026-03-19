@@ -483,7 +483,7 @@ echo "failed" > {BCACHEFS_SWITCH_RESULT}
 SWITCH_LOG=/var/lib/nasty/bcachefs-switch.log
 PREV_REF=$(cat {BCACHEFS_REF_STATE} 2>/dev/null || echo "{default_ref}")
 printf '%s  started  %s  (was: %s)\n' "$(date -u '+%Y-%m-%d %H:%M:%S')" "{git_ref}" "$PREV_REF" >> "$SWITCH_LOG"
-echo "==> Switching bcachefs-tools to {git_ref}..."
+echo "==> Switching bcachefs to {git_ref}..."
 cd {NIXOS_FLAKE_DIR}
 nix flake lock --override-input bcachefs-tools "{input_url}"
 # Resolve the symbolic ref (e.g. "master") to the exact commit SHA that was
@@ -510,7 +510,7 @@ echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {LOCAL_FLAKE}
 echo "success" > {BCACHEFS_SWITCH_RESULT}
 printf '%s  success  %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S')" "{git_ref}" >> "$SWITCH_LOG"
-echo "==> bcachefs-tools switch complete!"
+echo "==> bcachefs switch complete!"
 "#
         );
 
@@ -523,7 +523,7 @@ echo "==> bcachefs-tools switch complete!"
             .args([
                 "--unit", BCACHEFS_SWITCH_UNIT,
                 "--no-block",
-                "--description", "NASty bcachefs-tools version switch",
+                "--description", "NASty bcachefs version switch",
                 "--property=Type=oneshot",
                 "--property=StandardOutput=journal",
                 "--property=StandardError=journal",
@@ -537,7 +537,7 @@ echo "==> bcachefs-tools switch complete!"
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(UpdateError::CommandFailed(format!("failed to start: {stderr}")));
         }
-        info!("bcachefs-tools switch to {git_ref} started");
+        info!("bcachefs switch to {git_ref} started");
         Ok(())
     }
 
