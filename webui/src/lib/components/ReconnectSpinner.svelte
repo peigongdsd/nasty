@@ -26,11 +26,12 @@
 				animation: spin {ring.dur}s linear infinite {ring.dir};
 			"
 		>
-			<!-- Trail — flip gradient for clockwise rings so the bright head leads -->
+			<!-- Trail — clockwise rings get reversed gradient so the bright head leads -->
+			{@const cw = ring.dir === ''}
 			<div
 				class="absolute inset-0 rounded-full"
 				style="
-					background: conic-gradient(from {ring.startDeg}deg, {ring.head} 0%, {ring.color} 10%, {ring.color}40 30%, transparent 60%);
+					background: conic-gradient(from {ring.startDeg}deg, {cw ? `transparent 40%, ${ring.color}40 70%, ${ring.color} 90%, ${ring.head} 100%` : `${ring.head} 0%, ${ring.color} 10%, ${ring.color}40 30%, transparent 60%`});
 					-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
 					mask: radial-gradient(farthest-side, transparent calc(100% - {ring.trail}px), #000 calc(100% - {ring.trail}px));
 				"
