@@ -18,6 +18,8 @@ struct CachedInfo {
     bcachefs_commit: Option<String>,
     bcachefs_pinned_ref: Option<String>,
     bcachefs_is_custom: bool,
+    debug_symbols: bool,
+    debug_checks: bool,
 }
 
 pub struct SystemService {
@@ -46,6 +48,10 @@ pub struct SystemInfo {
     pub timezone: String,
     /// Whether the system clock is NTP-synchronized.
     pub ntp_synced: bool,
+    /// Whether the loaded bcachefs kernel module contains debug symbols.
+    pub bcachefs_debug_symbols: bool,
+    /// Whether the loaded bcachefs kernel module was built with CONFIG_BCACHEFS_DEBUG.
+    pub bcachefs_debug_checks: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -198,7 +204,7 @@ impl SystemService {
             }
         }
         // Compute — run subprocess calls in parallel.
-        let (bcachefs_version, bcachefs_commit, pinned_ref_raw) = tokio::join!(
+        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks) = tokio::join!(
             bcachefs_version(),
             read_bcachefs_commit(),
             async {
@@ -207,6 +213,8 @@ impl SystemService {
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
             },
+            bcachefs_has_debug_symbols(),
+            bcachefs_has_debug_checks(),
         );
         let bcachefs_is_custom = pinned_ref_raw.is_some();
         let info = CachedInfo {
@@ -214,6 +222,8 @@ impl SystemService {
             bcachefs_commit,
             bcachefs_pinned_ref: pinned_ref_raw,
             bcachefs_is_custom,
+            debug_symbols,
+            debug_checks,
         };
         *self.cached.write().await = Some(info.clone());
         info
@@ -238,6 +248,8 @@ impl SystemService {
             bcachefs_is_custom: cached.bcachefs_is_custom,
             timezone,
             ntp_synced,
+            bcachefs_debug_symbols: cached.debug_symbols,
+            bcachefs_debug_checks: cached.debug_checks,
         }
     }
 
@@ -291,6 +303,47 @@ async fn bcachefs_version() -> String {
             if v.is_empty() { "unknown".to_string() } else { v }
         }
         _ => "unknown".to_string(),
+    }
+}
+
+/// Detect whether the loaded bcachefs kernel module contains debug symbols.
+/// Decompresses the .ko.xz and pipes through `file` looking for "debug_info".
+pub async fn bcachefs_has_debug_symbols() -> bool {
+    // Get the module file path from modinfo
+    let filename_out = tokio::process::Command::new("modinfo")
+        .args(["bcachefs", "--field", "filename"])
+        .output()
+        .await;
+    let ko_path = match filename_out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => return false,
+    };
+    if ko_path.is_empty() {
+        return false;
+    }
+    // xz -dc <file> | file - → look for "debug_info"
+    let xz = tokio::process::Command::new("sh")
+        .args(["-c", &format!("xz -dc '{}' | file -", ko_path)])
+        .output()
+        .await;
+    match xz {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("debug_info"),
+        Err(_) => false,
+    }
+}
+
+/// Detect whether the loaded bcachefs kernel module was built with CONFIG_BCACHEFS_DEBUG.
+/// When enabled, bcachefs exposes debug_check_* module parameters.
+async fn bcachefs_has_debug_checks() -> bool {
+    let output = tokio::process::Command::new("modinfo")
+        .arg("bcachefs")
+        .output()
+        .await;
+    match output {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).contains("debug_check_")
+        }
+        _ => false,
     }
 }
 

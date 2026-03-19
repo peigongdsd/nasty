@@ -507,16 +507,16 @@
 				{/if}
 
 				<div class="mb-3 flex items-start gap-6">
-					<label class="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer">
+					<label class="flex items-start gap-2 text-sm text-muted-foreground" title="Debug symbols are inherited from the NixOS kernel config (CONFIG_DEBUG_INFO=y)">
 						<input
 							type="checkbox"
-							bind:checked={bcachefsDebugSymbols}
-							disabled={bcachefsSwitching || bcachefsStatus?.state === 'running'}
-							class="mt-0.5 rounded border-input"
+							checked={true}
+							disabled
+							class="mt-0.5 rounded border-input opacity-50"
 						/>
 						<span>
-							<span class="text-foreground font-medium">Debug symbols</span>
-							<span class="block text-xs text-muted-foreground/70 mt-0.5">Adds source-level debug info to the kernel module. No runtime cost, just a larger .ko file. Useful for readable stack traces in kernel panics and perf profiling.</span>
+							<span class="text-muted-foreground font-medium">Debug symbols</span>
+							<span class="block text-xs text-muted-foreground/50 mt-0.5">Inherited from NixOS kernel config (CONFIG_DEBUG_INFO=y). Adds source-level debug info for readable stack traces. No runtime cost.</span>
 						</span>
 					</label>
 					<label class="flex items-start gap-2 text-sm text-muted-foreground cursor-pointer">

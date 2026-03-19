@@ -49,9 +49,6 @@ pub struct BcachefsToolsInfo {
 pub struct BcachefsToolsSwitchRequest {
     /// A git ref: tag (v1.37.0), branch (master), or commit hash
     pub git_ref: String,
-    /// Build the kernel module with debug symbols (-g). No runtime cost, larger module.
-    #[serde(default)]
-    pub debug_symbols: bool,
     /// Build with CONFIG_BCACHEFS_DEBUG for extra runtime assertions. Has performance cost.
     #[serde(default)]
     pub debug_checks: bool,
@@ -411,7 +408,10 @@ echo "==> Update complete!"
             .filter(|s| !s.is_empty());
         let pinned_ref = state_ref.clone().or(lock_ref);
         let is_custom = state_ref.as_deref().map(|r| r != default_ref).unwrap_or(false);
-        let (debug_symbols, debug_checks) = read_flake_nix_debug_flags().await;
+        // debug_checks from flake.nix marker: reflects what will be built next (controls toggle)
+        let (_, debug_checks) = read_flake_nix_debug_flags().await;
+        // debug_symbols from the loaded module: reflects actual state (read-only indicator)
+        let debug_symbols = crate::bcachefs_has_debug_symbols().await;
         BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, default_ref, kernel_rust, debug_symbols, debug_checks }
     }
 
@@ -449,14 +449,9 @@ echo "==> Update complete!"
 
         let input_url = format!("{BCACHEFS_TOOLS_REPO}/{git_ref}");
 
-        // sed commands to toggle debug flags in flake.nix.
+        // sed command to toggle debug checks flag in flake.nix.
         // When enabled: replace the marker comment with a sed command that injects the flag.
         // When disabled: restore the plain marker comment.
-        let debug_symbols_sed = if req.debug_symbols {
-            r#"sed -i 's|.*@NASTY_DEBUG_SYMBOLS@.*|                sed -i '"'"'/# Enable other features here?/a\\tccflags-y += -g'"'"' src/fs/bcachefs/Makefile  # @NASTY_DEBUG_SYMBOLS@|' flake.nix"#
-        } else {
-            r#"sed -i 's|.*@NASTY_DEBUG_SYMBOLS@.*|                # @NASTY_DEBUG_SYMBOLS@|' flake.nix"#
-        };
         let debug_checks_sed = if req.debug_checks {
             r#"sed -i 's|.*@NASTY_DEBUG_CHECKS@.*|                sed -i '"'"'/# Enable other features here?/a\\tccflags-y += -DCONFIG_BCACHEFS_DEBUG'"'"' src/fs/bcachefs/Makefile  # @NASTY_DEBUG_CHECKS@|' flake.nix"#
         } else {
@@ -490,8 +485,7 @@ if [ "{git_ref}" != "{default_ref}" ]; then
         echo "==> Pinned to commit $RESOLVED_SHA"
     fi
 fi
-# Update debug flags in flake.nix
-{debug_symbols_sed}
+# Update debug checks flag in flake.nix
 {debug_checks_sed}
 # Commit the updated flake.lock and flake.nix so the tree stays clean for the next rebuild
 git add flake.lock flake.nix
@@ -931,20 +925,18 @@ async fn read_flake_nix_default_ref() -> String {
 
 /// Read debug flag markers from flake.nix to determine current build flags.
 /// A marker is "active" when it contains a sed command (not just a comment).
+/// Read debug checks marker from flake.nix to determine if the next build
+/// will include CONFIG_BCACHEFS_DEBUG. Returns (debug_symbols_placeholder, debug_checks).
 async fn read_flake_nix_debug_flags() -> (bool, bool) {
     let path = format!("{NIXOS_FLAKE_DIR}/flake.nix");
     let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-    let mut debug_symbols = false;
     let mut debug_checks = false;
     for line in content.lines() {
-        if line.contains("@NASTY_DEBUG_SYMBOLS@") && line.contains("sed -i") {
-            debug_symbols = true;
-        }
         if line.contains("@NASTY_DEBUG_CHECKS@") && line.contains("sed -i") {
             debug_checks = true;
         }
     }
-    (debug_symbols, debug_checks)
+    (false, debug_checks)
 }
 
 /// Parse flake.lock to extract the bcachefs-tools pinned ref and rev.
