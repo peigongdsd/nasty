@@ -452,7 +452,18 @@
 		{#if reconnecting}
 			<div class="absolute inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
 				<div class="relative flex items-center justify-center">
-					<div class="absolute h-28 w-28 animate-spin rounded-full border-4 border-muted-foreground/20 border-t-primary"></div>
+					<!-- Outer ring — slow spin, gradient trail -->
+					<div class="absolute h-44 w-44 animate-[spin_3s_linear_infinite] rounded-full"
+						style="background: conic-gradient(from 0deg, transparent 60%, hsl(var(--primary)) 100%);
+							-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+							mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));"
+					></div>
+					<!-- Inner ring — faster counter-spin, dotted -->
+					<div class="absolute h-36 w-36 animate-[spin_2s_linear_infinite_reverse] rounded-full border-[3px] border-dashed border-muted-foreground/15 border-t-primary/50"></div>
+					<!-- Orbiting dot -->
+					<div class="absolute h-44 w-44 animate-[spin_3s_linear_infinite]">
+						<div class="absolute -top-1 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-primary shadow-[0_0_8px_hsl(var(--primary)),0_0_16px_hsl(var(--primary)/0.5)]"></div>
+					</div>
 					<span class="text-sm text-muted-foreground">Reconnecting...</span>
 				</div>
 			</div>
