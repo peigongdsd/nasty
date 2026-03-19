@@ -344,9 +344,9 @@
 					{/if}
 					<div class="flex items-end pb-0.5">
 						{#if info?.update_available === true}
-							<Badge variant="default">Update available</Badge>
+							<span class="rounded-md border border-amber-600 bg-amber-950 px-2.5 py-0.5 text-xs font-medium text-amber-400">Update available</span>
 						{:else if info?.update_available === false}
-							<Badge variant="secondary">Up to date</Badge>
+							<span class="rounded-md border border-green-700 bg-green-950 px-2.5 py-0.5 text-xs font-medium text-green-400">Up to date</span>
 						{/if}
 					</div>
 				</div>
