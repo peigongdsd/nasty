@@ -34,8 +34,10 @@ pub struct BcachefsToolsInfo {
     pub pinned_rev: Option<String>,
     /// Version of the bcachefs kernel module currently loaded (from modinfo)
     pub running_version: String,
-    /// True when the user has overridden the default bcachefs-tools version
+    /// True when the user has configured a non-default bcachefs-tools version
     pub is_custom: bool,
+    /// True when the actually loaded module differs from the default version
+    pub is_custom_running: bool,
     /// The default ref from flake.nix (e.g. "v1.37.0")
     pub default_ref: String,
     /// Whether the running kernel was built with Rust support (CONFIG_RUST=y)
@@ -421,7 +423,10 @@ echo "==> Update complete!"
             .filter(|s| !s.is_empty());
         let pinned_ref = state_ref.clone().or(lock_ref);
         let is_custom = state_ref.as_deref().map(|r| r != default_ref).unwrap_or(false);
-        BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, default_ref, kernel_rust, debug_symbols, debug_checks }
+        // Compare loaded module version against default (strip 'v' prefix for comparison)
+        let default_bare = default_ref.strip_prefix('v').unwrap_or(&default_ref);
+        let is_custom_running = running_version != default_bare && running_version != "unknown";
+        BcachefsToolsInfo { pinned_ref, pinned_rev, running_version, is_custom, is_custom_running, default_ref, kernel_rust, debug_symbols, debug_checks }
     }
 
     pub async fn bcachefs_switch(&self, req: BcachefsToolsSwitchRequest) -> Result<(), UpdateError> {

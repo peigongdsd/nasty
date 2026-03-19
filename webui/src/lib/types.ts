@@ -319,6 +319,7 @@ export interface BcachefsToolsInfo {
 	pinned_rev: string | null;
 	running_version: string;
 	is_custom: boolean;
+	is_custom_running: boolean;
 	default_ref: string;
 	kernel_rust: boolean | null;
 	debug_symbols: boolean;
