@@ -129,10 +129,10 @@
         ];
       };
 
-      # Cloud/CI QCOW2 disk image
+      # Cloud/CI disk image (raw format — avoids virtiofsd sandbox issues with qcow)
       nasty-cloud = nixos-generators.nixosGenerate {
         inherit system;
-        format = "qcow";
+        format = "raw-efi";
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
           ./modules/bcachefs.nix

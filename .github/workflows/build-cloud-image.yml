@@ -85,29 +85,32 @@ jobs:
           sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
           git add nixos/flake.nix
 
-      - name: Build QCOW2 image (${{ matrix.arch }})
+      - name: Build disk image (${{ matrix.arch }})
         if: steps.check.outputs.skip != 'true'
         run: |
           cd nixos
           nix build .#packages.${{ matrix.nix_system }}.nasty-cloud-image \
-            --print-out-paths -L \
-            ${{ matrix.arch == 'aarch64' && '--cores 1' || '' }}
+            --print-out-paths -L
           echo "image_store=$(readlink -f result)" >> "$GITHUB_ENV"
 
-      - name: Install 7zip
+      - name: Install tools
         if: steps.check.outputs.skip != 'true'
-        run: sudo apt-get install -y p7zip-full
+        run: sudo apt-get install -y p7zip-full qemu-utils
 
       - name: Prepare image
         if: steps.check.outputs.skip != 'true'
         run: |
-          IMAGE_FILE=$(find "${{ env.image_store }}" -name "*.qcow2" -type f | head -1)
-          echo "Image: $IMAGE_FILE"
-          ls -lh "$IMAGE_FILE"
+          RAW_FILE=$(find "${{ env.image_store }}" -name "*.img" -o -name "*.raw" | head -1)
+          echo "Raw image: $RAW_FILE"
+          ls -lh "$RAW_FILE"
+
+          # Convert raw to qcow2 (compressed)
+          qemu-img convert -f raw -O qcow2 -c "$RAW_FILE" /tmp/nasty.qcow2
+          ls -lh /tmp/nasty.qcow2
 
           SHORT_SHA=$(git rev-parse --short HEAD)
           DEST="nasty-cloud-${{ matrix.arch }}-${SHORT_SHA}.qcow2.7z"
-          7z a -mx=9 "$DEST" "$IMAGE_FILE"
+          7z a -mx=9 "$DEST" /tmp/nasty.qcow2
           ls -lh "$DEST"
           echo "image_dest=$DEST" >> "$GITHUB_ENV"
 
