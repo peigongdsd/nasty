@@ -432,9 +432,8 @@
 		{/if}
 
 		<p class="text-xs text-muted-foreground">
-			Updates are fetched and applied atomically.
-			The system will atomically switch to the new version, restarting services as needed.
-			If anything goes wrong, use Rollback to return to the previous version.
+			Updates are fetched and applied atomically. If the build fails, the running system is not affected.
+			Use Rollback if the new version works but behaves unexpectedly.
 		</p>
 
 	<!-- bcachefs tab -->
