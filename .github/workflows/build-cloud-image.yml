@@ -44,6 +44,16 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
+            system-features = nixos-test benchmark big-parallel kvm
+
+      - name: Check KVM availability
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::error::/dev/kvm not available — QCOW2 image build requires KVM"
+            exit 1
+          fi
+          echo "KVM is available"
 
       - name: Inject GitHub token for updates
         if: steps.check.outputs.skip != 'true'
