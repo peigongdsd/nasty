@@ -25,7 +25,6 @@
 	let bcachefsInfo: BcachefsToolsInfo | null = $state(null);
 	let bcachefsStatus: UpdateStatus | null = $state(null);
 	let bcachefsRef = $state('');
-	let bcachefsDebugSymbols = $state(false);
 	let bcachefsDebugChecks = $state(false);
 	let bcachefsSwitching = $state(false);
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
@@ -63,6 +62,14 @@
 		}
 		return reached;
 	});
+
+	const bcachefsDebugChanged = $derived(
+		bcachefsInfo != null && bcachefsDebugChecks !== bcachefsInfo.debug_checks
+	);
+
+	const bcachefsCanSwitch = $derived(
+		bcachefsRef.trim() !== '' || bcachefsDebugChanged
+	);
 
 	const bcachefsWarnVisible = $derived(
 		bcachefsRef.trim() !== '' && bcachefsRef.trim() !== ((bcachefsInfo as BcachefsToolsInfo | null)?.default_ref ?? '')
@@ -205,7 +212,6 @@
 		await withToast(async () => {
 			bcachefsInfo = await client.call<BcachefsToolsInfo>('bcachefs.tools.info');
 			if (bcachefsInfo) {
-				bcachefsDebugSymbols = bcachefsInfo.debug_symbols;
 				bcachefsDebugChecks = bcachefsInfo.debug_checks;
 			}
 		});
@@ -232,13 +238,13 @@
 	}
 
 	async function doBcachefsSwitch() {
-		const ref = bcachefsRef.trim();
+		const ref = bcachefsRef.trim() || bcachefsInfo?.pinned_ref || bcachefsInfo?.default_ref || '';
 		if (!ref) return;
 		bcachefsSwitching = true;
 		bcachefsLogCollapsed = false;
 		bcachefsStatus = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const result = await withToast(
-			() => client.call('bcachefs.tools.switch', { git_ref: ref, debug_symbols: bcachefsDebugSymbols, debug_checks: bcachefsDebugChecks }),
+			() => client.call('bcachefs.tools.switch', { git_ref: ref, debug_checks: bcachefsDebugChecks }),
 			'bcachefs-tools switch started'
 		);
 		if (result !== undefined) {
@@ -510,7 +516,7 @@
 					<label class="flex items-start gap-2 text-sm text-muted-foreground" title="Debug symbols are inherited from the NixOS kernel config (CONFIG_DEBUG_INFO=y)">
 						<input
 							type="checkbox"
-							checked={true}
+							checked={bcachefsInfo?.debug_symbols ?? false}
 							disabled
 							class="mt-0.5 rounded border-input opacity-50"
 						/>
@@ -537,7 +543,7 @@
 					variant="default"
 					size="sm"
 					onclick={requestBcachefsSwitch}
-					disabled={!bcachefsRef.trim() || bcachefsSwitching || bcachefsStatus?.state === 'running'}
+					disabled={!bcachefsCanSwitch || bcachefsSwitching || bcachefsStatus?.state === 'running'}
 				>
 					{bcachefsSwitching ? 'Starting...' : 'Switch'}
 				</Button>
