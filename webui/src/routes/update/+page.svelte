@@ -11,7 +11,9 @@
 	import { rebootState } from '$lib/reboot.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
 
-	let activeTab: 'system' | 'bcachefs' = $state('system');
+	let activeTab: 'system' | 'bcachefs' = $state(
+		typeof window !== 'undefined' && window.location.hash === '#bcachefs' ? 'bcachefs' : 'system'
+	);
 
 	let info: UpdateInfo | null = $state(null);
 	let status: UpdateStatus | null = $state(null);

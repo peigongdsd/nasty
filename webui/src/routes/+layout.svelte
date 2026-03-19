@@ -340,7 +340,7 @@
 					{/if}
 					{#if sysInfo?.bcachefs_debug_checks}
 						<a
-							href="/update"
+							href="/update#bcachefs"
 							class="flex items-center gap-2 rounded-md border-2 border-blue-500/70 px-3 py-1.5 text-sm text-blue-400 no-underline transition-all hover:bg-blue-500/10 hover:border-blue-400 hover:shadow-[0_0_16px_rgba(96,165,250,0.5)]"
 						>
 							<Bug size={15} />
