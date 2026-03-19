@@ -6,6 +6,7 @@
 	import { error as showError } from '$lib/toast.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import ReconnectSpinner from '$lib/components/ReconnectSpinner.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import type { AuthResult } from '$lib/rpc';
 	import favicon from '$lib/assets/favicon.svg';
@@ -451,50 +452,7 @@
 
 		{#if reconnecting}
 			<div class="absolute inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
-				<div class="relative flex items-center justify-center">
-					<!-- Ring 1 (outermost) — yellow, clockwise -->
-					<div class="absolute h-52 w-52 animate-[spin_2.5s_linear_infinite] rounded-full"
-						style="background: conic-gradient(from 0deg, transparent 40%, #eab30840 70%, #eab308 90%, #fde047 100%);
-							-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-							mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));"
-					></div>
-					<div class="absolute h-52 w-52 animate-[spin_2.5s_linear_infinite]">
-						<div class="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rounded-full bg-yellow-300 shadow-[0_0_10px_#fde047,0_0_24px_#eab308,0_0_48px_#eab30880]"></div>
-					</div>
-					<!-- Ring 2 — orange, counter-clockwise -->
-					<div class="absolute h-44 w-44 animate-[spin_3s_linear_infinite_reverse] rounded-full"
-						style="background: conic-gradient(from 0deg, transparent 40%, #f9731640 70%, #f97316 90%, #fdba74 100%);
-							-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-							mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));"
-					></div>
-					<div class="absolute h-44 w-44 animate-[spin_3s_linear_infinite_reverse]">
-						<div class="absolute -top-1 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-orange-300 shadow-[0_0_10px_#fdba74,0_0_24px_#f97316,0_0_40px_#f9731680]"></div>
-					</div>
-					<!-- Ring 3 — red, clockwise -->
-					<div class="absolute h-36 w-36 animate-[spin_3.5s_linear_infinite] rounded-full"
-						style="background: conic-gradient(from 0deg, transparent 40%, #ef444440 70%, #ef4444 90%, #fca5a5 100%);
-							-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));
-							mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2.5px));"
-					></div>
-					<div class="absolute h-36 w-36 animate-[spin_3.5s_linear_infinite]">
-						<div class="absolute -top-1 left-1/2 -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-red-300 shadow-[0_0_10px_#fca5a5,0_0_24px_#ef4444,0_0_40px_#ef444480]"></div>
-					</div>
-					<!-- Ring 4 (innermost) — green, counter-clockwise -->
-					<div class="absolute h-28 w-28 animate-[spin_4s_linear_infinite_reverse] rounded-full"
-						style="background: conic-gradient(from 0deg, transparent 40%, #22c55e40 70%, #22c55e 90%, #86efac 100%);
-							-webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
-							mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));"
-					></div>
-					<div class="absolute h-28 w-28 animate-[spin_4s_linear_infinite_reverse]">
-						<div class="absolute -top-1 left-1/2 -translate-x-1/2 h-2 w-2 rounded-full bg-green-300 shadow-[0_0_8px_#86efac,0_0_20px_#22c55e,0_0_36px_#22c55e80]"></div>
-					</div>
-					<!-- Static base rings -->
-					<div class="absolute h-52 w-52 rounded-full border border-yellow-500/10"></div>
-					<div class="absolute h-44 w-44 rounded-full border border-orange-500/10"></div>
-					<div class="absolute h-36 w-36 rounded-full border border-red-500/10"></div>
-					<div class="absolute h-28 w-28 rounded-full border border-green-500/10"></div>
-					<span class="text-sm text-muted-foreground">Reconnecting...</span>
-				</div>
+				<ReconnectSpinner />
 			</div>
 		{/if}
 	</div>
