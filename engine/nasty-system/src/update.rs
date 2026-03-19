@@ -950,7 +950,17 @@ async fn read_debug_checks_enabled() -> bool {
     // Fallback: check flake.nix marker
     let path = format!("{NIXOS_FLAKE_DIR}/flake.nix");
     let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-    content.lines().any(|l| l.contains("@NASTY_DEBUG_CHECKS@") && l.contains("sed -i"))
+    if content.lines().any(|l| l.contains("@NASTY_DEBUG_CHECKS@") && l.contains("sed -i")) {
+        return true;
+    }
+    // Last resort: detect from the loaded module (handles upgrades from before
+    // the state file was introduced — the module has debug checks but no state file).
+    // If detected, create the state file so future checks are fast.
+    if crate::bcachefs_has_debug_checks().await {
+        let _ = tokio::fs::write(BCACHEFS_DEBUG_CHECKS_STATE, "1").await;
+        return true;
+    }
+    false
 }
 
 /// Parse flake.lock to extract the bcachefs-tools pinned ref and rev.

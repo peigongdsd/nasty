@@ -334,7 +334,7 @@ pub async fn bcachefs_has_debug_symbols() -> bool {
 
 /// Detect whether the loaded bcachefs kernel module was built with CONFIG_BCACHEFS_DEBUG.
 /// When enabled, bcachefs exposes debug_check_* module parameters.
-async fn bcachefs_has_debug_checks() -> bool {
+pub async fn bcachefs_has_debug_checks() -> bool {
     let output = tokio::process::Command::new("modinfo")
         .arg("bcachefs")
         .output()
