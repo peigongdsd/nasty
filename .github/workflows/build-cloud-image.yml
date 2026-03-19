@@ -23,15 +23,21 @@ jobs:
           - arch: aarch64
             nix_system: aarch64-linux
     runs-on: ubuntu-latest
-    if: >-
-      inputs.arch == 'both' ||
-      inputs.arch == matrix.arch
     permissions:
       contents: write
     steps:
+      - name: Skip if not selected
+        id: check
+        run: |
+          if [[ "${{ inputs.arch }}" != "both" && "${{ inputs.arch }}" != "${{ matrix.arch }}" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v5
+        if: steps.check.outputs.skip != 'true'
 
       - uses: cachix/install-nix-action@v31
+        if: steps.check.outputs.skip != 'true'
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
@@ -39,24 +45,27 @@ jobs:
             extra-platforms = aarch64-linux
 
       - name: Set up QEMU for aarch64
-        if: matrix.arch == 'aarch64'
+        if: matrix.arch == 'aarch64' && steps.check.outputs.skip != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           sudo systemctl restart systemd-binfmt
 
       - name: Inject GitHub token for updates
+        if: steps.check.outputs.skip != 'true'
         run: |
           echo "${{ secrets.NASTY_GITHUB_TOKEN }}" > nixos/github-token
           git add nixos/github-token
 
       - name: Compute npm deps hash
+        if: steps.check.outputs.skip != 'true'
         run: |
           HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)
           sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
           git add nixos/flake.nix
 
       - name: Build QCOW2 image (${{ matrix.arch }})
+        if: steps.check.outputs.skip != 'true'
         run: |
           cd nixos
           nix build .#packages.${{ matrix.nix_system }}.nasty-cloud-image \
@@ -64,9 +73,11 @@ jobs:
           echo "image_store=$(readlink -f result)" >> "$GITHUB_ENV"
 
       - name: Install 7zip
+        if: steps.check.outputs.skip != 'true'
         run: sudo apt-get install -y p7zip-full
 
       - name: Prepare image
+        if: steps.check.outputs.skip != 'true'
         run: |
           IMAGE_FILE=$(find "${{ env.image_store }}" -name "*.qcow2" -type f | head -1)
           echo "Image: $IMAGE_FILE"
@@ -79,6 +90,7 @@ jobs:
           echo "image_dest=$DEST" >> "$GITHUB_ENV"
 
       - name: Upload as release
+        if: steps.check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
