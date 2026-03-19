@@ -341,19 +341,13 @@
 					{#if sysInfo?.bcachefs_is_custom || sysInfo?.bcachefs_debug_checks}
 						<a
 							href="/update#bcachefs"
-							class="flex items-center gap-1.5 rounded-md border-2 border-blue-500/70 px-3 py-1.5 text-sm no-underline transition-all hover:bg-blue-500/10 hover:border-blue-400 hover:shadow-[0_0_16px_rgba(96,165,250,0.5)]"
+							class="flex items-center gap-2 rounded-md border-2 border-blue-500/70 px-3 py-1.5 text-sm text-blue-400 no-underline transition-all hover:bg-blue-500/10 hover:border-blue-400 hover:shadow-[0_0_16px_rgba(96,165,250,0.5)]"
 						>
-							{#if sysInfo.bcachefs_is_custom}
-								<span class="text-amber-400">Custom</span>
-							{/if}
-							{#if sysInfo.bcachefs_is_custom && sysInfo.bcachefs_debug_checks}
-								<span class="text-muted-foreground/50">|</span>
-							{/if}
-							{#if sysInfo.bcachefs_debug_checks}
-								<Bug size={14} class="text-blue-400" />
-								<span class="text-blue-400">Debug</span>
-							{/if}
-							<span class="text-blue-400">bcachefs</span>
+							<span>bcachefs</span>
+							<span class="flex items-center gap-1.5">
+								<Settings size={14} class="{sysInfo.bcachefs_is_custom ? 'text-amber-400' : 'text-muted-foreground/30'}" title="Custom version" />
+								<Bug size={14} class="{sysInfo.bcachefs_debug_checks ? 'text-blue-400' : 'text-muted-foreground/30'}" title="Debug checks" />
+							</span>
 						</a>
 					{/if}
 				</div>
