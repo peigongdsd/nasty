@@ -216,7 +216,7 @@ impl SystemService {
             }
         }
         // Compute — run subprocess calls in parallel.
-        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks, default_ref, reboot_required) = tokio::join!(
+        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks, default_ref) = tokio::join!(
             bcachefs_version(),
             read_bcachefs_commit(),
             async {
@@ -228,7 +228,6 @@ impl SystemService {
             bcachefs_has_debug_symbols(),
             bcachefs_has_debug_checks(),
             crate::update::read_flake_nix_default_ref_pub(),
-            crate::update::is_reboot_required_pub(),
         );
         let bcachefs_is_custom = pinned_ref_raw.is_some();
         // Running state: compare actual loaded module against default.

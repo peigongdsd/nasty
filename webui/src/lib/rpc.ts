@@ -133,6 +133,7 @@ export class NastyClient {
 			id
 		};
 
+		const t0 = NastyClient.debug ? performance.now() : 0;
 		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
@@ -140,12 +141,21 @@ export class NastyClient {
 			}, timeoutMs);
 
 			this.pending.set(id, {
-				resolve: (v) => { clearTimeout(timer); resolve(v as T); },
+				resolve: (v) => {
+					clearTimeout(timer);
+					if (NastyClient.debug) {
+						console.debug(`[rpc] ${method}: ${(performance.now() - t0).toFixed(0)}ms`);
+					}
+					resolve(v as T);
+				},
 				reject: (e) => { clearTimeout(timer); reject(e); }
 			});
 			this.ws!.send(JSON.stringify(request));
 		});
 	}
+
+	/** Enable with localStorage.setItem('nasty-debug', '1') then reload */
+	static debug = typeof localStorage !== 'undefined' && localStorage.getItem('nasty-debug') === '1';
 
 	onEvent(handler: EventHandler) {
 		this.eventHandlers.push(handler);

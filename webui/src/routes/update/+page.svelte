@@ -107,7 +107,11 @@
 	});
 
 	onMount(async () => {
+		const t0 = performance.now();
 		await Promise.all([loadVersion(), loadStatus(), loadBcachefsInfo(), loadBcachefsStatus()]);
+		if (localStorage.getItem('nasty-debug') === '1') {
+			console.debug(`[page] update: ${(performance.now() - t0).toFixed(0)}ms total`);
+		}
 		loading = false;
 
 		const onReconnect = () => {

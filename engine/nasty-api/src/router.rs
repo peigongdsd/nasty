@@ -103,7 +103,14 @@ pub async fn handle_rpc_request(raw: &str, state: &AppState, session: &Session) 
         return serde_json::to_string(&resp).unwrap();
     }
 
+    let t0 = std::time::Instant::now();
     let response = route(&request, state, session).await;
+    let elapsed = t0.elapsed();
+    if elapsed.as_millis() > 50 {
+        tracing::warn!("RPC slow: {} took {}ms", request.method, elapsed.as_millis());
+    } else {
+        debug!("RPC done: {} in {}ms", request.method, elapsed.as_millis());
+    }
 
     // Broadcast event to all clients on successful mutations
     if response.error.is_none() {
