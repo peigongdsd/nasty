@@ -451,9 +451,9 @@
 
 		{#if reconnecting}
 			<div class="absolute inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-[2px]">
-				<div class="flex flex-col items-center gap-3">
-					<div class="h-8 w-8 animate-spin rounded-full border-4 border-muted-foreground/30 border-t-primary"></div>
-					<span class="text-sm text-muted-foreground">Reconnecting to engine...</span>
+				<div class="relative flex items-center justify-center">
+					<div class="absolute h-28 w-28 animate-spin rounded-full border-4 border-muted-foreground/20 border-t-primary"></div>
+					<span class="text-sm text-muted-foreground">Reconnecting...</span>
 				</div>
 			</div>
 		{/if}
