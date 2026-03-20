@@ -81,8 +81,16 @@ struct AuthState {
     initialized: bool,
 }
 
+/// Max failed login attempts before lockout.
+const MAX_FAILED_ATTEMPTS: usize = 5;
+/// Window for counting failed attempts and lockout duration (seconds).
+const LOCKOUT_WINDOW_SECS: u64 = 15 * 60; // 15 minutes
+
 pub struct AuthService {
     state: Arc<RwLock<AuthState>>,
+    /// In-memory failed login tracking: username → list of failure timestamps.
+    /// Not persisted — resets on engine restart.
+    failed_attempts: Arc<RwLock<std::collections::HashMap<String, Vec<u64>>>>,
 }
 
 impl AuthService {
@@ -90,6 +98,7 @@ impl AuthService {
         let state = load_state().await;
         let svc = Self {
             state: Arc::new(RwLock::new(state)),
+            failed_attempts: Arc::new(RwLock::new(std::collections::HashMap::new())),
         };
 
         // If no users exist, create default admin
@@ -111,21 +120,52 @@ impl AuthService {
 
     /// Authenticate with username/password, returns a session token
     pub async fn login(&self, username: &str, password: &str) -> Result<String, AuthError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Check if the account is locked out due to too many failed attempts
+        {
+            let attempts = self.failed_attempts.read().await;
+            if let Some(failures) = attempts.get(username) {
+                let recent: Vec<_> = failures.iter().filter(|&&t| now - t < LOCKOUT_WINDOW_SECS).collect();
+                if recent.len() >= MAX_FAILED_ATTEMPTS {
+                    tracing::warn!("Login blocked for '{}': {} failed attempts in last {} minutes",
+                        username, recent.len(), LOCKOUT_WINDOW_SECS / 60);
+                    return Err(AuthError::AccountLocked);
+                }
+            }
+        }
+
         let mut state = self.state.write().await;
 
         let user = state
             .users
             .iter()
             .find(|u| u.username == username)
-            .ok_or(AuthError::InvalidCredentials)?;
+            .ok_or(AuthError::InvalidCredentials);
 
-        verify_password(password, &user.password_hash)?;
+        let user = match user {
+            Ok(u) => u,
+            Err(e) => {
+                self.record_failed_attempt(username, now).await;
+                return Err(e);
+            }
+        };
+
+        match verify_password(password, &user.password_hash) {
+            Ok(()) => {}
+            Err(e) => {
+                self.record_failed_attempt(username, now).await;
+                return Err(e);
+            }
+        }
+
+        // Successful login — clear failed attempts
+        self.clear_failed_attempts(username).await;
 
         let token = generate_token();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
         let session = Session {
             token: token.clone(),
             username: user.username.clone(),
@@ -392,6 +432,19 @@ impl AuthService {
             .collect()
     }
 
+    async fn record_failed_attempt(&self, username: &str, now: u64) {
+        let mut attempts = self.failed_attempts.write().await;
+        let entry = attempts.entry(username.to_string()).or_default();
+        entry.push(now);
+        // Prune old entries outside the window
+        entry.retain(|&t| now - t < LOCKOUT_WINDOW_SECS);
+    }
+
+    async fn clear_failed_attempts(&self, username: &str) {
+        let mut attempts = self.failed_attempts.write().await;
+        attempts.remove(username);
+    }
+
     /// Check if the token has admin role
     pub async fn require_admin(&self, token: &str) -> Result<Session, AuthError> {
         let session = self.validate(token).await?;
@@ -412,6 +465,8 @@ pub struct UserInfo {
 pub enum AuthError {
     #[error("invalid username or password")]
     InvalidCredentials,
+    #[error("account temporarily locked due to too many failed attempts")]
+    AccountLocked,
     #[error("invalid token")]
     InvalidToken,
     #[error("token has expired")]
