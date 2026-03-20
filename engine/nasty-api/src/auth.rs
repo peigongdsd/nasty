@@ -9,6 +9,7 @@ use tracing::info;
 
 const STATE_PATH: &str = "/var/lib/nasty/auth.json";
 const STATE_DIR: &str = "/var/lib/nasty";
+const AUDIT_LOG_PATH: &str = "/var/lib/nasty/audit.log";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
@@ -147,6 +148,7 @@ impl AuthService {
                 if recent.len() >= MAX_FAILED_ATTEMPTS {
                     tracing::warn!("Login blocked for '{}': {} failed attempts in last {} minutes",
                         username, recent.len(), LOCKOUT_WINDOW_SECS / 60);
+                    audit("login_locked", username, client_ip, &format!("{} failed attempts", recent.len()));
                     return Err(AuthError::AccountLocked);
                 }
             }
@@ -163,6 +165,7 @@ impl AuthService {
         let user = match user {
             Ok(u) => u,
             Err(e) => {
+                audit("login_failed", username, client_ip, "user not found");
                 self.record_failed_attempt(username, now).await;
                 return Err(e);
             }
@@ -171,6 +174,7 @@ impl AuthService {
         match verify_password(password, &user.password_hash) {
             Ok(()) => {}
             Err(e) => {
+                audit("login_failed", username, client_ip, "wrong password");
                 self.record_failed_attempt(username, now).await;
                 return Err(e);
             }
@@ -199,6 +203,7 @@ impl AuthService {
         state.sessions.push(session);
         save_state(&state).await?;
 
+        audit("login_success", username, client_ip, "");
         info!("User '{}' logged in", username);
         Ok(token)
     }
@@ -230,6 +235,7 @@ impl AuthService {
                         "Session for '{}' rejected: IP mismatch (bound={}, request={})",
                         session.username, bound_ip, client_ip
                     );
+                    audit("session_ip_mismatch", &session.username, client_ip, &format!("bound={bound_ip}"));
                     return Err(AuthError::InvalidToken);
                 }
             }
@@ -252,6 +258,7 @@ impl AuthService {
                 "API token '{}' rejected: IP {} not in allowed list {:?}",
                 t.name, client_ip, t.allowed_ips
             );
+            audit("token_ip_rejected", &t.name, client_ip, &format!("allowed={:?}", t.allowed_ips));
             return Err(AuthError::InvalidToken);
         }
 
@@ -310,6 +317,7 @@ impl AuthService {
         state.api_tokens.push(stored);
         save_state(&state).await?;
 
+        audit("token_created", &session.username, session.client_ip.as_deref().unwrap_or(""), &format!("name={name}"));
         info!("Created API token '{name}'");
 
         // Return the raw token to the caller — shown only once, never stored
@@ -364,6 +372,7 @@ impl AuthService {
         }
         save_state(&state).await?;
 
+        audit("token_deleted", &session.username, session.client_ip.as_deref().unwrap_or(""), &format!("id={id}"));
         info!("Deleted API token '{id}'");
         Ok(())
     }
@@ -412,6 +421,7 @@ impl AuthService {
 
         save_state(&state).await?;
 
+        audit("password_changed", &session.username, session.client_ip.as_deref().unwrap_or(""), &format!("target={username}"));
         info!("Password changed for user '{username}'");
         Ok(())
     }
@@ -437,6 +447,7 @@ impl AuthService {
             return Err(AuthError::UserExists);
         }
 
+        audit("user_created", &session.username, session.client_ip.as_deref().unwrap_or(""), &format!("target={username}, role={role:?}"));
         state.users.push(User {
             username: username.to_string(),
             password_hash: hash_password(password)?,
@@ -473,6 +484,7 @@ impl AuthService {
         state.sessions.retain(|s| s.username != username);
         save_state(&state).await?;
 
+        audit("user_deleted", &session.username, session.client_ip.as_deref().unwrap_or(""), &format!("target={username}"));
         info!("Deleted user '{username}'");
         Ok(())
     }
@@ -541,6 +553,25 @@ pub enum AuthError {
     HashError(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+/// Append a structured event to the audit log (JSONL, append-only).
+fn audit(event: &str, user: &str, ip: &str, detail: &str) {
+    use std::io::Write;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let line = serde_json::json!({
+        "ts": now,
+        "event": event,
+        "user": user,
+        "ip": ip,
+        "detail": detail,
+    });
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(AUDIT_LOG_PATH) {
+        let _ = writeln!(f, "{}", line);
+    }
 }
 
 fn hash_password(password: &str) -> Result<String, AuthError> {
