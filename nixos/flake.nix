@@ -129,13 +129,10 @@
         ];
       };
 
-      # Cloud/CI disk image
-      # x86_64 uses raw-efi (works in Nix sandbox), aarch64 uses sd-aarch64
-      # (avoids QEMU/virtiofsd which fails in CI sandboxes on ARM).
-      # Both produce raw images, converted to QCOW2 in the workflow.
+      # Cloud/CI disk image (UEFI-bootable raw image, converted to QCOW2 in CI)
       nasty-cloud = nixos-generators.nixosGenerate {
         inherit system;
-        format = if system == "aarch64-linux" then "sd-aarch64" else "raw-efi";
+        format = "raw-efi";
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
           ./modules/bcachefs.nix

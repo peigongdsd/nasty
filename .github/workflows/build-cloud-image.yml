@@ -1,140 +1,64 @@
-name: Build NASty Cloud Image
+name: Build NASty Cloud Image (x86_64)
 
 on:
   workflow_dispatch:
-    inputs:
-      arch:
-        description: 'Architecture to build'
-        type: choice
-        options:
-          - both
-          - x86_64
-          - aarch64
-        default: both
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            nix_system: x86_64-linux
-          - arch: aarch64
-            nix_system: aarch64-linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Skip if not selected
-        id: check
-        run: |
-          if [[ "${{ inputs.arch }}" != "both" && "${{ inputs.arch }}" != "${{ matrix.arch }}" ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Free disk space and add swap
-        if: matrix.arch == 'aarch64' && steps.check.outputs.skip != 'true'
-        run: |
-          echo "==> Disk before cleanup:"
-          df -h /
-          sudo rm -rf \
-            /usr/local/lib/android \
-            /usr/share/dotnet \
-            /opt/ghc \
-            /usr/local/share/boost \
-            /usr/local/.ghcup
-          sudo docker image prune -af 2>/dev/null || true
-          echo "==> Disk after cleanup:"
-          df -h /
-          sudo fallocate -l 16G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          echo "Swap enabled: $(swapon --show)"
-
       - uses: actions/checkout@v5
-        if: steps.check.outputs.skip != 'true'
 
       - uses: cachix/install-nix-action@v31
-        if: steps.check.outputs.skip != 'true'
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             experimental-features = nix-command flakes
-            system-features = nixos-test benchmark big-parallel kvm
-            extra-platforms = aarch64-linux
-
-      - name: Set up QEMU for aarch64
-        if: matrix.arch == 'aarch64' && steps.check.outputs.skip != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
-          sudo systemctl restart systemd-binfmt
 
       - name: Inject GitHub token for updates
-        if: steps.check.outputs.skip != 'true'
         run: |
           echo "${{ secrets.NASTY_GITHUB_TOKEN }}" > nixos/github-token
           git add nixos/github-token
 
       - name: Compute npm deps hash
-        if: steps.check.outputs.skip != 'true'
         run: |
           HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)
           sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
           git add nixos/flake.nix
 
-      - name: Build disk image (${{ matrix.arch }})
-        if: steps.check.outputs.skip != 'true'
+      - name: Build disk image
         run: |
           cd nixos
-          nix build .#packages.${{ matrix.nix_system }}.nasty-cloud-image \
+          nix build .#packages.x86_64-linux.nasty-cloud-image \
             --print-out-paths -L
           echo "image_store=$(readlink -f result)" >> "$GITHUB_ENV"
 
       - name: Install tools
-        if: steps.check.outputs.skip != 'true'
         run: sudo apt-get install -y p7zip-full qemu-utils
 
       - name: Prepare image
-        if: steps.check.outputs.skip != 'true'
         run: |
-          # Find the image (may be .img, .raw, or .img.zst)
-          RAW_FILE=$(find "${{ env.image_store }}" -type f \( -name "*.img" -o -name "*.raw" -o -name "*.img.zst" \) | head -1)
-          echo "Found: $RAW_FILE"
+          RAW_FILE=$(find "${{ env.image_store }}" -type f \( -name "*.img" -o -name "*.raw" \) | head -1)
+          echo "Image: $RAW_FILE"
           ls -lh "$RAW_FILE"
 
-          # Decompress if zstd-compressed
-          if [[ "$RAW_FILE" == *.zst ]]; then
-            zstd -d "$RAW_FILE" -o /tmp/nasty-raw.img
-            RAW_FILE=/tmp/nasty-raw.img
-            ls -lh "$RAW_FILE"
-          fi
-
-          # Convert raw to qcow2 (compressed)
           qemu-img convert -f raw -O qcow2 -c "$RAW_FILE" /tmp/nasty.qcow2
           ls -lh /tmp/nasty.qcow2
 
           SHORT_SHA=$(git rev-parse --short HEAD)
-          DEST="nasty-cloud-${{ matrix.arch }}-${SHORT_SHA}.qcow2.7z"
+          DEST="nasty-cloud-x86_64-${SHORT_SHA}.qcow2.7z"
           7z a -mx=9 "$DEST" /tmp/nasty.qcow2
           ls -lh "$DEST"
           echo "image_dest=$DEST" >> "$GITHUB_ENV"
 
       - name: Upload as release
-        if: steps.check.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           TAG="cloud-$(date +%Y%m%d)-${SHORT_SHA}"
-
-          # Create release if it doesn't exist yet (first arch to finish creates it)
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" \
-              --title "NASty Cloud Image $TAG" \
-              --notes "Automated QCOW2 build from commit ${SHORT_SHA}"
-
-          # Upload this architecture's image
-          gh release upload "$TAG" "${{ env.image_dest }}"
+          gh release create "$TAG" "${{ env.image_dest }}" \
+            --title "NASty Cloud Image $TAG" \
+            --notes "Automated QCOW2 build from commit ${SHORT_SHA}. x86_64 only — aarch64 images are built locally."
