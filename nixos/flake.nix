@@ -145,14 +145,14 @@
     packages.x86_64-linux = let pkgs = mkPkgs "x86_64-linux"; in {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
-      nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.ociImage;
+      nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "x86_64-linux";
     };
 
     packages.aarch64-linux = let pkgs = mkPkgs "aarch64-linux"; in {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
-      nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.ociImage;
+      nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "aarch64-linux";
     };
 
