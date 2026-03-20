@@ -52,7 +52,6 @@ pub struct ApiToken {
     pub id: String,
     pub name: String,
     /// Argon2 hash of the token value. The raw token is returned only once on creation.
-    /// Legacy tokens stored in plaintext are auto-migrated on next validation.
     pub token: String,
     pub role: Role,
     pub created_at: u64,
@@ -62,9 +61,6 @@ pub struct ApiToken {
     /// Unix timestamp after which the token is rejected. None = never expires.
     #[serde(default)]
     pub expires_at: Option<u64>,
-    /// True when the token field contains an Argon2 hash (not plaintext).
-    #[serde(default)]
-    pub hashed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -213,17 +209,10 @@ impl AuthService {
             }
             return Ok(session.clone());
         }
-        // Check long-lived API tokens (these have their own expiry via expires_at, not SESSION_TTL)
-        // Try each stored token: hashed ones use Argon2 verify, legacy plaintext uses ==
-        let matched = state.api_tokens.iter().find(|t| {
-            if t.hashed {
-                verify_password(token, &t.token).is_ok()
-            } else {
-                t.token == token
-            }
-        });
-
-        let t = matched.ok_or(AuthError::InvalidToken)?;
+        // Check long-lived API tokens — Argon2 verify against each stored hash
+        let t = state.api_tokens.iter()
+            .find(|t| verify_password(token, &t.token).is_ok())
+            .ok_or(AuthError::InvalidToken)?;
 
         if let Some(exp) = t.expires_at {
             if now >= exp {
@@ -231,31 +220,14 @@ impl AuthService {
             }
         }
 
-        let session = Session {
+        Ok(Session {
             token: token.to_string(),
             username: t.name.clone(),
             role: t.role.clone(),
             pool: t.pool.clone(),
             owner: if t.role == Role::Operator { Some(t.name.clone()) } else { None },
             created_at: Some(t.created_at),
-        };
-
-        // Auto-migrate legacy plaintext token to hashed
-        if !t.hashed {
-            let name = t.name.clone();
-            drop(state);
-            let mut state = self.state.write().await;
-            if let Some(t) = state.api_tokens.iter_mut().find(|t| t.name == name && !t.hashed) {
-                if let Ok(h) = hash_password(token) {
-                    t.token = h;
-                    t.hashed = true;
-                    save_state(&state).await.ok();
-                    info!("Auto-migrated API token '{}' to hashed storage", name);
-                }
-            }
-        }
-
-        Ok(session)
+        })
     }
 
     /// Create a long-lived API token (admin only). Returns the token value — shown only once.
@@ -294,7 +266,6 @@ impl AuthService {
             created_at,
             pool: pool.clone(),
             expires_at,
-            hashed: true,
         };
 
         state.api_tokens.push(stored);
@@ -311,7 +282,6 @@ impl AuthService {
             created_at,
             pool,
             expires_at,
-            hashed: false, // the returned copy has the raw value
         })
     }
 
