@@ -182,9 +182,12 @@
 				username: authInfo?.username,
 				new_password: newPassword,
 			});
-			showPasswordChange = false;
 			newPassword = '';
 			confirmPassword = '';
+			// Reconnect so the WebSocket picks up the cleared must_change_password flag
+			getClient().disconnect();
+			resetClient();
+			await tryConnect();
 		} catch (e) {
 			passwordError = e instanceof Error ? e.message : 'Failed to change password';
 		}
