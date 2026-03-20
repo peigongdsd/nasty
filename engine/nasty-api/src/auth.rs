@@ -28,6 +28,9 @@ pub enum Role {
     Operator,
 }
 
+/// Login sessions expire after this many seconds.
+const SESSION_TTL_SECS: u64 = 8 * 3600; // 8 hours
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Session {
     pub token: String,
@@ -39,6 +42,9 @@ pub struct Session {
     /// For API tokens: only subvolumes with this owner are visible/manageable.
     #[serde(default)]
     pub owner: Option<String>,
+    /// Unix timestamp when this session was created. None for legacy sessions.
+    #[serde(default)]
+    pub created_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -116,13 +122,23 @@ impl AuthService {
         verify_password(password, &user.password_hash)?;
 
         let token = generate_token();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let session = Session {
             token: token.clone(),
             username: user.username.clone(),
             role: user.role.clone(),
             pool: None,
             owner: None,
+            created_at: Some(now),
         };
+
+        // Prune expired sessions while we hold the write lock
+        state.sessions.retain(|s| {
+            s.created_at.map_or(true, |c| now - c <= SESSION_TTL_SECS)
+        });
 
         state.sessions.push(session);
         save_state(&state).await?;
@@ -134,15 +150,26 @@ impl AuthService {
     /// Validate a token and return the session (checks both login sessions and API tokens)
     pub async fn validate(&self, token: &str) -> Result<Session, AuthError> {
         let state = self.state.read().await;
-        // Check login sessions first
-        if let Some(session) = state.sessions.iter().find(|s| s.token == token) {
-            return Ok(session.clone());
-        }
-        // Check long-lived API tokens
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
+        // Check login sessions first
+        if let Some(session) = state.sessions.iter().find(|s| s.token == token) {
+            // Check TTL — sessions without created_at (legacy) are treated as valid
+            if let Some(created) = session.created_at {
+                if now - created > SESSION_TTL_SECS {
+                    drop(state);
+                    // Clean up the expired session
+                    let mut state = self.state.write().await;
+                    state.sessions.retain(|s| s.token != token);
+                    save_state(&state).await.ok();
+                    return Err(AuthError::TokenExpired);
+                }
+            }
+            return Ok(session.clone());
+        }
+        // Check long-lived API tokens (these have their own expiry via expires_at, not SESSION_TTL)
         state
             .api_tokens
             .iter()
@@ -159,9 +186,8 @@ impl AuthService {
                     username: t.name.clone(),
                     role: t.role.clone(),
                     pool: t.pool.clone(),
-                    // Subvolume-level isolation only applies to operator tokens.
-                    // Admin tokens (even pool-scoped ones) see all subvolumes in their pool.
                     owner: if t.role == Role::Operator { Some(t.name.clone()) } else { None },
+                    created_at: Some(t.created_at),
                 })
             })
     }
