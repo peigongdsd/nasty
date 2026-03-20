@@ -11,12 +11,9 @@
     bcachefs-tools.url = "github:koverstreet/bcachefs-tools/v1.37.2";
     bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
 
-    # ── disk image builder ────────────────────────────────────────
-    nixos-generators.url = "github:nix-community/nixos-generators";
-    nixos-generators.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, bcachefs-tools, nixos-generators, ... }: let
+  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
 
@@ -129,10 +126,9 @@
         ];
       };
 
-      # Cloud/CI disk image (UEFI-bootable raw image, converted to QCOW2 in CI)
-      nasty-cloud = nixos-generators.nixosGenerate {
+      # Cloud/CI UEFI-bootable disk image
+      nasty-cloud = nixpkgs.lib.nixosSystem {
         inherit system;
-        format = "raw-efi";
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
           ./modules/bcachefs.nix
@@ -145,17 +141,39 @@
 
   in {
     # Export packages for both architectures
-    packages.x86_64-linux = let pkgs = mkPkgs "x86_64-linux"; in {
+    packages.x86_64-linux = let
+      pkgs = mkPkgs "x86_64-linux";
+      cloudConfig = (mkNixosConfigs "x86_64-linux").nasty-cloud.config;
+    in {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
-      nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud;
+      nasty-cloud-image = import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
+        inherit pkgs;
+        inherit (pkgs) lib;
+        config = cloudConfig;
+        format = "raw";
+        partitionTableType = "efi";
+        diskSize = "auto";
+        additionalSpace = "1G";
+      };
       default = mkEngine "x86_64-linux";
     };
 
-    packages.aarch64-linux = let pkgs = mkPkgs "aarch64-linux"; in {
+    packages.aarch64-linux = let
+      pkgs = mkPkgs "aarch64-linux";
+      cloudConfig = (mkNixosConfigs "aarch64-linux").nasty-cloud.config;
+    in {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
-      nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud;
+      nasty-cloud-image = import "${nixpkgs}/nixos/lib/make-disk-image.nix" {
+        inherit pkgs;
+        inherit (pkgs) lib;
+        config = cloudConfig;
+        format = "raw";
+        partitionTableType = "efi";
+        diskSize = "auto";
+        additionalSpace = "1G";
+      };
       default = mkEngine "aarch64-linux";
     };
 

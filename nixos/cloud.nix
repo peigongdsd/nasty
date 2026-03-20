@@ -1,5 +1,5 @@
 # Cloud/CI disk image configuration for NASty.
-# Produces a bootable QCOW2 image suitable for upload to cloud providers.
+# Produces a bootable disk image suitable for upload to cloud providers.
 #
 # Build:
 #   nix build .#nasty-cloud-image
@@ -16,8 +16,27 @@
 { config, lib, pkgs, nasty-engine, nasty-webui ? null, ... }:
 
 {
+  # GRUB for UEFI boot (Limine requires real EFI hardware for efibootmgr)
+  boot.loader.grub = {
+    enable = true;
+    device = "nodev";
+    efiSupport = true;
+    efiInstallAsRemovable = true;
+  };
+  boot.loader.efi.canTouchEfiVariables = false;
+
   # virtio drivers so the cloud VM can see its disks and network
   boot.initrd.availableKernelModules = [ "virtio_pci" "virtio_blk" "virtio_net" "virtio_scsi" ];
+
+  # Root filesystem — make-disk-image.nix creates this
+  fileSystems."/" = {
+    device = "/dev/disk/by-label/nixos";
+    fsType = "ext4";
+  };
+  fileSystems."/boot" = {
+    device = "/dev/disk/by-label/ESP";
+    fsType = "vfat";
+  };
 
   networking.hostName = "nasty-cloud";
   networking.useDHCP = true;
