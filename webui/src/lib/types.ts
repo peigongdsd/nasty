@@ -237,6 +237,7 @@ export interface ApiTokenInfo {
 	created_at: number;
 	pool: string | null;
 	expires_at: number | null;
+	allowed_ips: string[];
 }
 
 export interface ApiTokenCreated extends ApiTokenInfo {

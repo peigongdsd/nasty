@@ -27,6 +27,7 @@
 	let newTokenRole = $state<'admin' | 'readonly' | 'operator'>('operator');
 	let newTokenPool = $state('');
 	let newTokenExpiry = $state('');
+	let newTokenAllowedIPs = $state('');
 	let createdToken = $state<ApiTokenCreated | null>(null);
 	let tokenCopied = $state(false);
 
@@ -101,12 +102,16 @@
 	async function createToken() {
 		if (!newTokenName) return;
 		const expires_in_secs = newTokenExpiry ? parseInt(newTokenExpiry) : null;
+		const allowed_ips = newTokenAllowedIPs.trim()
+			? newTokenAllowedIPs.split(',').map(ip => ip.trim()).filter(Boolean)
+			: [];
 		const result = await withToast(
 			() => client.call<ApiTokenCreated>('auth.token.create', {
 				name: newTokenName,
 				role: newTokenRole,
 				pool: newTokenPool || null,
 				expires_in_secs,
+				allowed_ips,
 			}),
 			`API token "${newTokenName}" created`
 		);
@@ -117,6 +122,7 @@
 			newTokenRole = 'operator';
 			newTokenPool = '';
 			newTokenExpiry = '';
+			newTokenAllowedIPs = '';
 			await refresh();
 		}
 	}
@@ -267,6 +273,11 @@
 					<option value="31536000">1 year</option>
 				</select>
 			</div>
+			<div class="mb-4">
+				<Label for="token-ips">Allowed IPs</Label>
+				<Input id="token-ips" bind:value={newTokenAllowedIPs} placeholder="e.g. 10.10.10.100, 192.168.1.50" autocomplete="off" class="mt-1" />
+				<span class="mt-1 block text-xs text-muted-foreground">Comma-separated. Leave empty to allow any IP.</span>
+			</div>
 			<Button onclick={createToken} disabled={!newTokenName}>Create Token</Button>
 		</CardContent>
 	</Card>
@@ -284,6 +295,7 @@
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Pool</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Created</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Expires</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Allowed IPs</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 				</tr>
 			</thead>
@@ -303,6 +315,9 @@
 						<td class="p-3 text-xs text-muted-foreground">{formatDate(token.created_at)}</td>
 						<td class="p-3 text-xs {token.expires_at && token.expires_at * 1000 < Date.now() ? 'text-destructive' : 'text-muted-foreground'}">
 							{token.expires_at ? formatDate(token.expires_at) : '—'}
+						</td>
+						<td class="p-3 font-mono text-xs text-muted-foreground">
+							{token.allowed_ips?.length ? token.allowed_ips.join(', ') : 'Any'}
 						</td>
 						<td class="p-3">
 							<Button variant="destructive" size="xs" onclick={() => deleteToken(token.id, token.name)}>Revoke</Button>
