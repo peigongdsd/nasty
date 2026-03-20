@@ -183,9 +183,9 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "auth.token.create" => {
             #[derive(Deserialize)]
-            struct P { name: String, role: Role, pool: Option<String>, expires_in_secs: Option<u64> }
+            struct P { name: String, role: Role, pool: Option<String>, expires_in_secs: Option<u64>, #[serde(default)] allowed_ips: Vec<String> }
             match parse_params::<P>(req) {
-                Ok(p) => match state.auth.create_api_token(session, &p.name, p.role, p.pool, p.expires_in_secs).await {
+                Ok(p) => match state.auth.create_api_token(session, &p.name, p.role, p.pool, p.expires_in_secs, p.allowed_ips).await {
                     Ok(t) => ok(req, t),
                     Err(e) => err(req, e),
                 },

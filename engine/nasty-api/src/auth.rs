@@ -70,6 +70,9 @@ pub struct ApiToken {
     /// Unix timestamp after which the token is rejected. None = never expires.
     #[serde(default)]
     pub expires_at: Option<u64>,
+    /// If set, token is only accepted from these IP addresses. Empty = any IP.
+    #[serde(default)]
+    pub allowed_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -80,6 +83,7 @@ pub struct ApiTokenInfo {
     pub created_at: u64,
     pub pool: Option<String>,
     pub expires_at: Option<u64>,
+    pub allowed_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -231,7 +235,7 @@ impl AuthService {
             }
             return Ok(session.clone());
         }
-        // Check long-lived API tokens (no IP binding — CSI pods have varying IPs) — Argon2 verify against each stored hash
+        // Check long-lived API tokens — Argon2 verify against each stored hash
         let t = state.api_tokens.iter()
             .find(|t| verify_password(token, &t.token).is_ok())
             .ok_or(AuthError::InvalidToken)?;
@@ -242,6 +246,15 @@ impl AuthService {
             }
         }
 
+        // Check IP allowlist if configured
+        if !t.allowed_ips.is_empty() && !t.allowed_ips.iter().any(|ip| ip == client_ip) {
+            tracing::warn!(
+                "API token '{}' rejected: IP {} not in allowed list {:?}",
+                t.name, client_ip, t.allowed_ips
+            );
+            return Err(AuthError::InvalidToken);
+        }
+
         Ok(Session {
             token: token.to_string(),
             username: t.name.clone(),
@@ -250,7 +263,7 @@ impl AuthService {
             owner: if t.role == Role::Operator { Some(t.name.clone()) } else { None },
             created_at: Some(t.created_at),
             must_change_password: false,
-            client_ip: None, // API tokens are not IP-bound
+            client_ip: None,
         })
     }
 
@@ -262,6 +275,7 @@ impl AuthService {
         role: Role,
         pool: Option<String>,
         expires_in_secs: Option<u64>,
+        allowed_ips: Vec<String>,
     ) -> Result<ApiToken, AuthError> {
         if session.role != Role::Admin {
             return Err(AuthError::Forbidden);
@@ -290,6 +304,7 @@ impl AuthService {
             created_at,
             pool: pool.clone(),
             expires_at,
+            allowed_ips: allowed_ips.clone(),
         };
 
         state.api_tokens.push(stored);
@@ -306,6 +321,7 @@ impl AuthService {
             created_at,
             pool,
             expires_at,
+            allowed_ips,
         })
     }
 
@@ -325,6 +341,7 @@ impl AuthService {
                 created_at: t.created_at,
                 pool: t.pool.clone(),
                 expires_at: t.expires_at,
+                allowed_ips: t.allowed_ips.clone(),
             })
             .collect())
     }
