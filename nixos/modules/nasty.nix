@@ -722,6 +722,11 @@ in {
       settings.global = {
         "server string" = "NASty NAS";
         "map to guest" = "Bad User";
+        "guest account" = "nobody";
+        "server min protocol" = "SMB2";
+        # macOS Finder requires the server to advertise SMB signing as optional,
+        # otherwise it refuses guest/anonymous connections entirely.
+        "server signing" = "auto";
         "include" = "/etc/samba/smb.nasty.conf";
       };
     };
