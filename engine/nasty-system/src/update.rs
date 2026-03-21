@@ -511,17 +511,17 @@ echo "==> Update complete!"
     }
 
     /// Switch to a specific NixOS generation.
-    pub async fn switch_generation(&self, gen: u64) -> Result<(), UpdateError> {
+    pub async fn switch_generation(&self, gen_id: u64) -> Result<(), UpdateError> {
         let status = self.status().await;
         if status.state == "running" {
             return Err(UpdateError::AlreadyRunning);
         }
 
         // Verify the generation exists
-        let profile_link = format!("/nix/var/nix/profiles/system-{gen}-link");
+        let profile_link = format!("/nix/var/nix/profiles/system-{gen_id}-link");
         if tokio::fs::metadata(&profile_link).await.is_err() {
             return Err(UpdateError::CommandFailed(format!(
-                "generation {gen} does not exist"
+                "generation {gen_id} does not exist"
             )));
         }
 
@@ -539,11 +539,11 @@ echo "==> Update complete!"
             r#"#!/bin/bash
 set -euo pipefail
 export PATH="/run/current-system/sw/bin:$PATH"
-echo "==> Switching to generation {gen}..."
-nix-env --switch-generation {gen} --profile /nix/var/nix/profiles/system
-echo "==> Activating generation {gen}..."
+echo "==> Switching to generation {gen_id}..."
+nix-env --switch-generation {gen_id} --profile /nix/var/nix/profiles/system
+echo "==> Activating generation {gen_id}..."
 /nix/var/nix/profiles/system/bin/switch-to-configuration switch
-echo "==> Switch to generation {gen} complete!"
+echo "==> Switch to generation {gen_id} complete!"
 "#
         );
 
@@ -556,7 +556,7 @@ echo "==> Switch to generation {gen} complete!"
             .args([
                 "--unit", UPDATE_UNIT,
                 "--no-block",
-                "--description", &format!("NASty switch to generation {gen}"),
+                "--description", &format!("NASty switch to generation {gen_id}"),
                 "--property=Type=oneshot",
                 "--property=StandardOutput=journal",
                 "--property=StandardError=journal",
@@ -574,28 +574,28 @@ echo "==> Switch to generation {gen} complete!"
             )));
         }
 
-        info!("Switch to generation {gen} started");
+        info!("Switch to generation {gen_id} started");
         Ok(())
     }
 
     /// Set or clear a label on a generation.
-    pub async fn label_generation(&self, gen: u64, label: Option<String>) -> Result<(), UpdateError> {
+    pub async fn label_generation(&self, gen_id: u64, label: Option<String>) -> Result<(), UpdateError> {
         let mut labels = load_generation_labels().await;
         match label {
-            Some(l) if !l.is_empty() => { labels.insert(gen, l); }
-            _ => { labels.remove(&gen); }
+            Some(l) if !l.is_empty() => { labels.insert(gen_id, l); }
+            _ => { labels.remove(&gen_id); }
         }
         save_generation_labels(&labels).await
     }
 
     /// Delete old generations (garbage collect).
-    pub async fn delete_generation(&self, gen: u64) -> Result<(), UpdateError> {
+    pub async fn delete_generation(&self, gen_id: u64) -> Result<(), UpdateError> {
         // Don't allow deleting the current generation
-        let profile_link = format!("/nix/var/nix/profiles/system-{gen}-link");
+        let profile_link = format!("/nix/var/nix/profiles/system-{gen_id}-link");
         let current_link = "/nix/var/nix/profiles/system";
 
         let gen_target = tokio::fs::read_link(&profile_link).await
-            .map_err(|_| UpdateError::CommandFailed(format!("generation {gen} does not exist")))?;
+            .map_err(|_| UpdateError::CommandFailed(format!("generation {gen_id} does not exist")))?;
         let current_target = tokio::fs::read_link(current_link).await
             .map_err(|e| UpdateError::CommandFailed(format!("cannot read current profile: {e}")))?;
 
@@ -616,15 +616,15 @@ echo "==> Switch to generation {gen} complete!"
 
         // Remove the profile link
         tokio::fs::remove_file(&profile_link).await
-            .map_err(|e| UpdateError::CommandFailed(format!("failed to remove generation {gen}: {e}")))?;
+            .map_err(|e| UpdateError::CommandFailed(format!("failed to remove generation {gen_id}: {e}")))?;
 
         // Clean up the label if any
         let mut labels = load_generation_labels().await;
-        if labels.remove(&gen).is_some() {
+        if labels.remove(&gen_id).is_some() {
             let _ = save_generation_labels(&labels).await;
         }
 
-        info!("Deleted generation {gen}");
+        info!("Deleted generation {gen_id}");
         Ok(())
     }
 
