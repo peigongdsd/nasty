@@ -379,6 +379,9 @@ export interface Settings {
 	tls_domain: string | null;
 	tls_acme_email: string | null;
 	tls_acme_enabled: boolean;
+	tls_challenge_type: 'tls-alpn' | 'dns';
+	tls_dns_provider: string | null;
+	tls_dns_credentials: string | null;
 }
 
 export interface NetworkConfig {

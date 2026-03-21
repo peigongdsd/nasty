@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::warn;
@@ -27,6 +28,19 @@ pub struct Settings {
     /// Whether Let's Encrypt is enabled. Requires tls_domain and tls_acme_email.
     #[serde(default)]
     pub tls_acme_enabled: bool,
+    /// ACME challenge type: "tls-alpn" (port 443) or "dns" (DNS provider API).
+    #[serde(default = "default_challenge_type")]
+    pub tls_challenge_type: String,
+    /// DNS provider code for DNS-01 challenge (e.g. "cloudflare", "route53").
+    #[serde(default)]
+    pub tls_dns_provider: Option<String>,
+    /// DNS provider API credentials as KEY=VALUE lines.
+    #[serde(default)]
+    pub tls_dns_credentials: Option<String>,
+}
+
+fn default_challenge_type() -> String {
+    "tls-alpn".to_string()
 }
 
 fn default_timezone() -> String {
@@ -46,6 +60,9 @@ impl Default for Settings {
             tls_domain: None,
             tls_acme_email: None,
             tls_acme_enabled: false,
+            tls_challenge_type: default_challenge_type(),
+            tls_dns_provider: None,
+            tls_dns_credentials: None,
         }
     }
 }
@@ -64,6 +81,12 @@ pub struct SettingsUpdate {
     pub tls_acme_email: Option<String>,
     /// Enable/disable Let's Encrypt.
     pub tls_acme_enabled: Option<bool>,
+    /// Challenge type: "tls-alpn" or "dns".
+    pub tls_challenge_type: Option<String>,
+    /// DNS provider code.
+    pub tls_dns_provider: Option<String>,
+    /// DNS API credentials (KEY=VALUE per line).
+    pub tls_dns_credentials: Option<String>,
 }
 
 pub struct SettingsService {
@@ -128,9 +151,32 @@ impl SettingsService {
                 tls_changed = true;
             }
         }
+        if let Some(ct) = update.tls_challenge_type {
+            if settings.tls_challenge_type != ct {
+                settings.tls_challenge_type = ct;
+                tls_changed = true;
+            }
+        }
+        if let Some(provider) = update.tls_dns_provider {
+            let provider = if provider.trim().is_empty() { None } else { Some(provider.trim().to_string()) };
+            if settings.tls_dns_provider != provider {
+                settings.tls_dns_provider = provider;
+                tls_changed = true;
+            }
+        }
+        if let Some(creds) = update.tls_dns_credentials {
+            let creds = if creds.trim().is_empty() { None } else { Some(creds.trim().to_string()) };
+            if settings.tls_dns_credentials != creds {
+                settings.tls_dns_credentials = creds;
+                tls_changed = true;
+            }
+        }
         save(&settings).await.map_err(|e| e.to_string())?;
         if tls_changed {
             write_tls_nix(&settings).await;
+            if settings.tls_challenge_type == "dns" {
+                write_dns_credentials(&settings).await;
+            }
         }
         Ok(settings.clone())
     }
@@ -196,6 +242,8 @@ async fn write_tls_nix(settings: &Settings) {
     }
 }
 
+const DNS_CREDS_PATH: &str = "/var/lib/nasty/acme-dns-credentials";
+
 fn generate_tls_nix(settings: &Settings) -> String {
     let mut out = String::from(
         "# Managed by NASty — edit via WebUI Settings > TLS\n{ ... }:\n{\n",
@@ -203,17 +251,41 @@ fn generate_tls_nix(settings: &Settings) -> String {
 
     if settings.tls_acme_enabled {
         if let (Some(domain), Some(email)) = (&settings.tls_domain, &settings.tls_acme_email) {
-            out.push_str(&format!("  security.acme.acceptTerms = true;\n"));
+            out.push_str("  security.acme.acceptTerms = true;\n");
             out.push_str(&format!("  security.acme.defaults.email = \"{email}\";\n"));
             out.push_str(&format!("  security.acme.certs.\"{domain}\" = {{\n"));
-            out.push_str(&format!("    tlsChallenge = true;\n"));
-            out.push_str(&format!("  }};\n"));
+
+            if settings.tls_challenge_type == "dns" {
+                if let Some(provider) = &settings.tls_dns_provider {
+                    out.push_str(&format!("    dnsProvider = \"{provider}\";\n"));
+                    out.push_str(&format!("    credentialsFile = \"{DNS_CREDS_PATH}\";\n"));
+                }
+            } else {
+                out.push_str("    tlsChallenge = true;\n");
+            }
+
+            out.push_str("  };\n");
             out.push_str(&format!("  services.nasty.tls.certFile = \"/var/lib/acme/{domain}/fullchain.pem\";\n"));
             out.push_str(&format!("  services.nasty.tls.keyFile = \"/var/lib/acme/{domain}/key.pem\";\n"));
-            out.push_str(&format!("  services.nasty.tls.selfSigned = false;\n"));
+            out.push_str("  services.nasty.tls.selfSigned = false;\n");
         }
     }
 
     out.push_str("}\n");
     out
+}
+
+/// Write DNS credentials to a file readable by the ACME service.
+async fn write_dns_credentials(settings: &Settings) {
+    if let Some(creds) = &settings.tls_dns_credentials {
+        if let Err(e) = tokio::fs::write(DNS_CREDS_PATH, creds).await {
+            warn!("Failed to write DNS credentials: {e}");
+            return;
+        }
+        // Restrict permissions — contains API keys
+        let _ = tokio::fs::set_permissions(
+            DNS_CREDS_PATH,
+            std::fs::Permissions::from_mode(0o600),
+        ).await;
+    }
 }

@@ -6,7 +6,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Copy, Check, ChevronDown, ChevronRight } from '@lucide/svelte';
 
-	let activeTab: 'general' | 'metrics' = $state('general');
+	let activeTab: 'general' | 'tls' | 'metrics' = $state('general');
 
 	// ── General tab state ───────────────────────────────────
 	let settings: Settings | null = $state(null);
@@ -30,8 +30,29 @@
 	let tlsDomain = $state('');
 	let tlsAcmeEmail = $state('');
 	let tlsAcmeEnabled = $state(false);
+	let tlsChallengeType = $state<'tls-alpn' | 'dns'>('tls-alpn');
+	let tlsDnsProvider = $state('');
+	let tlsDnsCredentials = $state('');
 	let savingTls = $state(false);
 	let tlsChanged = $state(false);
+
+	const popularDnsProviders = [
+		{ code: 'cloudflare', name: 'Cloudflare' },
+		{ code: 'route53', name: 'Amazon Route 53' },
+		{ code: 'gcloud', name: 'Google Cloud' },
+		{ code: 'azuredns', name: 'Azure DNS' },
+		{ code: 'digitalocean', name: 'DigitalOcean' },
+		{ code: 'hetzner', name: 'Hetzner' },
+		{ code: 'godaddy', name: 'GoDaddy' },
+		{ code: 'namecheap', name: 'Namecheap' },
+		{ code: 'ovh', name: 'OVH' },
+		{ code: 'porkbun', name: 'Porkbun' },
+		{ code: 'vultr', name: 'Vultr' },
+		{ code: 'linode', name: 'Linode' },
+		{ code: 'duckdns', name: 'Duck DNS' },
+		{ code: 'desec', name: 'deSEC.io' },
+		{ code: 'oraclecloud', name: 'Oracle Cloud' },
+	];
 
 	// ── Metrics tab state ───────────────────────────────────
 	let metricsText = $state('');
@@ -106,6 +127,9 @@
 			tlsDomain = settings?.tls_domain ?? '';
 			tlsAcmeEmail = settings?.tls_acme_email ?? '';
 			tlsAcmeEnabled = settings?.tls_acme_enabled ?? false;
+			tlsChallengeType = settings?.tls_challenge_type ?? 'tls-alpn';
+			tlsDnsProvider = settings?.tls_dns_provider ?? '';
+			tlsDnsCredentials = settings?.tls_dns_credentials ?? '';
 			syncNetworkForm();
 		});
 	});
@@ -157,6 +181,9 @@
 				tls_domain: tlsDomain || null,
 				tls_acme_email: tlsAcmeEmail || null,
 				tls_acme_enabled: tlsAcmeEnabled,
+				tls_challenge_type: tlsChallengeType,
+				tls_dns_provider: tlsDnsProvider || null,
+				tls_dns_credentials: tlsDnsCredentials || null,
 			}),
 			tlsAcmeEnabled ? 'Let\'s Encrypt enabled — rebuild required to apply' : 'TLS settings saved'
 		);
@@ -208,7 +235,7 @@
 		collapsedSections[title] = !collapsedSections[title];
 	}
 
-	function switchTab(tab: 'general' | 'metrics') {
+	function switchTab(tab: 'general' | 'tls' | 'metrics') {
 		activeTab = tab;
 		if (tab === 'metrics' && !metricsText) {
 			loadMetrics();
@@ -225,6 +252,12 @@
 			? 'border-b-2 border-primary text-foreground'
 			: 'text-muted-foreground hover:text-foreground'}"
 	>General</button>
+	<button
+		onclick={() => switchTab('tls')}
+		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'tls'
+			? 'border-b-2 border-primary text-foreground'
+			: 'text-muted-foreground hover:text-foreground'}"
+	>TLS</button>
 	<button
 		onclick={() => switchTab('metrics')}
 		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'metrics'
@@ -415,16 +448,32 @@
 			</section>
 			{/if}
 
-			<!-- TLS -->
-			<section class="rounded-lg border border-border p-5">
-				<h2 class="mb-4 text-base font-semibold">TLS Certificate</h2>
+		</div>
+	{/if}
 
-				<p class="mb-4 text-xs text-muted-foreground">
-					By default NASty uses a self-signed certificate. To use a trusted Let's Encrypt certificate,
-					enter your domain name and email. The domain must resolve to this machine and port 443 must be
-					reachable from the internet.
-				</p>
+{:else if activeTab === 'tls'}
 
+	<div class="max-w-xl">
+		<section class="rounded-lg border border-border p-5">
+			<h2 class="mb-2 text-base font-semibold">TLS Certificate</h2>
+			<p class="mb-5 text-sm text-muted-foreground">
+				NASty uses a self-signed certificate by default. Enable Let's Encrypt for a trusted certificate
+				that browsers accept without warnings.
+			</p>
+
+			<div class="mb-4">
+				<label class="flex items-center gap-2 text-sm cursor-pointer">
+					<input
+						type="checkbox"
+						bind:checked={tlsAcmeEnabled}
+						onchange={() => tlsChanged = true}
+						class="rounded border-input"
+					/>
+					<span class="font-medium">Enable Let's Encrypt</span>
+				</label>
+			</div>
+
+			{#if tlsAcmeEnabled}
 				<div class="mb-4">
 					<label for="tls-domain" class="mb-1 block text-xs text-muted-foreground">Domain Name</label>
 					<input
@@ -435,10 +484,11 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 						placeholder="nasty.example.com"
 					/>
+					<span class="mt-1 block text-xs text-muted-foreground">Must resolve to this machine's public IP.</span>
 				</div>
 
 				<div class="mb-4">
-					<label for="tls-email" class="mb-1 block text-xs text-muted-foreground">ACME Email</label>
+					<label for="tls-email" class="mb-1 block text-xs text-muted-foreground">Email</label>
 					<input
 						id="tls-email"
 						type="email"
@@ -447,38 +497,94 @@
 						class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
 						placeholder="admin@example.com"
 					/>
-					<span class="mt-1 block text-xs text-muted-foreground">Let's Encrypt will send expiry warnings to this address.</span>
+					<span class="mt-1 block text-xs text-muted-foreground">Let's Encrypt sends expiry warnings here.</span>
 				</div>
 
 				<div class="mb-4">
-					<label class="flex items-center gap-2 text-sm cursor-pointer">
-						<input
-							type="checkbox"
-							bind:checked={tlsAcmeEnabled}
-							onchange={() => tlsChanged = true}
-							disabled={!tlsDomain.trim() || !tlsAcmeEmail.trim()}
-							class="rounded border-input"
-						/>
-						Enable Let's Encrypt
-					</label>
-					{#if tlsAcmeEnabled && (!tlsDomain.trim() || !tlsAcmeEmail.trim())}
-						<span class="mt-1 block text-xs text-destructive">Domain and email are required.</span>
-					{/if}
+					<label class="mb-1 block text-xs text-muted-foreground">Challenge Type</label>
+					<div class="flex w-fit rounded-md border border-border text-sm">
+						<button
+							onclick={() => { tlsChallengeType = 'tls-alpn'; tlsChanged = true; }}
+							class="rounded-l-md px-4 py-1.5 font-medium transition-colors {tlsChallengeType === 'tls-alpn' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						>TLS (port 443)</button>
+						<button
+							onclick={() => { tlsChallengeType = 'dns'; tlsChanged = true; }}
+							class="rounded-r-md px-4 py-1.5 font-medium transition-colors {tlsChallengeType === 'dns' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}"
+						>DNS</button>
+					</div>
 				</div>
 
-				{#if tlsAcmeEnabled}
-					<p class="mb-3 text-xs text-amber-500">
-						A system rebuild is required to apply TLS changes. Use Update → Check for Updates after saving.
+				{#if tlsChallengeType === 'tls-alpn'}
+					<div class="mb-4 rounded-lg border border-blue-800 bg-blue-950 px-4 py-3 text-xs text-blue-200">
+						The TLS-ALPN-01 challenge verifies domain ownership over port 443. No additional ports needed,
+						but port 443 must be reachable from the internet.
+					</div>
+				{:else}
+					<div class="mb-4">
+						<label for="tls-dns-provider" class="mb-1 block text-xs text-muted-foreground">DNS Provider</label>
+						<select
+							id="tls-dns-provider"
+							bind:value={tlsDnsProvider}
+							onchange={() => tlsChanged = true}
+							class="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm"
+						>
+							<option value="">Select provider...</option>
+							{#each popularDnsProviders as p}
+								<option value={p.code}>{p.name}</option>
+							{/each}
+							<option disabled>───────────</option>
+							<option value="_custom">Other (enter code manually)</option>
+						</select>
+						{#if tlsDnsProvider === '_custom'}
+							<input
+								type="text"
+								bind:value={tlsDnsProvider}
+								oninput={() => tlsChanged = true}
+								class="mt-2 w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+								placeholder="provider code (e.g. inwx, gandi)"
+							/>
+						{/if}
+						<span class="mt-1 block text-xs text-muted-foreground">
+							See <a href="https://go-acme.github.io/lego/dns/" target="_blank" class="text-blue-400 hover:underline">lego DNS providers</a> for the full list and required credentials.
+						</span>
+					</div>
+
+					<div class="mb-4">
+						<label for="tls-dns-creds" class="mb-1 block text-xs text-muted-foreground">API Credentials</label>
+						<textarea
+							id="tls-dns-creds"
+							bind:value={tlsDnsCredentials}
+							oninput={() => tlsChanged = true}
+							rows={4}
+							class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+							placeholder={"CLOUDFLARE_DNS_API_TOKEN=xxxxx\nCLOUDFLARE_ZONE_API_TOKEN=xxxxx"}
+						></textarea>
+						<span class="mt-1 block text-xs text-muted-foreground">
+							One KEY=VALUE per line. These are passed as environment variables to the ACME client.
+							No inbound ports needed — verification happens via DNS records.
+						</span>
+					</div>
+				{/if}
+
+				{#if !tlsDomain.trim() || !tlsAcmeEmail.trim() || (tlsChallengeType === 'dns' && !tlsDnsProvider)}
+					<p class="mb-3 text-xs text-destructive">
+						{#if !tlsDomain.trim()}Domain is required.
+						{:else if !tlsAcmeEmail.trim()}Email is required.
+						{:else}DNS provider is required.
+						{/if}
 					</p>
 				{/if}
 
-				<Button size="sm" onclick={saveTls} disabled={savingTls || !tlsChanged}>
-					{savingTls ? 'Saving…' : 'Save TLS Settings'}
-				</Button>
-			</section>
+				<p class="mb-3 text-xs text-amber-500">
+					A system rebuild is required to apply TLS changes. Use Update after saving.
+				</p>
+			{/if}
 
-		</div>
-	{/if}
+			<Button size="sm" onclick={saveTls} disabled={savingTls || !tlsChanged}>
+				{savingTls ? 'Saving…' : 'Save'}
+			</Button>
+		</section>
+	</div>
 
 {:else}
 
