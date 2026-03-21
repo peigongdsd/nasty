@@ -87,7 +87,7 @@ in {
 
       logLevel = mkOption {
         type = types.str;
-        default = "nasty_api=info,nasty_storage=info,nasty_sharing=info,nasty_snapshot=info,nasty_system=info,tower_http=info";
+        default = "nasty_engine=info,nasty_storage=info,nasty_sharing=info,nasty_snapshot=info,nasty_system=info,tower_http=info";
         description = "RUST_LOG filter for engine";
       };
     };
@@ -680,7 +680,7 @@ in {
 
       serviceConfig = {
         Type = "notify";
-        ExecStart = "${cfg.engine.package}/bin/nasty-api";
+        ExecStart = "${cfg.engine.package}/bin/nasty-engine";
         Restart = "always";
         RestartSec = 5;
         StateDirectory = "nasty";

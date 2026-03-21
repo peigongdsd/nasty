@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "nasty-api",
+    "nasty-engine",
     "nasty-apidoc",
     "nasty-common",
     "nasty-metrics",

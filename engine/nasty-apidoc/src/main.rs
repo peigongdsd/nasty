@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-// ── Auth types (nasty-api is a binary crate, so we mirror the types here) ──
+// ── Auth types (nasty-engine is a binary crate, so we mirror the types here) ──
 
 #[derive(Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]

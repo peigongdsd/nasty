@@ -786,6 +786,7 @@ dependencies = [
  "nasty-system",
  "portable-pty",
  "rand",
+ "reqwest",
  "schemars",
  "serde",
  "serde_json",
@@ -812,11 +813,28 @@ dependencies = [
 name = "nasty-common"
 version = "0.1.0"
 dependencies = [
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "nasty-metrics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "libc",
+ "nasty-common",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -867,7 +885,6 @@ version = "0.1.0"
 dependencies = [
  "nasty-common",
  "reqwest",
- "rusqlite",
  "schemars",
  "serde",
  "serde_json",

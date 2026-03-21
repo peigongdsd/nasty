@@ -1,6 +1,6 @@
 //! Shared types for system and storage metrics.
 //!
-//! These types are produced by `nasty-metrics` and consumed by `nasty-api`
+//! These types are produced by `nasty-metrics` and consumed by `nasty-engine`
 //! (via HTTP) and the WebUI (via JSON-RPC). Both `Serialize` and `Deserialize`
 //! are derived so the engine can round-trip them over HTTP.
 

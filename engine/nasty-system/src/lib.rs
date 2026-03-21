@@ -5,7 +5,7 @@ pub mod settings;
 pub mod update;
 
 // Re-export metrics types from nasty-common so downstream code
-// (nasty-api, alerts) can still use `nasty_system::SystemStats` etc.
+// (nasty-engine, alerts) can still use `nasty_system::SystemStats` etc.
 pub use nasty_common::metrics_types::*;
 
 use schemars::JsonSchema;
@@ -164,7 +164,7 @@ impl SystemService {
         SystemHealth {
             status: "ok".to_string(),
             services: vec![
-                ServiceStatus { name: "nasty-api".into(), running: true },
+                ServiceStatus { name: "nasty-engine".into(), running: true },
             ],
         }
     }
