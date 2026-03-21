@@ -25,3 +25,4 @@ thiserror.workspace = true
 portable-pty.workspace = true
 futures-util.workspace = true
 schemars.workspace = true
+reqwest.workspace = true

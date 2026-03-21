@@ -203,7 +203,12 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         // ── System ──────────────────────────────────────────────
         "system.info" => ok(req, state.system.info().await),
         "system.health" => ok(req, state.system.health().await),
-        "system.stats" => ok(req, state.system.stats().await),
+        "system.stats" => match fetch_metrics_json::<nasty_system::SystemStats>(
+            &state.metrics_client, "/api/stats"
+        ).await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
+        },
         "system.network.get" => ok(req, state.network.get().await),
         "system.network.update" => match parse_params::<nasty_system::network::NetworkConfig>(req) {
             Ok(p) => match state.network.update(p).await {
@@ -216,11 +221,28 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             let kind = str_param(req, "kind").unwrap_or("net");
             let name = str_param(req, "name");
             let range = str_param(req, "range").unwrap_or("5m");
-            ok(req, state.metrics.query(kind, name, range))
+            let mut url = format!("{}/api/history?kind={kind}&range={range}", crate::METRICS_BASE);
+            if let Some(n) = name {
+                url.push_str(&format!("&name={n}"));
+            }
+            match state.metrics_client.get(&url).send().await
+                .and_then(|r| Ok(r.error_for_status()?))
+            {
+                Ok(resp) => match resp.json::<Vec<nasty_common::metrics_types::ResourceHistory>>().await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, format!("metrics parse error: {e}")),
+                },
+                Err(e) => err(req, format!("metrics service error: {e}")),
+            }
         }
         "system.disks" => {
             if state.protocols.is_enabled(nasty_system::protocol::Protocol::Smart).await {
-                ok(req, state.system.disks().await)
+                match fetch_metrics_json::<Vec<nasty_system::DiskHealth>>(
+                    &state.metrics_client, "/api/disks"
+                ).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                }
             } else {
                 ok(req, Vec::<nasty_system::DiskHealth>::new())
             }
@@ -301,10 +323,15 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         // ── Alerts ───────────────────────────────────────────────
         "system.alerts" => {
             // Evaluate current alert rules against live system state
-            let stats = state.system.stats().await;
+            let stats = match fetch_metrics_json::<nasty_system::SystemStats>(
+                &state.metrics_client, "/api/stats"
+            ).await {
+                Ok(v) => v,
+                Err(e) => return err(req, e),
+            };
             let pools_list = state.pools.list().await;
-            let disk_health = if state.protocols.is_enabled(nasty_system::protocol::Protocol::Smart).await {
-                state.system.disks().await
+            let disk_health: Vec<nasty_system::DiskHealth> = if state.protocols.is_enabled(nasty_system::protocol::Protocol::Smart).await {
+                fetch_metrics_json(&state.metrics_client, "/api/disks").await.unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -981,4 +1008,22 @@ fn require_str<'a>(req: &'a Request, key: &str) -> Result<&'a str, Response> {
             format!("Missing required param: {key}"),
         )
     })
+}
+
+/// Fetch JSON from the nasty-metrics service.
+async fn fetch_metrics_json<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    path: &str,
+) -> Result<T, String> {
+    let url = format!("{}{path}", crate::METRICS_BASE);
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("metrics service unavailable: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("metrics service error: {e}"))?;
+    resp.json::<T>()
+        .await
+        .map_err(|e| format!("metrics parse error: {e}"))
 }

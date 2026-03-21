@@ -623,19 +623,45 @@ in {
       };
     };
 
+    # ── NASty Metrics service ────────────────────────────────
+
+    systemd.services.nasty-metrics = {
+      description = "NASty Metrics Collector";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+
+      path = with pkgs; [
+        smartmontools         # smartctl for disk health
+        iproute2              # ip -j addr show
+        nasty-bcachefs-tools  # bcachefs fs usage
+        util-linux            # lsblk
+      ];
+
+      environment = {
+        RUST_LOG = "nasty_metrics=info";
+      };
+
+      serviceConfig = {
+        Type = "notify";
+        ExecStart = "${cfg.engine.package}/bin/nasty-metrics";
+        Restart = "always";
+        RestartSec = 5;
+        StateDirectory = "nasty";
+      };
+    };
+
     # ── NASty Engine service ─────────────────────────────────
 
     systemd.services.nasty-engine = {
       description = "NASty Engine";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
+      after = [ "network.target" "nasty-metrics.service" ];
+      wants = [ "nasty-metrics.service" ];
 
       path = with pkgs; [
         bashInteractive  # bash for terminal
         util-linux       # lsblk, blkid, wipefs, mount, umount
         nasty-bcachefs-tools  # bcachefs
-        smartmontools    # smartctl
-        iproute2         # ip (for network addresses)
         kmod             # modprobe (for iSCSI/NVMe-oF kernel modules)
         systemd          # systemctl, journalctl (for update status)
         nixos-rebuild-ng # nixos-rebuild (for system updates)

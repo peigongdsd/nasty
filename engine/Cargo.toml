@@ -4,6 +4,7 @@ members = [
     "nasty-api",
     "nasty-apidoc",
     "nasty-common",
+    "nasty-metrics",
     "nasty-storage",
     "nasty-sharing",
     "nasty-snapshot",

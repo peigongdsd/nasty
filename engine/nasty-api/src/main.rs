@@ -34,7 +34,7 @@ pub struct AppState {
     pub network: nasty_system::network::NetworkService,
     pub protocols: nasty_system::protocol::ProtocolService,
     pub updates: nasty_system::update::UpdateService,
-    pub metrics: Arc<nasty_system::metrics::MetricsDb>,
+    pub metrics_client: reqwest::Client,
     pub pools: nasty_storage::PoolService,
     pub subvolumes: Arc<nasty_storage::SubvolumeService>,
     pub snapshots: nasty_snapshot::SnapshotService,
@@ -43,6 +43,9 @@ pub struct AppState {
     pub iscsi: nasty_sharing::IscsiService,
     pub nvmeof: Arc<nasty_sharing::NvmeofService>,
 }
+
+/// Base URL for the nasty-metrics service.
+pub const METRICS_BASE: &str = "http://127.0.0.1:2138";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -54,11 +57,6 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let (event_tx, _) = tokio::sync::broadcast::channel::<String>(64);
-
-    let metrics = Arc::new(
-        nasty_system::metrics::MetricsDb::open()
-            .expect("failed to open metrics database"),
-    );
 
     let subvolumes = Arc::new(nasty_storage::SubvolumeService::new(nasty_storage::PoolService::new()));
     let nvmeof = Arc::new(nasty_sharing::NvmeofService::new());
@@ -72,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         network: nasty_system::network::NetworkService::new(),
         protocols: nasty_system::protocol::ProtocolService::new(),
         updates: nasty_system::update::UpdateService::new(),
-        metrics: metrics.clone(),
+        metrics_client: reqwest::Client::new(),
         pools: nasty_storage::PoolService::new(),
         snapshots: nasty_snapshot::SnapshotService::new(subvolumes.clone(), nvmeof.clone()),
         subvolumes,
@@ -108,9 +106,6 @@ async fn main() -> anyhow::Result<()> {
         state.updates.bcachefs_info(&state.system),
     );
     info!("Caches warm in {}ms", t0.elapsed().as_millis());
-
-    // Background metrics collector: samples I/O rates every 5s, writes to SQLite
-    tokio::spawn(metrics_collector(metrics));
 
     // Signal systemd that startup is complete
     sd_notify_ready();
@@ -299,78 +294,3 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState, client_ip: &str
     }
 }
 
-// ── Metrics collector ───────────────────────────────────────────
-
-async fn metrics_collector(db: Arc<nasty_system::metrics::MetricsDb>) {
-    use nasty_system::SystemService;
-
-    let sys = SystemService::new();
-    let mut prev_stats = sys.stats().await;
-    let mut prev_time = std::time::Instant::now();
-    let mut prune_counter = 0u32;
-
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
-        let now = std::time::Instant::now();
-        let elapsed = now.duration_since(prev_time).as_secs_f64();
-        if elapsed <= 0.0 {
-            continue;
-        }
-
-        let stats = sys.stats().await;
-
-        // Compute network rates
-        let net_samples: Vec<(&str, f64, f64)> = stats
-            .network
-            .iter()
-            .filter_map(|curr| {
-                let prev = prev_stats.network.iter().find(|p| p.name == curr.name)?;
-                let rx = (curr.rx_bytes.saturating_sub(prev.rx_bytes)) as f64 / elapsed;
-                let tx = (curr.tx_bytes.saturating_sub(prev.tx_bytes)) as f64 / elapsed;
-                Some((curr.name.as_str(), rx, tx))
-            })
-            .collect();
-
-        // Compute disk rates
-        let disk_samples: Vec<(&str, f64, f64)> = stats
-            .disk_io
-            .iter()
-            .filter_map(|curr| {
-                let prev = prev_stats.disk_io.iter().find(|p| p.name == curr.name)?;
-                let read = (curr.read_bytes.saturating_sub(prev.read_bytes)) as f64 / elapsed;
-                let write = (curr.write_bytes.saturating_sub(prev.write_bytes)) as f64 / elapsed;
-                Some((curr.name.as_str(), read, write))
-            })
-            .collect();
-
-        if !net_samples.is_empty() {
-            db.insert("net", &net_samples);
-        }
-        if !disk_samples.is_empty() {
-            db.insert("disk", &disk_samples);
-        }
-
-        // CPU usage percentage (load / cores × 100)
-        let cpu_pct = (stats.cpu.load_1 / stats.cpu.count as f64) * 100.0;
-        db.insert("cpu", &[("cpu", cpu_pct.min(100.0), 0.0)]);
-
-        // Memory usage percentage
-        let mem_pct = if stats.memory.total_bytes > 0 {
-            (stats.memory.used_bytes as f64 / stats.memory.total_bytes as f64) * 100.0
-        } else {
-            0.0
-        };
-        db.insert("mem", &[("mem", mem_pct, 0.0)]);
-
-        prev_stats = stats;
-        prev_time = now;
-
-        // Prune old data every ~5 minutes (60 iterations × 5s)
-        prune_counter += 1;
-        if prune_counter >= 60 {
-            prune_counter = 0;
-            db.prune();
-        }
-    }
-}
