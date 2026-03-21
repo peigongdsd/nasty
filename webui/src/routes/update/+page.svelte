@@ -58,6 +58,21 @@
 		return reached;
 	});
 
+	const genPhases = [
+		{ label: 'Switch',   marker: '==> Switching to generation' },
+		{ label: 'Activate', marker: '==> Activating generation' },
+		{ label: 'Done',     marker: '==> Switch to generation' },
+	];
+
+	const genCurrentPhase = $derived.by(() => {
+		const log = status?.log ?? '';
+		let reached = -1;
+		for (let i = 0; i < genPhases.length; i++) {
+			if (log.includes(genPhases[i].marker)) reached = i;
+		}
+		return reached;
+	});
+
 	const bcachefsPhases = [
 		{ label: 'Fetch',    marker: '==> Switching' },
 		{ label: 'Build',    marker: '==> Rebuilding' },
@@ -600,6 +615,33 @@
 		{#if status && status.state !== 'idle'}
 			<Card class="mt-6">
 				<CardContent class="py-5">
+					<div class="mb-5 flex items-center">
+						{#each genPhases as phase, i}
+							{@const done = genCurrentPhase >= i}
+							{@const active = status.state === 'running' && genCurrentPhase === i - 1}
+							{@const failed = status.state === 'failed' && !done}
+							<div class="flex items-center gap-0">
+								<div class="flex flex-col items-center gap-1">
+									<div class="flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-semibold transition-all {
+										done   ? 'border-blue-500 bg-blue-500 text-white' :
+										active ? 'border-blue-400 bg-transparent text-blue-400 animate-pulse' :
+										failed ? 'border-red-700 bg-transparent text-red-500' :
+										         'border-border bg-transparent text-muted-foreground/30'
+									}">
+										{#if done}✓{:else if active}…{:else if failed}✕{:else}{i + 1}{/if}
+									</div>
+									<span class="text-[0.65rem] font-medium {done ? 'text-blue-400' : active ? 'text-blue-400/70' : failed ? 'text-red-500/70' : 'text-muted-foreground/40'}">{phase.label}</span>
+								</div>
+								{#if i < genPhases.length - 1}
+									<div class="mb-3.5 h-px w-12 {genCurrentPhase > i ? 'bg-blue-500' : 'bg-border'} mx-1"></div>
+								{/if}
+							</div>
+						{/each}
+						{#if status.state === 'failed'}
+							<span class="ml-4 text-sm text-destructive">Failed</span>
+						{/if}
+					</div>
+
 					{#if status.log}
 						{#if status.state !== 'running'}
 							<button
