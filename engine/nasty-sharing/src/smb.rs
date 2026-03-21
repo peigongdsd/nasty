@@ -281,14 +281,13 @@ async fn apply_config() -> Result<(), SmbError> {
             if share.guest_ok { "yes" } else { "no" }
         ));
 
-        // When guest access is enabled, force operations as root so guests
-        // can read/write regardless of underlying Unix permissions.
-        // Clear "invalid users" to override the NixOS global default that
-        // blocks root — without this, force user = root is rejected.
+        // When guest access is enabled, run as nobody/nogroup and make
+        // the directory world-writable so guests can read/write.
         if share.guest_ok {
-            conf.push_str("    force user = root\n");
-            conf.push_str("    force group = root\n");
-            conf.push_str("    invalid users =\n");
+            conf.push_str("    force user = nobody\n");
+            conf.push_str("    force group = nogroup\n");
+            conf.push_str("    create mask = 0666\n");
+            conf.push_str("    directory mask = 0777\n");
         }
 
         if !share.valid_users.is_empty() {
@@ -305,6 +304,16 @@ async fn apply_config() -> Result<(), SmbError> {
         }
 
         conf.push('\n');
+    }
+
+    // Ensure guest share directories are world-writable so nobody can write
+    for share in &shares {
+        if share.enabled && share.guest_ok {
+            let _ = tokio::process::Command::new("chmod")
+                .args(["0777", &share.path])
+                .output()
+                .await;
+        }
     }
 
     tokio::fs::write(NASTY_SMB_CONF_PATH, &conf).await?;
