@@ -143,9 +143,7 @@
 			authInfo = await client.connect(token);
 			connected = true;
 			showLogin = false;
-			if (authInfo?.must_change_password) {
-				showPasswordChange = true;
-			}
+			showPasswordChange = !!authInfo?.must_change_password;
 		} catch (e) {
 			clearToken();
 			resetClient();
