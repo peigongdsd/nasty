@@ -8,8 +8,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { createIoHistory } from '$lib/history.svelte';
 	import IoChart from '$lib/components/io-chart.svelte';
+	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 
 	let info: SystemInfo | null = $state(null);
+	let healthExpanded = $state(false);
 	let health: SystemHealth | null = $state(null);
 	let stats: SystemStats | null = $state(null);
 	let pools: Pool[] = $state([]);
@@ -236,28 +238,70 @@
 <!-- System info bar -->
 {#if info || health}
 	<Card class="mb-4">
-		<CardContent class="flex flex-wrap items-center gap-x-8 gap-y-2 py-4">
-			{#if info}
-				<div class="flex items-center gap-2">
-					<span class="text-lg font-bold">{info.hostname}</span>
-					<span class="text-xs text-muted-foreground">v{info.version}</span>
-				</div>
-				<div class="flex gap-4 text-sm text-muted-foreground">
-					<span>Kernel {info.kernel}</span>
-					<span>Up {formatUptime(info.uptime_seconds)}</span>
-				</div>
-			{/if}
-			{#if health}
-				<div class="ml-auto flex items-center gap-3">
-					<span class="text-sm font-semibold {health.status === 'ok' ? 'text-green-400' : 'text-red-400'}">
-						{health.status.toUpperCase()}
-					</span>
-					{#each health.services as svc}
-						<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-							<span class="h-1.5 w-1.5 rounded-full {svc.running ? 'bg-green-400' : 'bg-red-400'}"></span>
-							{svc.name}
-						</div>
-					{/each}
+		<CardContent class="py-4">
+			<div class="flex flex-wrap items-center gap-x-8 gap-y-2">
+				{#if info}
+					<div class="flex items-center gap-2">
+						<span class="text-lg font-bold">{info.hostname}</span>
+						<span class="text-xs text-muted-foreground">v{info.version}</span>
+					</div>
+					<div class="flex gap-4 text-sm text-muted-foreground">
+						<span>Kernel {info.kernel}</span>
+						<span>Up {formatUptime(info.uptime_seconds)}</span>
+					</div>
+				{/if}
+				{#if health}
+					<button
+						onclick={() => healthExpanded = !healthExpanded}
+						class="ml-auto flex items-center gap-3 hover:opacity-80 transition-opacity"
+					>
+						<span class="text-sm font-semibold {health.status === 'ok' ? 'text-green-400' : 'text-red-400'}">
+							{health.status.toUpperCase()}
+						</span>
+						{#each health.services as svc}
+							<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+								<span class="h-1.5 w-1.5 rounded-full {svc.running ? 'bg-green-400' : 'bg-red-400'}"></span>
+								{svc.name}
+							</div>
+						{/each}
+						{#if healthExpanded}
+							<ChevronDown class="h-4 w-4 text-muted-foreground" />
+						{:else}
+							<ChevronRight class="h-4 w-4 text-muted-foreground" />
+						{/if}
+					</button>
+				{/if}
+			</div>
+
+			{#if healthExpanded && health}
+				<div class="mt-4 border-t border-border pt-4">
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+						{#each health.services as svc}
+							<div class="rounded-md border border-border p-3">
+								<div class="mb-2 flex items-center justify-between">
+									<div class="flex items-center gap-2">
+										<span class="h-2 w-2 rounded-full {svc.running ? 'bg-green-400' : 'bg-red-400'}"></span>
+										<span class="text-sm font-medium">{svc.name}</span>
+									</div>
+									<span class="rounded-md px-2 py-0.5 text-xs font-medium {svc.running
+										? 'border border-green-700 bg-green-950 text-green-400'
+										: 'border border-red-700 bg-red-950 text-red-400'}">{svc.running ? 'Running' : 'Down'}</span>
+								</div>
+								{#if svc.running && svc.pid}
+									<div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+										<div class="text-muted-foreground">PID</div>
+										<div class="font-mono text-right">{svc.pid}</div>
+										<div class="text-muted-foreground">Memory</div>
+										<div class="font-mono text-right">{svc.memory_bytes != null ? formatBytes(svc.memory_bytes) : '—'}</div>
+										<div class="text-muted-foreground">CPU Time</div>
+										<div class="font-mono text-right">{svc.cpu_seconds != null ? svc.cpu_seconds.toFixed(1) + 's' : '—'}</div>
+										<div class="text-muted-foreground">Uptime</div>
+										<div class="font-mono text-right">{svc.uptime_seconds != null ? formatUptime(svc.uptime_seconds) : '—'}</div>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
 				</div>
 			{/if}
 		</CardContent>

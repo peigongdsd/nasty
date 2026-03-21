@@ -21,6 +21,10 @@ export interface SystemHealth {
 export interface ServiceStatus {
 	name: string;
 	running: boolean;
+	memory_bytes?: number;
+	cpu_seconds?: number;
+	uptime_seconds?: number;
+	pid?: number;
 }
 
 export interface PoolDevice {

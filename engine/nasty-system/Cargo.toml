@@ -13,3 +13,4 @@ tokio.workspace = true
 tracing.workspace = true
 reqwest.workspace = true
 schemars.workspace = true
+libc.workspace = true

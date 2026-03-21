@@ -71,10 +71,22 @@ pub struct SystemHealth {
 
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct ServiceStatus {
-    /// systemd service name.
+    /// Display name (e.g. "Engine", "Metrics").
     pub name: String,
     /// Whether the service is currently active/running.
     pub running: bool,
+    /// Resident memory usage in bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_bytes: Option<u64>,
+    /// CPU time in seconds (user + system).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_seconds: Option<f64>,
+    /// Process uptime in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uptime_seconds: Option<u64>,
+    /// Process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
 }
 
 // SystemStats, CpuStats, MemoryStats, NetIfStats, DiskIoStats,
@@ -160,12 +172,13 @@ impl SystemService {
     }
 
     pub async fn health(&self) -> SystemHealth {
-        // TODO: check actual service status via systemd D-Bus
+        let engine = self_service_status("Engine").await;
+        let metrics = remote_service_status("Metrics", "nasty-metrics", "http://127.0.0.1:2138/health").await;
+
+        let all_ok = engine.running && metrics.running;
         SystemHealth {
-            status: "ok".to_string(),
-            services: vec![
-                ServiceStatus { name: "nasty-engine".into(), running: true },
-            ],
+            status: if all_ok { "ok" } else { "degraded" }.to_string(),
+            services: vec![engine, metrics],
         }
     }
 
@@ -290,9 +303,114 @@ fn uptime_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-// System stats collection (cpu_stats, memory_stats, network_stats, disk_io_stats)
-// and SMART disk health (disk_health, query_smartctl) have moved to nasty-metrics.
-// The engine fetches these via HTTP from nasty-metrics on port 2138.
+// ── Service health helpers ─────────────────────────────────────
+
+/// Build ServiceStatus for the current process (nasty-engine).
+async fn self_service_status(name: &str) -> ServiceStatus {
+    let pid = std::process::id();
+    let (memory_bytes, cpu_seconds, uptime_secs) = read_proc_stats(pid).await;
+
+    ServiceStatus {
+        name: name.to_string(),
+        running: true,
+        memory_bytes: Some(memory_bytes),
+        cpu_seconds: Some(cpu_seconds),
+        uptime_seconds: Some(uptime_secs),
+        pid: Some(pid),
+    }
+}
+
+/// Build ServiceStatus for a remote service by checking its health endpoint
+/// and looking up its systemd unit for PID/resource info.
+async fn remote_service_status(name: &str, unit: &str, health_url: &str) -> ServiceStatus {
+    // Check if the service responds
+    let running = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .ok()
+        .map(|c| c.get(health_url).send())
+        .is_some()
+        && reqwest::Client::new()
+            .get(health_url)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false);
+
+    let (memory_bytes, cpu_seconds, uptime_secs, pid) = if running {
+        if let Some(p) = systemd_main_pid(unit).await {
+            let (mem, cpu, up) = read_proc_stats(p).await;
+            (Some(mem), Some(cpu), Some(up), Some(p))
+        } else {
+            (None, None, None, None)
+        }
+    } else {
+        (None, None, None, None)
+    };
+
+    ServiceStatus {
+        name: name.to_string(),
+        running,
+        memory_bytes,
+        cpu_seconds,
+        uptime_seconds: uptime_secs,
+        pid,
+    }
+}
+
+/// Get the MainPID of a systemd unit.
+async fn systemd_main_pid(unit: &str) -> Option<u32> {
+    let output = tokio::process::Command::new("systemctl")
+        .args(["show", &format!("{unit}.service"), "--property=MainPID", "--value"])
+        .output()
+        .await
+        .ok()?;
+    let pid: u32 = String::from_utf8_lossy(&output.stdout).trim().parse().ok()?;
+    if pid > 0 { Some(pid) } else { None }
+}
+
+/// Read RSS memory, CPU time, and process uptime from /proc/<pid>.
+async fn read_proc_stats(pid: u32) -> (u64, f64, u64) {
+    let stat = tokio::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .await
+        .unwrap_or_default();
+    let status = tokio::fs::read_to_string(format!("/proc/{pid}/status"))
+        .await
+        .unwrap_or_default();
+
+    // RSS from /proc/pid/status (VmRSS line, in kB)
+    let memory_bytes = status
+        .lines()
+        .find(|l| l.starts_with("VmRSS:"))
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0)
+        * 1024;
+
+    // CPU time from /proc/pid/stat: fields 14 (utime) + 15 (stime) in clock ticks
+    // Process start time: field 22 (starttime) in clock ticks since boot
+    let ticks_per_sec = unsafe { libc::sysconf(libc::_SC_CLK_TCK) } as f64;
+    let fields: Vec<&str> = stat.split_whitespace().collect();
+    let cpu_seconds = if fields.len() > 14 {
+        let utime: u64 = fields[13].parse().unwrap_or(0);
+        let stime: u64 = fields[14].parse().unwrap_or(0);
+        (utime + stime) as f64 / ticks_per_sec
+    } else {
+        0.0
+    };
+
+    let uptime_secs = if fields.len() > 21 {
+        let starttime: u64 = fields[21].parse().unwrap_or(0);
+        let system_uptime = uptime_seconds();
+        let proc_start_secs = starttime as f64 / ticks_per_sec;
+        system_uptime.saturating_sub(proc_start_secs as u64)
+    } else {
+        0
+    };
+
+    (memory_bytes, cpu_seconds, uptime_secs)
+}
 
 /// Read the pinned bcachefs-tools commit SHA from flake.lock (12-char short form).
 async fn read_bcachefs_commit() -> Option<String> {
