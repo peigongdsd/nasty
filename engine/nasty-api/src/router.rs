@@ -47,7 +47,7 @@ fn is_read_only(method: &str) -> bool {
             | "pool.usage" | "pool.scrub.status" | "pool.reconcile.status"
             | "bcachefs.usage"
             | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property"
-            | "system.update.version" | "system.update.status" | "system.reboot_required"
+            | "system.update.version" | "system.update.status" | "system.reboot_required" | "system.generations.list"
             | "system.settings.timezones"
             | "bcachefs.tools.info" | "bcachefs.tools.status"
         )
@@ -288,6 +288,49 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "system.update.status" => ok(req, state.updates.status().await),
         "system.reboot_required" => ok(req, state.updates.reboot_required().await),
+
+        // ── Generations ──────────────────────────────────────────
+        "system.generations.list" => match state.updates.list_generations().await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
+        },
+        "system.generations.switch" => {
+            #[derive(Deserialize)]
+            struct P { generation: u64 }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.updates.switch_generation(p.generation).await {
+                    Ok(()) => {
+                        state.system.invalidate_bcachefs_cache().await;
+                        state.updates.invalidate_bcachefs_cache().await;
+                        ok(req, serde_json::json!({"status": "started"}))
+                    }
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "system.generations.label" => {
+            #[derive(Deserialize)]
+            struct P { generation: u64, label: Option<String> }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.updates.label_generation(p.generation, p.label).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "system.generations.delete" => {
+            #[derive(Deserialize)]
+            struct P { generation: u64 }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.updates.delete_generation(p.generation).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── bcachefs-tools version switching ──────────────────────
         "bcachefs.tools.info" => ok(req, state.updates.bcachefs_info(&state.system).await),

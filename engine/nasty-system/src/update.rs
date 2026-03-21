@@ -92,6 +92,41 @@ pub struct UpdateStatus {
     pub webui_changed: bool,
 }
 
+// ── Generation management ──────────────────────────────────────
+
+const GENERATION_LABELS_PATH: &str = "/var/lib/nasty/generation-labels.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Generation {
+    /// NixOS generation number.
+    pub generation: u64,
+    /// Build date (e.g. "2026-03-21 11:15:37").
+    pub date: String,
+    /// NixOS version string (e.g. "26.05.20260318.b40629e").
+    pub nixos_version: String,
+    /// Kernel version string.
+    pub kernel_version: String,
+    /// NASty version baked into this generation (from /etc/nasty-version).
+    pub nasty_version: Option<String>,
+    /// Whether this is the currently activated generation.
+    pub current: bool,
+    /// Whether this is the generation the system booted into.
+    pub booted: bool,
+    /// User-assigned label (e.g. "known good", "stable").
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct NixosGeneration {
+    generation: u64,
+    date: String,
+    #[serde(rename = "nixosVersion")]
+    nixos_version: String,
+    #[serde(rename = "kernelVersion")]
+    kernel_version: String,
+    current: bool,
+}
+
 pub struct UpdateService {
     cached_info: Arc<RwLock<Option<BcachefsToolsInfo>>>,
 }
@@ -403,6 +438,193 @@ echo "==> Update complete!"
                 "shutdown failed: {stderr}"
             )));
         }
+        Ok(())
+    }
+
+    // ── Generation management ──────────────────────────────
+
+    /// List all NixOS generations with metadata and labels.
+    pub async fn list_generations(&self) -> Result<Vec<Generation>, UpdateError> {
+        let output = tokio::process::Command::new("nixos-rebuild")
+            .args(["list-generations", "--json"])
+            .output()
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("nixos-rebuild list-generations: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(UpdateError::CommandFailed(format!(
+                "list-generations failed: {stderr}"
+            )));
+        }
+
+        let nix_gens: Vec<NixosGeneration> = serde_json::from_slice(&output.stdout)
+            .map_err(|e| UpdateError::CommandFailed(format!("parse generations: {e}")))?;
+
+        // Load user labels
+        let labels = load_generation_labels().await;
+
+        // Find booted generation by comparing /run/booted-system symlink
+        let booted_store_path = tokio::fs::read_link("/run/booted-system").await.ok();
+
+        let mut generations = Vec::new();
+        for g in nix_gens {
+            // Read NASty version from this generation's profile
+            let profile_path = format!(
+                "/nix/var/nix/profiles/system-{}-link/etc/nasty-version",
+                g.generation
+            );
+            let nasty_version = tokio::fs::read_to_string(&profile_path)
+                .await
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+
+            // Check if this generation is the booted one
+            let gen_store_path = tokio::fs::read_link(format!(
+                "/nix/var/nix/profiles/system-{}-link",
+                g.generation
+            ))
+            .await
+            .ok();
+
+            let booted = match (&booted_store_path, &gen_store_path) {
+                (Some(b), Some(g)) => b == g,
+                _ => false,
+            };
+
+            let label = labels.get(&g.generation).cloned();
+
+            generations.push(Generation {
+                generation: g.generation,
+                date: g.date,
+                nixos_version: g.nixos_version,
+                kernel_version: g.kernel_version,
+                nasty_version,
+                current: g.current,
+                booted,
+                label,
+            });
+        }
+
+        Ok(generations)
+    }
+
+    /// Switch to a specific NixOS generation.
+    pub async fn switch_generation(&self, gen: u64) -> Result<(), UpdateError> {
+        let status = self.status().await;
+        if status.state == "running" {
+            return Err(UpdateError::AlreadyRunning);
+        }
+
+        // Verify the generation exists
+        let profile_link = format!("/nix/var/nix/profiles/system-{gen}-link");
+        if tokio::fs::metadata(&profile_link).await.is_err() {
+            return Err(UpdateError::CommandFailed(format!(
+                "generation {gen} does not exist"
+            )));
+        }
+
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["reset-failed", UPDATE_UNIT])
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["stop", UPDATE_UNIT])
+            .output()
+            .await;
+
+        let path = std::env::var("PATH").unwrap_or_default();
+        let script = format!(
+            r#"#!/bin/bash
+set -euo pipefail
+export PATH="/run/current-system/sw/bin:$PATH"
+echo "==> Switching to generation {gen}..."
+nix-env --switch-generation {gen} --profile /nix/var/nix/profiles/system
+echo "==> Activating generation {gen}..."
+/nix/var/nix/profiles/system/bin/switch-to-configuration switch
+echo "==> Switch to generation {gen} complete!"
+"#
+        );
+
+        let script_path = "/tmp/nasty-switch-generation.sh";
+        tokio::fs::write(script_path, &script)
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("write script: {e}")))?;
+
+        let output = tokio::process::Command::new("systemd-run")
+            .args([
+                "--unit", UPDATE_UNIT,
+                "--no-block",
+                "--description", &format!("NASty switch to generation {gen}"),
+                "--property=Type=oneshot",
+                "--property=StandardOutput=journal",
+                "--property=StandardError=journal",
+                "--setenv", &format!("PATH={path}"),
+                "--", "bash", script_path,
+            ])
+            .output()
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("systemd-run: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(UpdateError::CommandFailed(format!(
+                "failed to start generation switch: {stderr}"
+            )));
+        }
+
+        info!("Switch to generation {gen} started");
+        Ok(())
+    }
+
+    /// Set or clear a label on a generation.
+    pub async fn label_generation(&self, gen: u64, label: Option<String>) -> Result<(), UpdateError> {
+        let mut labels = load_generation_labels().await;
+        match label {
+            Some(l) if !l.is_empty() => { labels.insert(gen, l); }
+            _ => { labels.remove(&gen); }
+        }
+        save_generation_labels(&labels).await
+    }
+
+    /// Delete old generations (garbage collect).
+    pub async fn delete_generation(&self, gen: u64) -> Result<(), UpdateError> {
+        // Don't allow deleting the current generation
+        let profile_link = format!("/nix/var/nix/profiles/system-{gen}-link");
+        let current_link = "/nix/var/nix/profiles/system";
+
+        let gen_target = tokio::fs::read_link(&profile_link).await
+            .map_err(|_| UpdateError::CommandFailed(format!("generation {gen} does not exist")))?;
+        let current_target = tokio::fs::read_link(current_link).await
+            .map_err(|e| UpdateError::CommandFailed(format!("cannot read current profile: {e}")))?;
+
+        if gen_target == current_target {
+            return Err(UpdateError::CommandFailed(
+                "cannot delete the currently active generation".into(),
+            ));
+        }
+
+        // Check if it's the booted generation
+        if let Ok(booted) = tokio::fs::read_link("/run/booted-system").await {
+            if gen_target == booted {
+                return Err(UpdateError::CommandFailed(
+                    "cannot delete the booted generation".into(),
+                ));
+            }
+        }
+
+        // Remove the profile link
+        tokio::fs::remove_file(&profile_link).await
+            .map_err(|e| UpdateError::CommandFailed(format!("failed to remove generation {gen}: {e}")))?;
+
+        // Clean up the label if any
+        let mut labels = load_generation_labels().await;
+        if labels.remove(&gen).is_some() {
+            let _ = save_generation_labels(&labels).await;
+        }
+
+        info!("Deleted generation {gen}");
         Ok(())
     }
 
@@ -958,6 +1180,27 @@ pub async fn read_flake_nix_default_ref_pub() -> String {
 /// Public wrapper for use by lib.rs cached info.
 pub async fn is_reboot_required_pub() -> bool {
     is_reboot_required().await
+}
+
+// ── Generation labels persistence ──────────────────────────────
+
+async fn load_generation_labels() -> std::collections::HashMap<u64, String> {
+    tokio::fs::read_to_string(GENERATION_LABELS_PATH)
+        .await
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+async fn save_generation_labels(
+    labels: &std::collections::HashMap<u64, String>,
+) -> Result<(), UpdateError> {
+    let json = serde_json::to_string_pretty(labels)
+        .map_err(|e| UpdateError::CommandFailed(format!("serialize labels: {e}")))?;
+    tokio::fs::write(GENERATION_LABELS_PATH, json)
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("write labels: {e}")))?;
+    Ok(())
 }
 
 /// Parse flake.nix to extract the default bcachefs-tools ref from the input URL.

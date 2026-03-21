@@ -3,7 +3,8 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { UpdateInfo, UpdateStatus, BcachefsToolsInfo } from '$lib/types';
+	import type { UpdateInfo, UpdateStatus, BcachefsToolsInfo, Generation } from '$lib/types';
+	import { Tag, Trash2, ArrowRightLeft, Pencil, X, Check } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -11,9 +12,17 @@
 	import { rebootState } from '$lib/reboot.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
 
-	let activeTab: 'system' | 'bcachefs' = $state(
-		typeof window !== 'undefined' && window.location.hash === '#bcachefs' ? 'bcachefs' : 'system'
+	let activeTab: 'system' | 'generations' | 'bcachefs' = $state(
+		typeof window !== 'undefined' && window.location.hash === '#bcachefs' ? 'bcachefs'
+		: typeof window !== 'undefined' && window.location.hash === '#generations' ? 'generations'
+		: 'system'
 	);
+
+	// ── Generations tab state ───────────────────────────────
+	let generations: Generation[] = $state([]);
+	let generationsLoading = $state(false);
+	let editingLabel: number | null = $state(null);
+	let editLabelValue = $state('');
 
 	let info: UpdateInfo | null = $state(null);
 	let status: UpdateStatus | null = $state(null);
@@ -158,29 +167,12 @@
 		doApplyUpdate();
 	}
 
-	async function rollback() {
-		if (!await confirm('Roll Back to Previous Version?', 'The system will revert to the previous version. Services will restart.')) return;
-		doRollback();
-	}
-
 	async function doApplyUpdate() {
 		logCollapsed = false;
 		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const ok = await withToast(
 			() => client.call('system.update.apply'),
 			'Update started'
-		);
-		if (ok !== undefined) {
-			startPolling();
-		}
-	}
-
-	async function doRollback() {
-		logCollapsed = false;
-		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
-		const ok = await withToast(
-			() => client.call('system.update.rollback'),
-			'Rollback started'
 		);
 		if (ok !== undefined) {
 			startPolling();
@@ -299,6 +291,64 @@
 			(line) => line.replace(/, /g, ',\n  ')
 		);
 	}
+
+	// ── Generations ─────────────────────────────────────────
+
+	async function loadGenerations() {
+		generationsLoading = true;
+		try {
+			generations = await client.call<Generation[]>('system.generations.list');
+		} catch {
+			generations = [];
+		}
+		generationsLoading = false;
+	}
+
+	async function switchGeneration(gen: number) {
+		if (!await confirm(
+			`Switch to Generation ${gen}?`,
+			'The system will activate this generation. Services will restart. A reboot may be required if the kernel changed.'
+		)) return;
+
+		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
+		const ok = await withToast(
+			() => client.call('system.generations.switch', { generation: gen }),
+			`Switching to generation ${gen}`
+		);
+		if (ok !== undefined) {
+			startPolling();
+		}
+	}
+
+	async function saveLabel(gen: number) {
+		await withToast(
+			() => client.call('system.generations.label', {
+				generation: gen,
+				label: editLabelValue.trim() || null,
+			}),
+			editLabelValue.trim() ? 'Label saved' : 'Label removed'
+		);
+		editingLabel = null;
+		await loadGenerations();
+	}
+
+	async function deleteGeneration(gen: number) {
+		if (!await confirm(
+			`Delete Generation ${gen}?`,
+			'This generation will be removed. You can reclaim disk space by running garbage collection afterwards.'
+		)) return;
+
+		await withToast(
+			() => client.call('system.generations.delete', { generation: gen }),
+			`Generation ${gen} deleted`
+		);
+		await loadGenerations();
+	}
+
+	function startEditLabel(gen: Generation) {
+		editingLabel = gen.generation;
+		editLabelValue = gen.label ?? '';
+	}
 </script>
 
 
@@ -316,6 +366,13 @@
 				{activeTab === 'system' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 		>
 			System
+		</button>
+		<button
+			onclick={() => { activeTab = 'generations'; if (generations.length === 0) loadGenerations(); }}
+			class="px-5 py-1.5 font-medium transition-colors
+				{activeTab === 'generations' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+		>
+			Generations
 		</button>
 		<button
 			onclick={() => activeTab = 'bcachefs'}
@@ -365,14 +422,6 @@
 							Update Now
 						</Button>
 					{/if}
-					<Button
-						variant="secondary"
-						size="sm"
-						onclick={rollback}
-						disabled={status?.state === 'running'}
-					>
-						Rollback
-					</Button>
 				</div>
 			</CardContent>
 		</Card>
@@ -433,8 +482,141 @@
 
 		<p class="text-xs text-muted-foreground">
 			Updates are fetched and applied atomically. If the build fails, the running system is not affected.
-			Use Rollback if the new version works but behaves unexpectedly.
+			Use the Generations tab to switch to any previous system version.
 		</p>
+
+	<!-- Generations tab -->
+	{:else if activeTab === 'generations'}
+		<Card>
+			<CardContent class="py-5">
+				<div class="mb-4 flex items-center justify-between">
+					<div>
+						<h2 class="text-base font-semibold">System Generations</h2>
+						<p class="text-xs text-muted-foreground">Each update creates a new generation. Switch to any previous version or label known-good configurations.</p>
+					</div>
+					<Button size="sm" variant="outline" onclick={loadGenerations} disabled={generationsLoading}>
+						{generationsLoading ? 'Loading…' : 'Refresh'}
+					</Button>
+				</div>
+
+				{#if generationsLoading && generations.length === 0}
+					<p class="text-sm text-muted-foreground">Loading generations...</p>
+				{:else if generations.length === 0}
+					<p class="text-sm text-muted-foreground">No generations found.</p>
+				{:else}
+					<div class="overflow-x-auto">
+						<table class="w-full text-sm">
+							<thead>
+								<tr class="border-b border-border text-left text-xs text-muted-foreground">
+									<th class="pb-2 pr-4">#</th>
+									<th class="pb-2 pr-4">Date</th>
+									<th class="pb-2 pr-4">NASty</th>
+									<th class="pb-2 pr-4">Kernel</th>
+									<th class="pb-2 pr-4">Status</th>
+									<th class="pb-2 pr-4">Label</th>
+									<th class="pb-2 text-right">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each generations as gen}
+									<tr class="border-b border-border/50 {gen.current ? 'bg-blue-500/5' : ''} {gen.booted && !gen.current ? 'bg-amber-500/5' : ''}">
+										<td class="py-2.5 pr-4 font-mono font-semibold">{gen.generation}</td>
+										<td class="py-2.5 pr-4 font-mono text-xs">{gen.date}</td>
+										<td class="py-2.5 pr-4 font-mono text-xs">{gen.nasty_version ?? '—'}</td>
+										<td class="py-2.5 pr-4 font-mono text-xs">{gen.kernel_version}</td>
+										<td class="py-2.5 pr-4">
+											{#if gen.current && gen.booted}
+												<span class="rounded-md border border-green-700 bg-green-950 px-2 py-0.5 text-xs font-medium text-green-400">Active & Booted</span>
+											{:else if gen.current}
+												<span class="rounded-md border border-blue-700 bg-blue-950 px-2 py-0.5 text-xs font-medium text-blue-400">Active</span>
+											{:else if gen.booted}
+												<span class="rounded-md border border-amber-700 bg-amber-950 px-2 py-0.5 text-xs font-medium text-amber-400">Booted</span>
+											{/if}
+										</td>
+										<td class="py-2.5 pr-4">
+											{#if editingLabel === gen.generation}
+												<div class="flex items-center gap-1">
+													<input
+														type="text"
+														bind:value={editLabelValue}
+														class="w-28 rounded-md border border-input bg-background px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+														placeholder="e.g. stable"
+														onkeydown={(e) => { if (e.key === 'Enter') saveLabel(gen.generation); if (e.key === 'Escape') editingLabel = null; }}
+													/>
+													<button onclick={() => saveLabel(gen.generation)} class="text-green-400 hover:text-green-300" title="Save">
+														<Check class="h-3.5 w-3.5" />
+													</button>
+													<button onclick={() => editingLabel = null} class="text-muted-foreground hover:text-foreground" title="Cancel">
+														<X class="h-3.5 w-3.5" />
+													</button>
+												</div>
+											{:else if gen.label}
+												<button
+													onclick={() => startEditLabel(gen)}
+													class="flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent transition-colors"
+												>
+													<Tag class="h-3 w-3" />{gen.label}
+												</button>
+											{:else}
+												<button
+													onclick={() => startEditLabel(gen)}
+													class="text-muted-foreground/50 hover:text-muted-foreground transition-colors" title="Add label"
+												>
+													<Tag class="h-3.5 w-3.5" />
+												</button>
+											{/if}
+										</td>
+										<td class="py-2.5 text-right">
+											<div class="flex items-center justify-end gap-1">
+												{#if !gen.current}
+													<button
+														onclick={() => switchGeneration(gen.generation)}
+														class="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+														title="Switch to this generation"
+														disabled={status?.state === 'running'}
+													>
+														<ArrowRightLeft class="h-4 w-4" />
+													</button>
+													<button
+														onclick={() => deleteGeneration(gen.generation)}
+														class="rounded-md p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+														title="Delete this generation"
+														disabled={gen.booted || status?.state === 'running'}
+													>
+														<Trash2 class="h-4 w-4" />
+													</button>
+												{/if}
+											</div>
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
+
+		{#if status && status.state !== 'idle'}
+			<Card class="mt-6">
+				<CardContent class="py-5">
+					{#if status.log}
+						{#if status.state !== 'running'}
+							<button
+								onclick={() => logCollapsed = !logCollapsed}
+								class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+							>
+								<span class="transition-transform {logCollapsed ? '' : 'rotate-180'} inline-block">▾</span>
+								{logCollapsed ? 'Show output' : 'Hide output'}
+							</button>
+						{/if}
+						{#if status.state === 'running' || !logCollapsed}
+							<pre bind:this={logEl} class="mt-3 max-h-64 overflow-auto rounded bg-secondary p-3 text-xs leading-relaxed">{formatLog(status.log)}</pre>
+						{/if}
+					{/if}
+				</CardContent>
+			</Card>
+		{/if}
 
 	<!-- bcachefs tab -->
 	{:else if activeTab === 'bcachefs'}

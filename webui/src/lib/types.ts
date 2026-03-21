@@ -328,6 +328,17 @@ export interface BcachefsToolsInfo {
 	debug_checks_running: boolean;
 }
 
+export interface Generation {
+	generation: number;
+	date: string;
+	nixos_version: string;
+	kernel_version: string;
+	nasty_version: string | null;
+	current: boolean;
+	booted: boolean;
+	label: string | null;
+}
+
 export interface UpdateStatus {
 	/** "idle", "running", "success", "failed" */
 	state: string;
