@@ -255,6 +255,11 @@ git sparse-checkout disable 2>/dev/null || true
 
 git reset --hard origin/main
 
+# Remove files not needed on the appliance. The build only needs
+# engine/, webui/, nixos/. Delete and stage the removals so the
+# tree stays clean for Nix (avoids -dirty version suffix).
+git rm -rf --quiet tests/ docs/ .github/ .claude/ build-iso.sh README.md CLAUDE.md 2>/dev/null || true
+
 # Restore hardware config
 [ -f /tmp/nasty-hw-config.nix ] && cp /tmp/nasty-hw-config.nix "$HW_CFG"
 
@@ -275,10 +280,10 @@ if [ -f "{BCACHEFS_DEBUG_CHECKS_STATE}" ]; then
     cd {LOCAL_REPO}
 fi
 
-# Flakes require all files to be tracked; commit so the tree is clean (no dirty warning)
+# Commit local changes (hw-config, removed dev files) so the tree is clean for Nix
 git add -A
 git -c user.email="nasty@localhost" -c user.name="NASty" \
-  commit -m "local: hardware-configuration.nix" || true
+  commit -m "local: appliance adjustments" || true
 
 echo "==> Rebuilding system..."
 nixos-rebuild switch --flake {local_flake}
