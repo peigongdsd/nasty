@@ -32,7 +32,7 @@
 	// Detail panel
 	let detailSv = $state<Subvolume | null>(null);
 	let detailSnapshots = $state<Snapshot[]>([]);
-	let detailTab = $state<'info' | 'snapshots' | 'properties' | 'shares'>('info');
+	let detailTab = $state<'info' | 'snapshots' | 'shares' | 'browse' | 'properties'>('info');
 
 	// Shares linked to the detail subvolume
 	interface LinkedShares {
@@ -42,6 +42,37 @@
 		nvmeof: NvmeofSubsystem[];
 	}
 	let detailShares = $state<LinkedShares>({ nfs: [], smb: [], iscsi: [], nvmeof: [] });
+	// Tree: find parent chain and children for the selected subvolume
+	const detailParentChain = $derived.by((): string[] => {
+		if (!detailSv) return [];
+		const chain: string[] = [];
+		let current = detailSv.parent;
+		const seen = new Set<string>();
+		while (current && !seen.has(current)) {
+			seen.add(current);
+			chain.unshift(current);
+			const parentSv = subvolumes.find(sv => sv.name === current);
+			current = parentSv?.parent ?? null;
+		}
+		return chain;
+	});
+
+	const detailChildren = $derived.by((): { name: string; type: 'clone' | 'snapshot' }[] => {
+		if (!detailSv) return [];
+		const result: { name: string; type: 'clone' | 'snapshot' }[] = [];
+		// Writable clones: subvolumes whose parent is this subvolume
+		for (const sv of subvolumes) {
+			if (sv.parent === detailSv.name) {
+				result.push({ name: sv.name, type: 'clone' });
+			}
+		}
+		// Read-only snapshots
+		for (const snap of detailSv.snapshots) {
+			result.push({ name: snap, type: 'snapshot' });
+		}
+		return result;
+	});
+
 	const detailShareCount = $derived(
 		detailShares.nfs.length + detailShares.smb.length +
 		detailShares.iscsi.length + detailShares.nvmeof.length
@@ -426,6 +457,12 @@
 					: 'text-muted-foreground hover:text-foreground'}"
 			>Shares{#if detailShareCount > 0} ({detailShareCount}){/if}</button>
 			<button
+				onclick={() => detailTab = 'browse'}
+				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'browse'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>Browse</button>
+			<button
 				onclick={() => detailTab = 'properties'}
 				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'properties'
 					? 'border-b-2 border-primary text-foreground'
@@ -606,6 +643,72 @@
 						{/if}
 					</div>
 				{/if}
+
+			{:else if detailTab === 'browse'}
+				<div class="space-y-4">
+					<!-- Parent chain -->
+					{#if detailParentChain.length > 0 || detailSv?.parent}
+						<div>
+							<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Lineage</h4>
+							<div class="space-y-1">
+								{#each detailParentChain as ancestor, i}
+									<div class="flex items-center gap-1" style="padding-left: {i * 16}px">
+										<span class="text-muted-foreground">└─</span>
+										<button
+											class="font-mono text-sm text-blue-400 hover:text-blue-300 transition-colors"
+											onclick={() => { const sv = subvolumes.find(s => s.name === ancestor); if (sv) openDetail(sv); }}
+										>{ancestor}</button>
+									</div>
+								{/each}
+								<!-- Current subvolume -->
+								<div class="flex items-center gap-1" style="padding-left: {detailParentChain.length * 16}px">
+									<span class="text-muted-foreground">└─</span>
+									<span class="font-mono text-sm font-semibold">{detailSv?.name}</span>
+									<Badge variant="outline" class="ml-1 text-[0.6rem]">current</Badge>
+								</div>
+							</div>
+						</div>
+					{:else}
+						<div>
+							<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Lineage</h4>
+							<div class="flex items-center gap-1">
+								<span class="font-mono text-sm font-semibold">{detailSv?.name}</span>
+								<Badge variant="outline" class="ml-1 text-[0.6rem]">root</Badge>
+							</div>
+						</div>
+					{/if}
+
+					<!-- Children -->
+					{#if detailChildren.length > 0}
+						<div>
+							<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Children ({detailChildren.length})</h4>
+							<div class="space-y-1">
+								{#each detailChildren as child}
+									<div class="flex items-center gap-2 rounded-md border border-border px-3 py-2">
+										{#if child.type === 'snapshot'}
+											<Badge class="bg-amber-950 text-amber-400 text-[0.6rem]">snapshot</Badge>
+										{:else}
+											<Badge class="bg-green-950 text-green-400 text-[0.6rem]">clone</Badge>
+										{/if}
+										{#if child.type === 'clone'}
+											<button
+												class="font-mono text-sm text-blue-400 hover:text-blue-300 transition-colors"
+												onclick={() => { const sv = subvolumes.find(s => s.name === child.name); if (sv) openDetail(sv); }}
+											>{child.name}</button>
+										{:else}
+											<span class="font-mono text-sm">{child.name}</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						</div>
+					{:else}
+						<div>
+							<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">Children</h4>
+							<p class="text-sm text-muted-foreground">No snapshots or clones.</p>
+						</div>
+					{/if}
+				</div>
 
 			{:else if detailTab === 'properties'}
 				{#if detailSv.properties && Object.keys(detailSv.properties).length > 0}

@@ -141,6 +141,7 @@ export interface Subvolume {
 	snapshots: string[];
 	owner: string | null;
 	properties: Record<string, string>;
+	parent: string | null;
 }
 
 export interface Snapshot {
