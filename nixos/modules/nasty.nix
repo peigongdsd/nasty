@@ -736,9 +736,10 @@ in {
         # the include immediately introduces [sharename] sections that override it.
         nasty = {
           "include" = "/etc/samba/smb.nasty.conf";
-          # Path suppresses "No path in service nasty" warning.
-          # The include immediately overrides this section with real shares.
-          "path" = "/nonexistent";
+          # Use /tmp to suppress "No path in service nasty" warning.
+          # /nonexistent caused the first included share to inherit it,
+          # making that share unmountable (NT_STATUS_BAD_NETWORK_NAME).
+          "path" = "/tmp";
           "browseable" = "no";
           "available" = "no";
         };
