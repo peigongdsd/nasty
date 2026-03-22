@@ -13,6 +13,7 @@ use axum::{
 };
 use serde::Deserialize;
 use tracing::info;
+use tracing_subscriber::{reload, prelude::*};
 
 mod auth;
 mod router;
@@ -21,6 +22,9 @@ mod terminal;
 use auth::{AuthService, Session};
 use router::handle_rpc_request;
 
+/// Handle for dynamically reloading the tracing filter at runtime.
+pub type LogReloadHandle = reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>;
+
 /// Broadcast channel for notifying all WebSocket clients of state changes.
 /// The payload is the collection name (e.g. "pool", "subvolume", "share.nfs").
 pub type EventBus = tokio::sync::broadcast::Sender<String>;
@@ -28,6 +32,7 @@ pub type EventBus = tokio::sync::broadcast::Sender<String>;
 pub struct AppState {
     pub auth: AuthService,
     pub events: EventBus,
+    pub log_reload: LogReloadHandle,
     pub system: nasty_system::SystemService,
     pub settings: nasty_system::settings::SettingsService,
     pub alerts: nasty_system::alerts::AlertService,
@@ -49,11 +54,13 @@ pub const METRICS_BASE: &str = "http://127.0.0.1:2138";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "nasty_engine=debug,nasty_storage=debug,nasty_sharing=debug,nasty_snapshot=debug,nasty_system=info,tower_http=debug".into()),
-        )
+    let default_filter = "nasty_engine=debug,nasty_storage=debug,nasty_sharing=debug,nasty_snapshot=debug,nasty_system=info,tower_http=debug";
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| default_filter.into());
+    let (filter_layer, reload_handle) = reload::Layer::new(filter);
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
     let (event_tx, _) = tokio::sync::broadcast::channel::<String>(64);
@@ -64,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         auth: AuthService::new().await,
         events: event_tx,
+        log_reload: reload_handle,
         system: nasty_system::SystemService::new(),
         settings: nasty_system::settings::SettingsService::new().await,
         alerts: nasty_system::alerts::AlertService::new().await,

@@ -57,6 +57,7 @@ fn is_read_only(method: &str) -> bool {
             | "bcachefs.usage"
             | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property"
             | "system.update.version" | "system.update.status" | "system.reboot_required" | "system.generations.list"
+            | "system.log.level"
             | "system.settings.timezones"
             | "bcachefs.tools.info" | "bcachefs.tools.status"
         )
@@ -297,6 +298,34 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "system.update.status" => ok(req, state.updates.status().await),
         "system.reboot_required" => ok(req, state.updates.reboot_required().await),
+
+        // ── Logging ───────────────────────────────────────────────
+        "system.log.level" => {
+            // Return the current filter as a string — not easily available from reload handle,
+            // so just return a placeholder. The set method is more useful.
+            ok(req, "use system.log.set_level to change")
+        }
+        "system.log.set_level" => {
+            #[derive(Deserialize)]
+            struct P { filter: String }
+            match parse_params::<P>(req) {
+                Ok(p) => {
+                    match tracing_subscriber::EnvFilter::try_new(&p.filter) {
+                        Ok(new_filter) => {
+                            match state.log_reload.reload(new_filter) {
+                                Ok(()) => {
+                                    tracing::info!("Log filter changed to: {}", p.filter);
+                                    ok(req, "ok")
+                                }
+                                Err(e) => err(req, format!("failed to reload filter: {e}")),
+                            }
+                        }
+                        Err(e) => err(req, format!("invalid filter: {e}")),
+                    }
+                }
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── Generations ──────────────────────────────────────────
         "system.generations.list" => match state.updates.list_generations().await {
