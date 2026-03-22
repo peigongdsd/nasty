@@ -28,6 +28,8 @@
 
 	let showSnap = $state<string | null>(null);
 	let snapName = $state('');
+	let showClone = $state<string | null>(null);
+	let cloneName = $state('');
 
 	// Detail panel
 	let detailSv = $state<Subvolume | null>(null);
@@ -221,6 +223,28 @@
 			snapName = '';
 		}
 		await refresh();
+	}
+
+	async function cloneSubvolume() {
+		if (!showClone || !cloneName) return;
+		const ok = await withToast(
+			() => client.call('subvolume.clone', {
+				pool: selectedPool,
+				name: showClone,
+				new_name: cloneName,
+			}),
+			`Clone "${cloneName}" created`
+		);
+		if (ok !== undefined) {
+			showClone = null;
+			cloneName = '';
+			await refresh();
+			// Reopen detail if we cloned the detail subvolume
+			if (detailSv) {
+				const updated = subvolumes.find(sv => sv.name === detailSv!.name);
+				if (updated) openDetail(updated);
+			}
+		}
 	}
 
 	async function deleteSnapshot(subvolume: string, snap: string) {
@@ -521,6 +545,9 @@
 						<Button size="sm" variant="secondary" onclick={() => { showSnap = detailSv?.name ?? null; snapName = ''; }}>
 							<Camera class="mr-1.5 h-3.5 w-3.5" />Snapshot
 						</Button>
+						<Button size="sm" variant="secondary" onclick={() => { showClone = detailSv?.name ?? null; cloneName = ''; }}>
+							<Copy class="mr-1.5 h-3.5 w-3.5" />Clone
+						</Button>
 						<Button size="sm" variant="destructive" onclick={() => { if (detailSv) { closeDetail(); deleteSubvolume(detailSv.name); } }}>
 							<Trash2 class="mr-1.5 h-3.5 w-3.5" />Delete
 						</Button>
@@ -734,6 +761,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>Snapshot "{showSnap}"</Dialog.Title>
+			<p class="text-sm text-muted-foreground">Create a read-only point-in-time copy.</p>
 		</Dialog.Header>
 		<div class="mb-4">
 			<Label for="snap-name">Snapshot Name</Label>
@@ -742,6 +770,23 @@
 		<Dialog.Footer>
 			<Button size="sm" onclick={createSnapshot} disabled={!snapName}>Create</Button>
 			<Button variant="secondary" size="sm" onclick={() => showSnap = null}>Cancel</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={showClone !== null} onOpenChange={(open) => { if (!open) showClone = null; }}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Clone "{showClone}"</Dialog.Title>
+			<p class="text-sm text-muted-foreground">Create a writable copy (COW — instant, shares data until modified).</p>
+		</Dialog.Header>
+		<div class="mb-4">
+			<Label for="clone-name">Clone Name</Label>
+			<Input id="clone-name" bind:value={cloneName} placeholder="my-clone" class="mt-1" />
+		</div>
+		<Dialog.Footer>
+			<Button size="sm" onclick={cloneSubvolume} disabled={!cloneName}>Create</Button>
+			<Button variant="secondary" size="sm" onclick={() => showClone = null}>Cancel</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
