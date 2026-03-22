@@ -728,20 +728,10 @@ in {
           "server min protocol" = "SMB2";
           # macOS Finder requires SMB signing as optional for guest access.
           "server signing" = "auto";
-        };
-        # NASty-managed shares live in a separate conf file included here.
-        # This section is written to smb-shares.conf (after smb-global.conf),
-        # ensuring all global params are parsed before the include pulls in
-        # share definitions. The [nasty] section name is unused by Samba —
-        # the include immediately introduces [sharename] sections that override it.
-        nasty = {
+          # Include NASty-managed shares from the global section.
+          # Must NOT be a separate [share] section — Samba merges the first
+          # included share into its parent section, inheriting path/options.
           "include" = "/etc/samba/smb.nasty.conf";
-          # Use /tmp to suppress "No path in service nasty" warning.
-          # /nonexistent caused the first included share to inherit it,
-          # making that share unmountable (NT_STATUS_BAD_NETWORK_NAME).
-          "path" = "/tmp";
-          "browseable" = "no";
-          "available" = "no";
         };
       };
     };
