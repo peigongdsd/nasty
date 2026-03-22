@@ -584,7 +584,14 @@ impl NvmeofService {
             .ok_or_else(|| NvmeofError::NotFound(req.subsystem_id.clone()))?;
 
         let transport = req.transport.unwrap_or_else(|| "tcp".to_string());
-        let addr = req.addr.unwrap_or_else(|| "0.0.0.0".to_string());
+        let addr = match req.addr {
+            Some(a) if !a.is_empty() && a != "0.0.0.0" => a,
+            _ => {
+                // NVMe-oF configfs requires a real IP — 0.0.0.0 causes EINVAL
+                // when linking subsystems to ports. Detect the primary IP.
+                detect_primary_ip().await.unwrap_or_else(|| "0.0.0.0".to_string())
+            }
+        };
         let svc_id = req.service_id.unwrap_or(4420);
         let addr_family = req.addr_family.unwrap_or_else(|| "ipv4".to_string());
 
@@ -811,5 +818,23 @@ async fn dir_is_empty(path: &str) -> bool {
         Ok(mut entries) => entries.next_entry().await.ok().flatten().is_none(),
         Err(_) => true,
     }
+}
+
+/// Detect the primary IPv4 address via `ip route get 1.1.1.1`.
+async fn detect_primary_ip() -> Option<String> {
+    let output = tokio::process::Command::new("ip")
+        .args(["-4", "route", "get", "1.1.1.1"])
+        .output()
+        .await
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    // Output: "1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0"
+    let mut iter = text.split_whitespace();
+    while let Some(token) = iter.next() {
+        if token == "src" {
+            return iter.next().map(|s| s.to_string());
+        }
+    }
+    None
 }
 
