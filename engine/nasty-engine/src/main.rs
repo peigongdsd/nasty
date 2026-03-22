@@ -284,7 +284,8 @@ async fn wait_for_auth(socket: &mut WebSocket, state: &AppState, client_ip: &str
                 .await;
             Some(session)
         }
-        Err(_) => {
+        Err(e) => {
+            tracing::warn!("Auth failed for client {client_ip}: {e}");
             let _ = socket
                 .send(Message::Text(r#"{"error":"invalid token"}"#.into()))
                 .await;

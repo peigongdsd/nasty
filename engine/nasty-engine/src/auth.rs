@@ -244,6 +244,10 @@ impl AuthService {
         // Check long-lived API tokens — SHA-256 comparison (tokens are high-entropy,
         // don't need Argon2's brute-force resistance, and Argon2 is too slow for O(n) scan)
         let incoming_hash = hash_token(token);
+        tracing::debug!("API token lookup: incoming_hash={}, stored_count={}", &incoming_hash[..20], state.api_tokens.len());
+        for (i, tok) in state.api_tokens.iter().enumerate() {
+            tracing::debug!("  token[{}] '{}': stored_hash={}", i, tok.name, &tok.token[..20.min(tok.token.len())]);
+        }
         let t = state.api_tokens.iter()
             .find(|t| t.token == incoming_hash)
             .ok_or(AuthError::InvalidToken)?;
