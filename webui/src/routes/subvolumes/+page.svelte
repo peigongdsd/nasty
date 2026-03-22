@@ -4,7 +4,7 @@
 	import { formatBytes } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { Pool, Subvolume, Snapshot, SubvolumeType } from '$lib/types';
+	import type { Pool, Subvolume, Snapshot, SubvolumeType, NfsShare, SmbShare, IscsiTarget, NvmeofSubsystem } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -32,17 +32,55 @@
 	// Detail panel
 	let detailSv = $state<Subvolume | null>(null);
 	let detailSnapshots = $state<Snapshot[]>([]);
-	let detailTab = $state<'info' | 'snapshots' | 'properties'>('info');
+	let detailTab = $state<'info' | 'snapshots' | 'properties' | 'shares'>('info');
+
+	// Shares linked to the detail subvolume
+	interface LinkedShares {
+		nfs: NfsShare[];
+		smb: SmbShare[];
+		iscsi: IscsiTarget[];
+		nvmeof: NvmeofSubsystem[];
+	}
+	let detailShares = $state<LinkedShares>({ nfs: [], smb: [], iscsi: [], nvmeof: [] });
+	const detailShareCount = $derived(
+		detailShares.nfs.length + detailShares.smb.length +
+		detailShares.iscsi.length + detailShares.nvmeof.length
+	);
 
 	async function openDetail(sv: Subvolume) {
 		detailSv = sv;
 		detailTab = 'info';
 		detailSnapshots = [];
-		// Load full snapshot list for this subvolume
-		try {
-			detailSnapshots = await client.call<Snapshot[]>('snapshot.list', { pool: selectedPool });
-			detailSnapshots = detailSnapshots.filter(s => s.subvolume === sv.name);
-		} catch { /* ignore */ }
+		detailShares = { nfs: [], smb: [], iscsi: [], nvmeof: [] };
+
+		// Load snapshots and shares in parallel
+		const [snapResult, nfsResult, smbResult, iscsiResult, nvmeofResult] = await Promise.allSettled([
+			client.call<Snapshot[]>('snapshot.list', { pool: selectedPool }),
+			client.call<NfsShare[]>('share.nfs.list'),
+			client.call<SmbShare[]>('share.smb.list'),
+			client.call<IscsiTarget[]>('share.iscsi.list'),
+			client.call<NvmeofSubsystem[]>('share.nvmeof.list'),
+		]);
+
+		if (snapResult.status === 'fulfilled') {
+			detailSnapshots = snapResult.value.filter(s => s.subvolume === sv.name);
+		}
+
+		const svPath = sv.path;
+		const blockDev = sv.block_device;
+
+		detailShares = {
+			nfs: nfsResult.status === 'fulfilled'
+				? nfsResult.value.filter(s => s.path === svPath) : [],
+			smb: smbResult.status === 'fulfilled'
+				? smbResult.value.filter(s => s.path === svPath) : [],
+			iscsi: iscsiResult.status === 'fulfilled'
+				? iscsiResult.value.filter(t =>
+					blockDev != null && t.luns.some(l => l.backstore_path === blockDev)) : [],
+			nvmeof: nvmeofResult.status === 'fulfilled'
+				? nvmeofResult.value.filter(sub =>
+					blockDev != null && sub.namespaces.some(ns => ns.device_path === blockDev)) : [],
+		};
 	}
 
 	function closeDetail() {
@@ -382,6 +420,12 @@
 					: 'text-muted-foreground hover:text-foreground'}"
 			>Snapshots ({detailSv.snapshots.length})</button>
 			<button
+				onclick={() => detailTab = 'shares'}
+				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'shares'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>Shares{#if detailShareCount > 0} ({detailShareCount}){/if}</button>
+			<button
 				onclick={() => detailTab = 'properties'}
 				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'properties'
 					? 'border-b-2 border-primary text-foreground'
@@ -478,6 +522,87 @@
 									</Button>
 								</div>
 							{/each}
+						{/if}
+					</div>
+				{/if}
+
+			{:else if detailTab === 'shares'}
+				{#if detailShareCount === 0}
+					<p class="text-sm text-muted-foreground">No shares linked to this subvolume.</p>
+				{:else}
+					<div class="space-y-3">
+						{#if detailShares.nfs.length > 0}
+							<div>
+								<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">NFS</h4>
+								{#each detailShares.nfs as share}
+									<div class="mb-2 rounded-md border border-border p-3">
+										<div class="flex items-center gap-2">
+											<Badge class="bg-green-950 text-green-400">NFS</Badge>
+											<span class="font-mono text-xs">{share.path}</span>
+										</div>
+										{#if share.comment}
+											<div class="mt-1 text-xs text-muted-foreground">{share.comment}</div>
+										{/if}
+										<div class="mt-1 text-xs text-muted-foreground">
+											{share.clients.length} client(s) · {share.enabled ? 'Enabled' : 'Disabled'}
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						{#if detailShares.smb.length > 0}
+							<div>
+								<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">SMB</h4>
+								{#each detailShares.smb as share}
+									<div class="mb-2 rounded-md border border-border p-3">
+										<div class="flex items-center gap-2">
+											<Badge class="bg-amber-950 text-amber-400">SMB</Badge>
+											<span class="font-medium text-sm">{share.name}</span>
+										</div>
+										<div class="mt-1 font-mono text-xs text-muted-foreground">{share.path}</div>
+										<div class="mt-1 text-xs text-muted-foreground">
+											{share.guest_ok ? 'Guest access' : share.valid_users.length > 0 ? `Users: ${share.valid_users.join(', ')}` : 'Authenticated'}
+											· {share.read_only ? 'Read-only' : 'Read/Write'}
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						{#if detailShares.iscsi.length > 0}
+							<div>
+								<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">iSCSI</h4>
+								{#each detailShares.iscsi as target}
+									<div class="mb-2 rounded-md border border-border p-3">
+										<div class="flex items-center gap-2">
+											<Badge class="bg-purple-950 text-purple-400">iSCSI</Badge>
+										</div>
+										<div class="mt-1 font-mono text-xs">{target.iqn}</div>
+										<div class="mt-1 text-xs text-muted-foreground">
+											{target.luns.length} LUN(s) · {target.acls.length} ACL(s) · {target.enabled ? 'Enabled' : 'Disabled'}
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+
+						{#if detailShares.nvmeof.length > 0}
+							<div>
+								<h4 class="mb-2 text-xs font-semibold uppercase text-muted-foreground">NVMe-oF</h4>
+								{#each detailShares.nvmeof as sub}
+									<div class="mb-2 rounded-md border border-border p-3">
+										<div class="flex items-center gap-2">
+											<Badge class="bg-cyan-950 text-cyan-400">NVMe-oF</Badge>
+										</div>
+										<div class="mt-1 font-mono text-xs">{sub.nqn}</div>
+										<div class="mt-1 text-xs text-muted-foreground">
+											{sub.namespaces.length} namespace(s) · {sub.ports.length} port(s)
+											· {sub.allow_any_host ? 'Any host' : `${sub.allowed_hosts.length} host(s)`}
+										</div>
+									</div>
+								{/each}
+							</div>
 						{/if}
 					</div>
 				{/if}
