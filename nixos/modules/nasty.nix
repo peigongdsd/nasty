@@ -670,7 +670,7 @@ in {
         git              # for update check (git ls-remote)
         curl             # for update check (GitHub API, TODO: remove when repo is public)
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
-        ++ lib.optionals cfg.smb.enable [ samba ]
+        ++ lib.optionals cfg.smb.enable [ samba shadow.out ]
         ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
         ++ lib.optionals cfg.nvmeof.enable [ nvme-cli ];
 

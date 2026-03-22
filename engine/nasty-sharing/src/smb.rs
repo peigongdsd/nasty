@@ -145,8 +145,9 @@ impl SmbService {
 
         let shares: Vec<SmbShare> = state_dir().load_all().await;
 
-        if shares.iter().any(|s| s.name == req.name) {
-            return Err(SmbError::NameExists(req.name));
+        if let Some(existing) = shares.into_iter().find(|s| s.name == req.name) {
+            info!("SMB share '{}' already exists, returning existing (idempotent)", req.name);
+            return Ok(existing);
         }
 
         let share = SmbShare {
@@ -334,4 +335,169 @@ async fn reload_samba() -> Result<(), SmbError> {
 
     info!("Samba configuration reloaded");
     Ok(())
+}
+
+// ── SMB User Management ─────────────────────────────────────────
+
+const SMB_USER_UID_MIN: u32 = 3000;
+
+/// SMB user info returned by list.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SmbUser {
+    /// Linux username.
+    pub username: String,
+    /// Unix UID.
+    pub uid: u32,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateSmbUserRequest {
+    /// Username (alphanumeric + hyphens, 1-32 chars).
+    pub username: String,
+    /// Password for SMB authentication.
+    pub password: String,
+}
+
+impl SmbService {
+    /// Create a Linux system user and set their Samba password.
+    pub async fn create_user(&self, req: CreateSmbUserRequest) -> Result<SmbUser, SmbError> {
+        let username = req.username.trim();
+        if username.is_empty() || username.len() > 32 {
+            return Err(SmbError::InvalidName("username must be 1-32 characters".into()));
+        }
+        if !username.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return Err(SmbError::InvalidName("username must be alphanumeric, hyphens, or underscores".into()));
+        }
+
+        // Check if user already exists
+        let check = tokio::process::Command::new("id")
+            .arg(username)
+            .output().await
+            .map_err(|e| SmbError::ReloadFailed(format!("id: {e}")))?;
+        if check.status.success() {
+            return Err(SmbError::NameExists(username.to_string()));
+        }
+
+        // Find next available UID
+        let uid = next_available_uid().await;
+
+        // Create system user with no shell, no home
+        let output = tokio::process::Command::new("useradd")
+            .args([
+                "--system",
+                "--uid", &uid.to_string(),
+                "--no-create-home",
+                "--shell", "/usr/sbin/nologin",
+                username,
+            ])
+            .output().await
+            .map_err(|e| SmbError::ReloadFailed(format!("useradd: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SmbError::ReloadFailed(format!("useradd failed: {stderr}")));
+        }
+
+        // Set Samba password
+        set_smb_password(username, &req.password).await?;
+
+        info!("Created SMB user '{username}' (UID {uid})");
+        Ok(SmbUser { username: username.to_string(), uid })
+    }
+
+    /// Delete a Linux system user and remove their Samba password.
+    pub async fn delete_user(&self, username: &str) -> Result<(), SmbError> {
+        // Remove Samba password
+        let _ = tokio::process::Command::new("smbpasswd")
+            .args(["-x", username])
+            .output().await;
+
+        // Delete system user
+        let output = tokio::process::Command::new("userdel")
+            .arg(username)
+            .output().await
+            .map_err(|e| SmbError::ReloadFailed(format!("userdel: {e}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SmbError::ReloadFailed(format!("userdel failed: {stderr}")));
+        }
+
+        info!("Deleted SMB user '{username}'");
+        Ok(())
+    }
+
+    /// Change an SMB user's password.
+    pub async fn set_user_password(&self, username: &str, password: &str) -> Result<(), SmbError> {
+        set_smb_password(username, password).await?;
+        info!("Changed password for SMB user '{username}'");
+        Ok(())
+    }
+
+    /// List SMB users (system users with UID >= SMB_USER_UID_MIN and in Samba's database).
+    pub async fn list_users(&self) -> Result<Vec<SmbUser>, SmbError> {
+        // List users from smbpasswd database
+        let output = tokio::process::Command::new("pdbedit")
+            .args(["-L", "-d", "0"])
+            .output().await
+            .map_err(|e| SmbError::ReloadFailed(format!("pdbedit: {e}")))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut users = Vec::new();
+        for line in stdout.lines() {
+            // pdbedit -L format: "username:uid:full name"
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() >= 2 {
+                if let Ok(uid) = parts[1].parse::<u32>() {
+                    if uid >= SMB_USER_UID_MIN {
+                        users.push(SmbUser {
+                            username: parts[0].to_string(),
+                            uid,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(users)
+    }
+}
+
+/// Set Samba password for a user via smbpasswd stdin.
+async fn set_smb_password(username: &str, password: &str) -> Result<(), SmbError> {
+    use tokio::io::AsyncWriteExt;
+    let mut child = tokio::process::Command::new("smbpasswd")
+        .args(["-a", "-s", username])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| SmbError::ReloadFailed(format!("smbpasswd: {e}")))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        // smbpasswd -s reads password twice from stdin
+        let input = format!("{password}\n{password}\n");
+        stdin.write_all(input.as_bytes()).await
+            .map_err(|e| SmbError::ReloadFailed(format!("smbpasswd stdin: {e}")))?;
+    }
+
+    let output = child.wait_with_output().await
+        .map_err(|e| SmbError::ReloadFailed(format!("smbpasswd wait: {e}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(SmbError::ReloadFailed(format!("smbpasswd failed: {stderr}")));
+    }
+    Ok(())
+}
+
+/// Find the next available UID starting from SMB_USER_UID_MIN.
+async fn next_available_uid() -> u32 {
+    for uid in SMB_USER_UID_MIN..SMB_USER_UID_MIN + 1000 {
+        let check = tokio::process::Command::new("id")
+            .arg(uid.to_string())
+            .output().await;
+        if let Ok(out) = check {
+            if !out.status.success() {
+                return uid;
+            }
+        }
+    }
+    SMB_USER_UID_MIN // fallback
 }

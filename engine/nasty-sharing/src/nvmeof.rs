@@ -378,8 +378,9 @@ impl NvmeofService {
         let subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
         let nqn = format!("{DEFAULT_NQN_PREFIX}:{}", req.name);
 
-        if subsystems.iter().any(|s| s.nqn == nqn) {
-            return Err(NvmeofError::AlreadyExists(nqn));
+        if let Some(existing) = subsystems.into_iter().find(|s| s.nqn == nqn) {
+            info!("NVMe-oF subsystem {nqn} already exists, returning existing (idempotent)");
+            return Ok(existing);
         }
 
         let allow_any = req.allow_any_host.unwrap_or(true);

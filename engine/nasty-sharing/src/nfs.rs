@@ -122,8 +122,9 @@ impl NfsService {
 
         let shares: Vec<NfsShare> = state_dir().load_all().await;
 
-        if shares.iter().any(|s| s.path == req.path) {
-            return Err(NfsError::AlreadyExists(req.path));
+        if let Some(existing) = shares.into_iter().find(|s| s.path == req.path) {
+            info!("NFS share for {} already exists, returning existing (idempotent)", req.path);
+            return Ok(existing);
         }
 
         let share = NfsShare {

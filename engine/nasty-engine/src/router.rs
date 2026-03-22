@@ -16,6 +16,7 @@ fn is_operator_allowed(method: &str) -> bool {
             | "snapshot.create" | "snapshot.delete" | "snapshot.clone"
             | "share.nfs.create" | "share.nfs.update" | "share.nfs.delete"
             | "share.smb.create" | "share.smb.update" | "share.smb.delete"
+            | "smb.user.create" | "smb.user.delete" | "smb.user.set_password"
             | "share.iscsi.create" | "share.iscsi.create_quick" | "share.iscsi.delete"
             | "share.iscsi.add_lun" | "share.iscsi.remove_lun"
             | "share.iscsi.add_acl" | "share.iscsi.remove_acl"
@@ -55,7 +56,7 @@ fn is_read_only(method: &str) -> bool {
             | "device.list" | "auth.me" | "auth.list_users" | "auth.token.list"
             | "pool.usage" | "pool.scrub.status" | "pool.reconcile.status"
             | "bcachefs.usage"
-            | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property"
+            | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property" | "smb.user.list"
             | "system.update.version" | "system.update.status" | "system.reboot_required" | "system.generations.list"
             | "system.log.level"
             | "system.settings.timezones"
@@ -925,6 +926,37 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(e) => invalid(req, e),
         },
+
+        // ── SMB Users ──────────────────────────────────────────
+        "smb.user.list" => match state.smb.list_users().await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
+        },
+        "smb.user.create" => match parse_params::<nasty_sharing::smb::CreateSmbUserRequest>(req) {
+            Ok(p) => match state.smb.create_user(p).await {
+                Ok(u) => ok(req, u),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "smb.user.delete" => match require_str(req, "username") {
+            Ok(username) => match state.smb.delete_user(username).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "smb.user.set_password" => {
+            #[derive(Deserialize)]
+            struct P { username: String, password: String }
+            match parse_params::<P>(req) {
+                Ok(p) => match state.smb.set_user_password(&p.username, &p.password).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── iSCSI Targets ───────────────────────────────────────
         "share.iscsi.list" => match state.iscsi.list().await {

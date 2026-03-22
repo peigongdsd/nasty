@@ -205,8 +205,9 @@ impl IscsiService {
         let targets: Vec<IscsiTarget> = state_dir().load_all().await;
         let iqn = format!("{DEFAULT_IQN_PREFIX}:{}", req.name);
 
-        if targets.iter().any(|t| t.iqn == iqn) {
-            return Err(IscsiError::AlreadyExists(iqn));
+        if let Some(existing) = targets.into_iter().find(|t| t.iqn == iqn) {
+            info!("iSCSI target {iqn} already exists, returning existing (idempotent)");
+            return Ok(existing);
         }
 
         let portals = req.portals.unwrap_or_else(|| {

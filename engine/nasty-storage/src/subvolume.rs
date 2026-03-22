@@ -504,7 +504,8 @@ impl SubvolumeService {
         let subvol_path = subvol_path(&mount_point, &req.name);
 
         if Path::new(&subvol_path).exists() {
-            return Err(SubvolumeError::AlreadyExists(req.name.clone()));
+            info!("Subvolume '{}' already exists in pool '{}', returning existing (idempotent)", req.name, req.pool);
+            return self.get(&req.pool, &req.name, None).await;
         }
 
         if req.subvolume_type == SubvolumeType::Block && req.volsize_bytes.is_none() {
