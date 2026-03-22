@@ -140,6 +140,7 @@ export interface Subvolume {
 	block_device: string | null;
 	snapshots: string[];
 	owner: string | null;
+	properties: Record<string, string>;
 }
 
 export interface Snapshot {
@@ -148,6 +149,7 @@ export interface Snapshot {
 	pool: string;
 	path: string;
 	read_only: boolean;
+	parent: string | null;
 }
 
 export interface NfsShare {

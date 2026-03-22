@@ -4,7 +4,7 @@
 	import { formatBytes } from '$lib/format';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { Pool, Subvolume, SubvolumeType } from '$lib/types';
+	import type { Pool, Subvolume, Snapshot, SubvolumeType } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -12,6 +12,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import { X, Camera, Copy, Trash2 } from '@lucide/svelte';
 
 	let pools: Pool[] = $state([]);
 	let selectedPool = $state('');
@@ -27,6 +28,26 @@
 
 	let showSnap = $state<string | null>(null);
 	let snapName = $state('');
+
+	// Detail panel
+	let detailSv = $state<Subvolume | null>(null);
+	let detailSnapshots = $state<Snapshot[]>([]);
+	let detailTab = $state<'info' | 'snapshots' | 'properties'>('info');
+
+	async function openDetail(sv: Subvolume) {
+		detailSv = sv;
+		detailTab = 'info';
+		detailSnapshots = [];
+		// Load full snapshot list for this subvolume
+		try {
+			detailSnapshots = await client.call<Snapshot[]>('snapshot.list', { pool: selectedPool });
+			detailSnapshots = detailSnapshots.filter(s => s.subvolume === sv.name);
+		} catch { /* ignore */ }
+	}
+
+	function closeDetail() {
+		detailSv = null;
+	}
 
 	const client = getClient();
 
@@ -265,7 +286,9 @@
 			{#each sorted as sv}
 				<tr class="border-b border-border">
 					<td class="p-3">
-						<strong>{sv.name}</strong>
+						<button class="text-left hover:text-blue-400 transition-colors" onclick={() => openDetail(sv)}>
+							<strong>{sv.name}</strong>
+						</button>
 						<span class="block font-mono text-xs text-muted-foreground">{sv.path}</span>
 						{#if sv.comments}
 							<span class="mt-0.5 block text-xs italic text-muted-foreground">{sv.comments}</span>
@@ -305,13 +328,17 @@
 					<td class="p-3">
 						{#if sv.snapshots.length === 0}
 							<span class="text-muted-foreground">None</span>
-						{:else}
+						{:else if sv.snapshots.length <= 2}
 							{#each sv.snapshots as snap}
 								<div class="my-0.5 flex items-center gap-2">
 									<span class="font-mono text-xs">{snap}</span>
 									<Button variant="destructive" size="xs" onclick={() => deleteSnapshot(sv.name, snap)}>Delete</Button>
 								</div>
 							{/each}
+						{:else}
+							<button class="text-sm text-blue-400 hover:text-blue-300 transition-colors" onclick={() => { openDetail(sv); detailTab = 'snapshots'; }}>
+								{sv.snapshots.length} snapshots
+							</button>
 						{/if}
 					</td>
 					<td class="p-3">
@@ -324,6 +351,155 @@
 			{/each}
 		</tbody>
 	</table>
+{/if}
+
+<!-- Detail Panel -->
+{#if detailSv}
+	<div class="fixed inset-y-0 right-0 z-40 flex w-[480px] flex-col border-l border-border bg-background shadow-xl">
+		<!-- Header -->
+		<div class="flex items-center justify-between border-b border-border px-5 py-4">
+			<div>
+				<h2 class="text-lg font-semibold">{detailSv.name}</h2>
+				<span class="text-xs text-muted-foreground font-mono">{detailSv.path}</span>
+			</div>
+			<button onclick={closeDetail} class="rounded-md p-1 hover:bg-accent transition-colors">
+				<X class="h-5 w-5" />
+			</button>
+		</div>
+
+		<!-- Tabs -->
+		<div class="flex border-b border-border">
+			<button
+				onclick={() => detailTab = 'info'}
+				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'info'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>Info</button>
+			<button
+				onclick={() => detailTab = 'snapshots'}
+				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'snapshots'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>Snapshots ({detailSv.snapshots.length})</button>
+			<button
+				onclick={() => detailTab = 'properties'}
+				class="px-4 py-2 text-sm font-medium transition-colors {detailTab === 'properties'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>Properties</button>
+		</div>
+
+		<!-- Tab content -->
+		<div class="flex-1 overflow-y-auto p-5">
+			{#if detailTab === 'info'}
+				<div class="space-y-3">
+					<div class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+						<div class="text-muted-foreground">Pool</div>
+						<div class="font-mono">{detailSv.pool}</div>
+
+						<div class="text-muted-foreground">Type</div>
+						<div>
+							<Badge variant={detailSv.subvolume_type === 'filesystem' ? 'secondary' : 'outline'}
+								class={detailSv.subvolume_type === 'filesystem' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'}>
+								{detailSv.subvolume_type === 'filesystem' ? 'Filesystem' : 'Block'}
+							</Badge>
+						</div>
+
+						{#if detailSv.compression}
+							<div class="text-muted-foreground">Compression</div>
+							<div>{detailSv.compression}</div>
+						{/if}
+
+						{#if detailSv.subvolume_type === 'block' && detailSv.volsize_bytes}
+							<div class="text-muted-foreground">Volume Size</div>
+							<div>{formatBytes(detailSv.volsize_bytes)}</div>
+						{/if}
+
+						{#if detailSv.used_bytes !== null}
+							<div class="text-muted-foreground">Used</div>
+							<div>{formatBytes(detailSv.used_bytes)}</div>
+						{/if}
+
+						{#if detailSv.block_device}
+							<div class="text-muted-foreground">Block Device</div>
+							<div class="font-mono text-xs">{detailSv.block_device}</div>
+						{/if}
+
+						{#if detailSv.owner}
+							<div class="text-muted-foreground">Owner</div>
+							<div class="font-mono text-xs">{detailSv.owner}</div>
+						{/if}
+
+						{#if detailSv.comments}
+							<div class="text-muted-foreground">Comments</div>
+							<div class="text-xs">{detailSv.comments}</div>
+						{/if}
+					</div>
+
+					<div class="mt-4 flex gap-2">
+						<Button size="sm" variant="secondary" onclick={() => { showSnap = detailSv?.name ?? null; snapName = ''; }}>
+							<Camera class="mr-1.5 h-3.5 w-3.5" />Snapshot
+						</Button>
+						<Button size="sm" variant="destructive" onclick={() => { if (detailSv) { closeDetail(); deleteSubvolume(detailSv.name); } }}>
+							<Trash2 class="mr-1.5 h-3.5 w-3.5" />Delete
+						</Button>
+					</div>
+				</div>
+
+			{:else if detailTab === 'snapshots'}
+				{#if detailSv.snapshots.length === 0}
+					<p class="text-sm text-muted-foreground">No snapshots.</p>
+				{:else}
+					<div class="space-y-2">
+						{#each detailSnapshots as snap}
+							<div class="flex items-center justify-between rounded-md border border-border p-3">
+								<div>
+									<div class="font-mono text-sm">{snap.name}</div>
+									<div class="text-xs text-muted-foreground">
+										{snap.read_only ? 'Read-only' : 'Writable'}
+										{#if snap.parent}
+											· Parent: {snap.parent}
+										{/if}
+									</div>
+									<div class="font-mono text-xs text-muted-foreground">{snap.path}</div>
+								</div>
+								<Button variant="destructive" size="xs" onclick={() => deleteSnapshot(detailSv!.name, snap.name)}>
+									<Trash2 class="h-3.5 w-3.5" />
+								</Button>
+							</div>
+						{/each}
+						{#if detailSnapshots.length === 0 && detailSv.snapshots.length > 0}
+							<!-- Fallback: show names from subvolume data if snapshot list didn't load -->
+							{#each detailSv.snapshots as snapName}
+								<div class="flex items-center justify-between rounded-md border border-border p-3">
+									<span class="font-mono text-sm">{snapName}</span>
+									<Button variant="destructive" size="xs" onclick={() => deleteSnapshot(detailSv!.name, snapName)}>
+										<Trash2 class="h-3.5 w-3.5" />
+									</Button>
+								</div>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+
+			{:else if detailTab === 'properties'}
+				{#if detailSv.properties && Object.keys(detailSv.properties).length > 0}
+					<div class="space-y-1">
+						{#each Object.entries(detailSv.properties).sort(([a], [b]) => a.localeCompare(b)) as [key, value]}
+							<div class="flex items-start justify-between gap-2 rounded-md border border-border px-3 py-2">
+								<span class="font-mono text-xs text-muted-foreground break-all">{key}</span>
+								<span class="font-mono text-xs text-right break-all">{value}</span>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="text-sm text-muted-foreground">No properties set.</p>
+				{/if}
+			{/if}
+		</div>
+	</div>
+	<!-- Backdrop -->
+	<button class="fixed inset-0 z-30 bg-black/30" onclick={closeDetail}></button>
 {/if}
 
 <Dialog.Root open={showSnap !== null} onOpenChange={(open) => { if (!open) showSnap = null; }}>
