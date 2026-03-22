@@ -52,21 +52,27 @@ async def test_smb(ctx: TestContext):
             # Pause for Samba to reload config
             await asyncio.sleep(3)
 
-        # ── Mount ─────────────────────────────────────────────────
+        # ── Mount (with retry — Samba reload is async) ────────────
         for i in range(N):
             label = f"SMB[{i+1}]"
             info(f"Mounting SMB share at {mount_points[i]}...")
             os.makedirs(mount_points[i], exist_ok=True)
-            r = run(
-                ["mount", "-t", "cifs", f"//{ctx.host}/{share_names[i]}", mount_points[i],
-                 "-o", "guest,vers=3.0"],
-                check=False,
-            )
-            if r.returncode != 0:
-                ctx.record(f"{label}: mount", False, r.stderr.strip())
-            else:
-                mounted[i] = True
+            last_err = ""
+            for attempt in range(5):
+                r = run(
+                    ["mount", "-t", "cifs", f"//{ctx.host}/{share_names[i]}", mount_points[i],
+                     "-o", "guest,vers=3.0"],
+                    check=False,
+                )
+                if r.returncode == 0:
+                    mounted[i] = True
+                    break
+                last_err = r.stderr.strip()
+                await asyncio.sleep(2)
+            if mounted[i]:
                 ctx.record(f"{label}: mount", True)
+            else:
+                ctx.record(f"{label}: mount", False, last_err)
 
         # ── Write ─────────────────────────────────────────────────
         if not ctx.remount:
@@ -153,15 +159,21 @@ async def test_smb(ctx: TestContext):
                 continue
             label = f"SMB[{i+1}] clone"
             os.makedirs(clone_mounts[i], exist_ok=True)
-            r = run(
-                ["mount", "-t", "cifs", f"//{ctx.host}/{clone_share_names[i]}", clone_mounts[i],
-                 "-o", "guest,vers=3.0"],
-                check=False,
-            )
-            if r.returncode != 0:
-                ctx.record(f"{label}: read/verify", False, f"mount: {r.stderr.strip()}")
+            last_err = ""
+            for attempt in range(5):
+                r = run(
+                    ["mount", "-t", "cifs", f"//{ctx.host}/{clone_share_names[i]}", clone_mounts[i],
+                     "-o", "guest,vers=3.0"],
+                    check=False,
+                )
+                if r.returncode == 0:
+                    clone_mounted[i] = True
+                    break
+                last_err = r.stderr.strip()
+                await asyncio.sleep(2)
+            if not clone_mounted[i]:
+                ctx.record(f"{label}: read/verify", False, f"mount: {last_err}")
                 continue
-            clone_mounted[i] = True
 
             expected = f"nasty-smb-test{i+1}-{ctx.tag}"
             try:
