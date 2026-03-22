@@ -295,6 +295,12 @@ async fn write_share_conf(share: &SmbShare) -> Result<(), SmbError> {
         conf.push_str("    force group = nogroup\n");
         conf.push_str("    create mask = 0666\n");
         conf.push_str("    directory mask = 0777\n");
+    } else if !share.valid_users.is_empty() {
+        // Authenticated share: force operations as the first valid user
+        // so writes use that identity regardless of the connecting user.
+        conf.push_str(&format!("    force user = {}\n", share.valid_users[0]));
+        conf.push_str("    create mask = 0664\n");
+        conf.push_str("    directory mask = 0775\n");
     }
 
     if !share.valid_users.is_empty() {
@@ -312,10 +318,21 @@ async fn write_share_conf(share: &SmbShare) -> Result<(), SmbError> {
 
     tokio::fs::write(&path, &conf).await?;
 
-    // Ensure guest share directories are world-writable
+    // Set directory ownership and permissions based on access mode
     if share.guest_ok {
         let _ = tokio::process::Command::new("chmod")
             .args(["0777", &share.path])
+            .output()
+            .await;
+    } else if !share.valid_users.is_empty() {
+        // chown to the first valid user so they can write
+        let user = &share.valid_users[0];
+        let _ = tokio::process::Command::new("chown")
+            .args([&format!("{user}:{user}"), &share.path])
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("chmod")
+            .args(["0775", &share.path])
             .output()
             .await;
     }
