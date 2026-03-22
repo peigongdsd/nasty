@@ -168,6 +168,7 @@ impl SmbService {
         write_share_conf(&share).await?;
         rebuild_include_list().await?;
         reload_samba().await?;
+        wait_for_share_ready(&share.name).await;
 
         info!("Created SMB share '{}' at {}", share.name, share.path);
         Ok(share)
@@ -356,6 +357,26 @@ async fn rebuild_include_list() -> Result<(), SmbError> {
 /// Path to the per-share SMB config file.
 fn share_conf_path(id: &str) -> String {
     format!("{NASTY_SMB_SHARE_DIR}/{id}.conf")
+}
+
+/// Wait for an SMB share to be visible after smbcontrol reload.
+/// Polls `smbclient -L localhost` up to 5 seconds.
+async fn wait_for_share_ready(share_name: &str) {
+    for attempt in 1..=10 {
+        let output = tokio::process::Command::new("smbclient")
+            .args(["-L", "localhost", "-N"])
+            .output()
+            .await;
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if stdout.contains(share_name) {
+                info!("SMB share '{share_name}' is ready (attempt {attempt})");
+                return;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    tracing::warn!("SMB share '{share_name}' readiness check timed out — proceeding anyway");
 }
 
 async fn reload_samba() -> Result<(), SmbError> {
