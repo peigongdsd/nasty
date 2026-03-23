@@ -5,7 +5,7 @@ use nasty_common::{HasId, StateDir};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 const NASTY_SMB_CONF_PATH: &str = "/etc/samba/smb.nasty.conf";
@@ -342,7 +342,6 @@ async fn remove_share_conf(id: &str) {
 }
 
 /// Rebuild smb.nasty.conf as a list of includes from per-share files.
-/// Removes stale configs whose share path no longer exists on disk.
 async fn rebuild_include_list() -> Result<(), SmbError> {
     tokio::fs::create_dir_all(NASTY_SMB_SHARE_DIR).await?;
 
@@ -351,27 +350,11 @@ async fn rebuild_include_list() -> Result<(), SmbError> {
 
     let mut dir = tokio::fs::read_dir(NASTY_SMB_SHARE_DIR).await?;
     while let Ok(Some(entry)) = dir.next_entry().await {
-        let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if !name.ends_with(".conf") {
-            continue;
+        if name.ends_with(".conf") {
+            includes.push_str(&format!("include = {NASTY_SMB_SHARE_DIR}/{name}\n"));
         }
-        // Check if the share's path still exists — remove stale configs
-        if let Ok(contents) = tokio::fs::read_to_string(&path).await {
-            if let Some(share_path) = contents.lines()
-                .find(|l| l.trim().starts_with("path"))
-                .and_then(|l| l.split('=').nth(1))
-                .map(|p| p.trim())
-            {
-                if !Path::new(share_path).exists() {
-                    warn!("Removing stale SMB share config {} (path {} no longer exists)", name, share_path);
-                    let _ = tokio::fs::remove_file(&path).await;
-                    continue;
-                }
-            }
-        }
-        includes.push_str(&format!("include = {NASTY_SMB_SHARE_DIR}/{name}\n"));
     }
 
     tokio::fs::write(NASTY_SMB_CONF_PATH, &includes).await?;
