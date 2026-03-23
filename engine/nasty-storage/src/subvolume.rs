@@ -613,16 +613,9 @@ impl SubvolumeService {
         let mount_point = self.pool_mount_point(&req.pool).await?;
         let subvol_path = subvol_path(&mount_point, &req.name);
 
-        // Delete all snapshots for this subvolume first
-        let snapshots = self
-            .list_snapshots_for(&req.pool, &req.name)
-            .await?;
-        for snap in snapshots {
-            info!("Deleting snapshot '{}' before subvolume deletion", snap.name);
-            cmd::run_ok("bcachefs", &["subvolume", "delete", &snap.path])
-                .await
-                .map_err(SubvolumeError::CommandFailed)?;
-        }
+        // bcachefs snapshots are independent first-class subvolumes — they survive
+        // parent deletion. We intentionally do NOT delete snapshots here so that
+        // snapshot-based restore/DR scenarios work correctly.
 
         info!("Deleting subvolume '{}' from pool '{}'", req.name, req.pool);
         cmd::run_ok("bcachefs", &["subvolume", "delete", &subvol_path])
