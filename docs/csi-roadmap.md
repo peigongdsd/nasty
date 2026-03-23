@@ -117,15 +117,10 @@ NASty's own state (`volsize_bytes`) is never updated, so the WebUI shows the old
 - Call `subvolume.resize` from `expandISCSIVolume` / `expandNVMeOFVolume` instead of
   only updating the xattr
 
-### 6. NVMe-oF host ACL in quick-create
+### 6. NVMe-oF host ACL in create ✅
 
-**Problem:** `share.nvmeof.create_quick` in the CSI driver passes a `hosts` list for
-ACL control but the NASty API's `QuickCreateRequest` may not support this field,
-defaulting to `allow_any_host = true`.
-
-**Work in NASty:**
-- Add `hosts: Option<Vec<String>>` to `QuickCreateRequest` in nvmeof.rs
-- If provided and non-empty, set `allow_any_host = false` and add each host NQN
+**Resolved:** The unified `share.nvmeof.create` method now accepts `allowed_hosts`.
+When provided, `allow_any_host` is set to false and each host NQN is added.
 
 ---
 

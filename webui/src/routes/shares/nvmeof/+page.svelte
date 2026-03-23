@@ -96,7 +96,7 @@
 	async function create() {
 		if (!newName || !newDevice) return;
 		const ok = await withToast(
-			() => client.call('share.nvmeof.create_quick', {
+			() => client.call('share.nvmeof.create', {
 				name: newName,
 				device_path: newDevice,
 				addr: newAddr,

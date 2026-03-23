@@ -50,13 +50,13 @@ async def test_nvmeof(ctx: TestContext):
 
     sv_names     = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
     subsys_names = [f"test-nvme{i}-{ctx.tag}"         for i in range(1, N + 1)]
-    nqns         = [None] * N  # populated from API response after create_quick
+    nqns         = [None] * N  # populated from API response after create
     mount_points = [f"/tmp/nasty-test-nvme{i}-{ctx.tag}" for i in range(1, N + 1)]
     subsys_ids      = [None] * N
     connected       = [False] * N
     mounted         = [False] * N
     clone_sv_names  = [f"test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
-    clone_nqns      = [None] * N  # populated from API response after create_quick
+    clone_nqns      = [None] * N  # populated from API response after create
     clone_subsys_ids = [None] * N
     clone_mounts    = [f"/tmp/nasty-test-nvme{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_connected = [False] * N
@@ -64,7 +64,7 @@ async def test_nvmeof(ctx: TestContext):
     snap_names      = [[f"snap-nvme{i+1}-s{j+1}-{ctx.tag}" for j in range(S)] for i in range(N)]
     # Snapshot content verification: clone snap2 into a temp subvolume and read via NVMe-oF
     snap2_sv_names  = [f"test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
-    snap2_nqns      = [None] * N  # populated from API response after create_quick
+    snap2_nqns      = [None] * N  # populated from API response after create
     snap2_subsys_ids = [None] * N
     snap2_mounts    = [f"/tmp/nasty-test-nvme{i+1}-snap2v-{ctx.tag}" for i in range(N)]
     snap2_connected = [False] * N
@@ -89,7 +89,7 @@ async def test_nvmeof(ctx: TestContext):
                 ctx.record(f"{label}: block subvolume created", True)
 
                 info(f"Creating NVMe-oF share for {sv_names[i]}...")
-                subsys = await ctx.client.call("share.nvmeof.create_quick", {
+                subsys = await ctx.client.call("share.nvmeof.create", {
                     "name": subsys_names[i],
                     "device_path": block_dev,
                 })
@@ -225,7 +225,7 @@ async def test_nvmeof(ctx: TestContext):
                 continue
 
             try:
-                subsys = await ctx.client.call("share.nvmeof.create_quick", {
+                subsys = await ctx.client.call("share.nvmeof.create", {
                     "name": f"test-nvme{i+1}-snap2v-{ctx.tag}",
                     "device_path": block_dev,
                 })
@@ -300,7 +300,7 @@ async def test_nvmeof(ctx: TestContext):
                 continue
 
             try:
-                subsys = await ctx.client.call("share.nvmeof.create_quick", {
+                subsys = await ctx.client.call("share.nvmeof.create", {
                     "name": f"test-nvme{i+1}-clone-{ctx.tag}",
                     "device_path": block_dev,
                 })

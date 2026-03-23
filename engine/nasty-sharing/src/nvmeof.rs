@@ -81,19 +81,16 @@ pub struct CreateSubsystemRequest {
     pub name: String,
     /// Whether any host NQN is permitted to connect (default: true).
     pub allow_any_host: Option<bool>,
-}
-
-/// Simplified request: creates subsystem + namespace + port in one shot
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct QuickCreateRequest {
-    /// Short name for the NQN
-    pub name: String,
-    /// Block device path (e.g. /dev/loop0)
-    pub device_path: String,
-    /// Listen address (default 0.0.0.0)
+    /// Block device path (e.g. /dev/loop0). When provided, a namespace is
+    /// automatically created.
+    pub device_path: Option<String>,
+    /// Listen address (default 0.0.0.0). Only used when `device_path` is set.
     pub addr: Option<String>,
-    /// Port number (default 4420)
+    /// Port number (default 4420). Only used when `device_path` is set.
     pub port: Option<u16>,
+    /// Host NQNs to allow. When provided, `allow_any_host` is set to false
+    /// and only these hosts are permitted.
+    pub allowed_hosts: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -406,46 +403,49 @@ impl NvmeofService {
         state_dir().save(&subsystem.id, &subsystem).await
             .map_err(NvmeofError::Io)?;
 
+        // Optional: add namespace if device_path was provided
+        let mut subsystem = subsystem;
+        if let Some(device_path) = req.device_path {
+            if subsystem.namespaces.is_empty() {
+                subsystem = self.add_namespace(AddNamespaceRequest {
+                    subsystem_id: subsystem.id.clone(),
+                    device_path,
+                }).await?;
+            } else {
+                info!("Subsystem {} already has {} namespace(s), skipping", subsystem.nqn, subsystem.namespaces.len());
+            }
+
+            // Add a port when a namespace was created
+            if subsystem.ports.is_empty() {
+                subsystem = self.add_port(AddPortRequest {
+                    subsystem_id: subsystem.id.clone(),
+                    transport: Some("tcp".to_string()),
+                    addr: Some(req.addr.unwrap_or_else(|| "0.0.0.0".to_string())),
+                    service_id: Some(req.port.unwrap_or(4420)),
+                    addr_family: Some("ipv4".to_string()),
+                }).await?;
+            } else {
+                info!("Subsystem {} already has {} port(s), skipping", subsystem.nqn, subsystem.ports.len());
+            }
+        }
+
+        // Optional: add allowed hosts if provided
+        if let Some(hosts) = req.allowed_hosts {
+            for host_nqn in hosts {
+                subsystem = self.add_host(AddHostRequest {
+                    subsystem_id: subsystem.id.clone(),
+                    host_nqn,
+                }).await?;
+            }
+        }
+
+        // Wait for readiness when a namespace was attached
+        if !subsystem.namespaces.is_empty() {
+            wait_for_subsystem_ready(&subsystem.nqn).await;
+        }
+
         info!("Created NVMe-oF subsystem {nqn}");
         Ok(subsystem)
-    }
-
-    /// Create a complete NVMe-oF share in one step: subsystem + namespace + port
-    pub async fn create_quick(&self, req: QuickCreateRequest) -> Result<NvmeofSubsystem, NvmeofError> {
-        let subsys = self.create(CreateSubsystemRequest {
-            name: req.name,
-            allow_any_host: Some(true),
-        }).await?;
-
-        // Skip adding namespace if one already exists (idempotent retry)
-        let subsys = if subsys.namespaces.is_empty() {
-            self.add_namespace(AddNamespaceRequest {
-                subsystem_id: subsys.id.clone(),
-                device_path: req.device_path,
-            }).await?
-        } else {
-            info!("Subsystem {} already has {} namespace(s), skipping", subsys.nqn, subsys.namespaces.len());
-            subsys
-        };
-
-        // Skip adding port if one already exists (idempotent retry)
-        let subsys = if subsys.ports.is_empty() {
-            self.add_port(AddPortRequest {
-                subsystem_id: subsys.id.clone(),
-                transport: Some("tcp".to_string()),
-                addr: Some(req.addr.unwrap_or_else(|| "0.0.0.0".to_string())),
-                service_id: Some(req.port.unwrap_or(4420)),
-                addr_family: Some("ipv4".to_string()),
-            }).await?
-        } else {
-            info!("Subsystem {} already has {} port(s), skipping", subsys.nqn, subsys.ports.len());
-            subsys
-        };
-
-        // Wait for the subsystem to be ready for initiator connections.
-        wait_for_subsystem_ready(&subsys.nqn).await;
-
-        Ok(subsys)
     }
 
     pub async fn delete(&self, req: DeleteSubsystemRequest) -> Result<(), NvmeofError> {

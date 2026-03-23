@@ -1658,35 +1658,9 @@ Get an iSCSI target by ID.
 | `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
 
 
-### `share.iscsi.create_quick`
-
-Create an iSCSI target + LUN in one call.
-
-**Role:** `admin`
-
-**Params:**
-
-| Field | Type | Required | Description |
-|-------|------|:--------:|-------------|
-| `device_path` | string | yes | Block device path (e.g. /dev/loop0) |
-| `name` | string | yes | Short name for the IQN |
-
-**Returns:**
-
-| Field | Type | Required | Description |
-|-------|------|:--------:|-------------|
-| `acls` | `Acl`[] | yes | Initiator ACL entries controlling which hosts may connect. |
-| `alias` | string | no | Optional human-readable alias for the target. |
-| `enabled` | boolean | yes | Whether the target is currently active in LIO. |
-| `id` | string | yes | Unique target identifier (UUID). |
-| `iqn` | string | yes | iSCSI Qualified Name (e.g. `iqn.2137-04.storage.nasty:tank-vol`). |
-| `luns` | `Lun`[] | yes | Logical units exposed by this target. |
-| `portals` | `Portal`[] | yes | Network portals (IP:port) the target listens on. |
-
-
 ### `share.iscsi.create`
 
-Create an iSCSI target (no LUNs). Add LUNs separately.
+Create an iSCSI target. Optionally attach a LUN and ACLs in one call.
 
 **Role:** `admin`
 
@@ -1694,9 +1668,11 @@ Create an iSCSI target (no LUNs). Add LUNs separately.
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `alias` | string | no | Optional human-readable alias for the target. |
 | `name` | string | yes | Short name used to generate the IQN: iqn.2137-01.com.nasty:<name> |
+| `alias` | string | no | Optional human-readable alias for the target. |
 | `portals` | `Portal`[] | no | Defaults to 0.0.0.0:3260 |
+| `device_path` | string | no | Block device path (e.g. /dev/loop0). When provided, a LUN is created automatically. |
+| `acls` | `AclEntry`[] | no | Initiator ACLs. When provided, only these initiators may connect. |
 
 **Returns:**
 
@@ -1852,37 +1828,9 @@ Get an NVMe-oF subsystem by ID.
 | `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
 
 
-### `share.nvmeof.create_quick`
-
-Create an NVMe-oF subsystem + namespace + port in one call.
-
-**Role:** `admin`
-
-**Params:**
-
-| Field | Type | Required | Description |
-|-------|------|:--------:|-------------|
-| `addr` | string | no | Listen address (default 0.0.0.0) |
-| `device_path` | string | yes | Block device path (e.g. /dev/loop0) |
-| `name` | string | yes | Short name for the NQN |
-| `port` | integer | no | Port number (default 4420) |
-
-**Returns:**
-
-| Field | Type | Required | Description |
-|-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | yes | Whether any host NQN is permitted to connect without explicit ACL entries. |
-| `allowed_hosts` | string[] | yes | NQNs of hosts explicitly allowed to connect (used when `allow_any_host` is false). |
-| `enabled` | boolean | yes | Whether this subsystem is active in nvmet configfs. |
-| `id` | string | yes | Unique subsystem identifier (UUID). |
-| `namespaces` | `Namespace`[] | yes | Block device namespaces exposed by this subsystem. |
-| `nqn` | string | yes | NVMe Qualified Name (e.g. `nqn.2137-04.storage.nasty:tank-vol`). |
-| `ports` | `Port`[] | yes | Transport ports this subsystem is reachable on. |
-
-
 ### `share.nvmeof.create`
 
-Create an NVMe-oF subsystem (empty).
+Create an NVMe-oF subsystem. Optionally attach a namespace, port, and host ACLs in one call.
 
 **Role:** `admin`
 
@@ -1890,8 +1838,12 @@ Create an NVMe-oF subsystem (empty).
 
 | Field | Type | Required | Description |
 |-------|------|:--------:|-------------|
-| `allow_any_host` | boolean | no | Whether any host NQN is permitted to connect (default: true). |
 | `name` | string | yes | Short name appended to NQN prefix |
+| `allow_any_host` | boolean | no | Whether any host NQN is permitted to connect (default: true). |
+| `device_path` | string | no | Block device path (e.g. /dev/loop0). When provided, a namespace and port are created automatically. |
+| `addr` | string | no | Listen address (default 0.0.0.0). Only used when `device_path` is set. |
+| `port` | integer | no | Port number (default 4420). Only used when `device_path` is set. |
+| `allowed_hosts` | string[] | no | Host NQNs to allow. When provided, `allow_any_host` is set to false. |
 
 **Returns:**
 

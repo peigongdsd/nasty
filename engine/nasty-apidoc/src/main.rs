@@ -111,12 +111,10 @@ use nasty_sharing::nfs::{NfsShare, CreateNfsShareRequest, UpdateNfsShareRequest}
 use nasty_sharing::smb::{SmbShare, CreateSmbShareRequest, UpdateSmbShareRequest};
 use nasty_sharing::iscsi::{
     IscsiTarget, CreateTargetRequest, AddLunRequest, AddAclRequest,
-    QuickCreateRequest as IscsiQuickCreateRequest,
 };
 use nasty_sharing::nvmeof::{
     NvmeofSubsystem, CreateSubsystemRequest,
     AddNamespaceRequest, AddPortRequest, AddHostRequest,
-    QuickCreateRequest as NvmeofQuickCreateRequest,
 };
 
 // ── Method registry ───────────────────────────────────────────────
@@ -386,10 +384,7 @@ fn methods(generator: &mut SchemaGenerator) -> Vec<(&'static str, Vec<Method>)> 
             Method { name: "share.iscsi.get", desc: "Get an iSCSI target by ID.", role: "any",
                 params: MethodParams::Literal("`{\"id\": string}`"),
                 result: Some(gen_schema::<IscsiTarget>(generator)) },
-            Method { name: "share.iscsi.create_quick", desc: "Create an iSCSI target + LUN in one call.", role: "admin",
-                params: MethodParams::Schema(gen_schema::<IscsiQuickCreateRequest>(generator)),
-                result: Some(gen_schema::<IscsiTarget>(generator)) },
-            Method { name: "share.iscsi.create", desc: "Create an iSCSI target (no LUNs). Add LUNs separately.", role: "admin",
+            Method { name: "share.iscsi.create", desc: "Create an iSCSI target. Optionally attach a LUN and ACLs in one call.", role: "admin",
                 params: MethodParams::Schema(gen_schema::<CreateTargetRequest>(generator)),
                 result: Some(gen_schema::<IscsiTarget>(generator)) },
             Method { name: "share.iscsi.delete", desc: "Delete an iSCSI target.", role: "admin",
@@ -413,10 +408,7 @@ fn methods(generator: &mut SchemaGenerator) -> Vec<(&'static str, Vec<Method>)> 
             Method { name: "share.nvmeof.get", desc: "Get an NVMe-oF subsystem by ID.", role: "any",
                 params: MethodParams::Literal("`{\"id\": string}`"),
                 result: Some(gen_schema::<NvmeofSubsystem>(generator)) },
-            Method { name: "share.nvmeof.create_quick", desc: "Create an NVMe-oF subsystem + namespace + port in one call.", role: "admin",
-                params: MethodParams::Schema(gen_schema::<NvmeofQuickCreateRequest>(generator)),
-                result: Some(gen_schema::<NvmeofSubsystem>(generator)) },
-            Method { name: "share.nvmeof.create", desc: "Create an NVMe-oF subsystem (empty).", role: "admin",
+            Method { name: "share.nvmeof.create", desc: "Create an NVMe-oF subsystem. Optionally attach a namespace, port, and host ACLs in one call.", role: "admin",
                 params: MethodParams::Schema(gen_schema::<CreateSubsystemRequest>(generator)),
                 result: Some(gen_schema::<NvmeofSubsystem>(generator)) },
             Method { name: "share.nvmeof.delete", desc: "Delete an NVMe-oF subsystem.", role: "admin",

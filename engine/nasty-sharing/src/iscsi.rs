@@ -94,15 +94,23 @@ pub struct CreateTargetRequest {
     pub alias: Option<String>,
     /// Defaults to 0.0.0.0:3260
     pub portals: Option<Vec<Portal>>,
+    /// Block device path (e.g. /dev/loop0). When provided, a LUN is
+    /// automatically created and the target is ready for connections.
+    pub device_path: Option<String>,
+    /// Initiator ACLs to set up. When provided, `generate_node_acls` is
+    /// disabled and only these initiators are allowed.
+    pub acls: Option<Vec<AclEntry>>,
 }
 
-/// Simplified request: creates target + LUN in one shot
+/// ACL entry for the create request (avoids requiring target_id up front).
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct QuickCreateRequest {
-    /// Short name for the IQN
-    pub name: String,
-    /// Block device path (e.g. /dev/loop0)
-    pub device_path: String,
+pub struct AclEntry {
+    /// Initiator IQN to allow.
+    pub initiator_iqn: String,
+    /// Optional CHAP username.
+    pub userid: Option<String>,
+    /// Optional CHAP password.
+    pub password: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -248,34 +256,39 @@ impl IscsiService {
         state_dir().save(&target.id, &target).await?;
         save_lio_config().await;
 
+        // Optional: add LUN if device_path was provided
+        let mut target = target;
+        if let Some(device_path) = req.device_path {
+            if target.luns.is_empty() {
+                target = self.add_lun(AddLunRequest {
+                    target_id: target.id.clone(),
+                    backstore_path: device_path,
+                    backstore_type: Some("block".to_string()),
+                    size_bytes: None,
+                }).await?;
+            } else {
+                info!("iSCSI target {} already has {} LUN(s), skipping", target.iqn, target.luns.len());
+            }
+        }
+
+        // Optional: add ACLs if provided
+        if let Some(acls) = req.acls {
+            for acl_entry in acls {
+                target = self.add_acl(AddAclRequest {
+                    target_id: target.id.clone(),
+                    initiator_iqn: acl_entry.initiator_iqn,
+                    userid: acl_entry.userid,
+                    password: acl_entry.password,
+                }).await?;
+            }
+        }
+
+        // Wait for target readiness when a LUN was attached
+        if !target.luns.is_empty() {
+            wait_for_target_ready(&target.iqn).await;
+        }
+
         info!("Created iSCSI target {iqn}");
-        Ok(target)
-    }
-
-    /// Create a complete iSCSI target with a LUN in one step.
-    /// Waits for the target to become discoverable before returning.
-    pub async fn create_quick(&self, req: QuickCreateRequest) -> Result<IscsiTarget, IscsiError> {
-        let target = self.create(CreateTargetRequest {
-            name: req.name,
-            alias: None,
-            portals: None,
-        }).await?;
-
-        // Skip adding LUN if one already exists (idempotent retry)
-        let target = if target.luns.is_empty() {
-            self.add_lun(AddLunRequest {
-                target_id: target.id.clone(),
-                backstore_path: req.device_path,
-                backstore_type: Some("block".to_string()),
-                size_bytes: None,
-            }).await?
-        } else {
-            info!("iSCSI target {} already has {} LUN(s), skipping", target.iqn, target.luns.len());
-            target
-        };
-
-        wait_for_target_ready(&target.iqn).await;
-
         Ok(target)
     }
 

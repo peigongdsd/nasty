@@ -17,10 +17,10 @@ fn is_operator_allowed(method: &str) -> bool {
             | "share.nfs.create" | "share.nfs.update" | "share.nfs.delete"
             | "share.smb.create" | "share.smb.update" | "share.smb.delete"
             | "smb.user.create" | "smb.user.delete" | "smb.user.set_password"
-            | "share.iscsi.create" | "share.iscsi.create_quick" | "share.iscsi.delete"
+            | "share.iscsi.create" | "share.iscsi.delete"
             | "share.iscsi.add_lun" | "share.iscsi.remove_lun"
             | "share.iscsi.add_acl" | "share.iscsi.remove_acl"
-            | "share.nvmeof.create" | "share.nvmeof.create_quick" | "share.nvmeof.delete"
+            | "share.nvmeof.create" | "share.nvmeof.delete"
             | "share.nvmeof.add_namespace" | "share.nvmeof.remove_namespace"
             | "share.nvmeof.add_port" | "share.nvmeof.remove_port"
             | "share.nvmeof.add_host" | "share.nvmeof.remove_host"
@@ -984,24 +984,18 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(r) => r,
         },
-        "share.iscsi.create_quick" => match parse_params::<nasty_sharing::iscsi::QuickCreateRequest>(req) {
+        "share.iscsi.create" => match parse_params::<nasty_sharing::iscsi::CreateTargetRequest>(req) {
             Ok(p) => {
-                if let Some(conflict) = check_block_device_conflict(state, &p.device_path, "iscsi").await {
-                    err(req, conflict)
-                } else {
-                    match state.iscsi.create_quick(p).await {
-                        Ok(v) => ok(req, v),
-                        Err(e) => err(req, e),
+                if let Some(ref dp) = p.device_path {
+                    if let Some(conflict) = check_block_device_conflict(state, dp, "iscsi").await {
+                        return err(req, conflict);
                     }
                 }
+                match state.iscsi.create(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                }
             }
-            Err(e) => invalid(req, e),
-        },
-        "share.iscsi.create" => match parse_params(req) {
-            Ok(p) => match state.iscsi.create(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
             Err(e) => invalid(req, e),
         },
         "share.iscsi.delete" => match parse_params(req) {
@@ -1058,24 +1052,18 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(r) => r,
         },
-        "share.nvmeof.create_quick" => match parse_params::<nasty_sharing::nvmeof::QuickCreateRequest>(req) {
+        "share.nvmeof.create" => match parse_params::<nasty_sharing::nvmeof::CreateSubsystemRequest>(req) {
             Ok(p) => {
-                if let Some(conflict) = check_block_device_conflict(state, &p.device_path, "nvmeof").await {
-                    err(req, conflict)
-                } else {
-                    match state.nvmeof.create_quick(p).await {
-                        Ok(v) => ok(req, v),
-                        Err(e) => err(req, e),
+                if let Some(ref device_path) = p.device_path {
+                    if let Some(conflict) = check_block_device_conflict(state, device_path, "nvmeof").await {
+                        return err(req, conflict);
                     }
                 }
+                match state.nvmeof.create(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                }
             }
-            Err(e) => invalid(req, e),
-        },
-        "share.nvmeof.create" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.create(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
             Err(e) => invalid(req, e),
         },
         "share.nvmeof.delete" => match parse_params(req) {

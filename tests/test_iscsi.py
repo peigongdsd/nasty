@@ -35,14 +35,14 @@ async def test_iscsi(ctx: TestContext):
 
     sv_names     = [f"test-iscsi{i}-{ctx.tag}"        for i in range(1, N + 1)]
     target_names = [f"test-iscsi{i}-{ctx.tag}"        for i in range(1, N + 1)]
-    iqns         = [None] * N  # populated from API response after create_quick
+    iqns         = [None] * N  # populated from API response after create
     mount_points = [f"/tmp/nasty-test-iscsi{i}-{ctx.tag}" for i in range(1, N + 1)]
     target_ids      = [None] * N
     logged_in       = [False] * N
     mounted         = [False] * N
     devices         = [None] * N
     clone_sv_names  = [f"test-iscsi{i+1}-clone-{ctx.tag}" for i in range(N)]
-    clone_iqns      = [None] * N  # populated from API response after create_quick
+    clone_iqns      = [None] * N  # populated from API response after create
     clone_target_ids = [None] * N
     clone_mounts    = [f"/tmp/nasty-test-iscsi{i+1}-clone-{ctx.tag}" for i in range(N)]
     clone_connected = [False] * N
@@ -67,7 +67,7 @@ async def test_iscsi(ctx: TestContext):
                 ctx.record(f"{label}: block subvolume created", True)
 
                 info(f"Creating iSCSI target for {sv_names[i]}...")
-                target = await ctx.client.call("share.iscsi.create_quick", {
+                target = await ctx.client.call("share.iscsi.create", {
                     "name": target_names[i],
                     "device_path": block_dev,
                 })
@@ -211,7 +211,7 @@ async def test_iscsi(ctx: TestContext):
                 continue
 
             try:
-                target = await ctx.client.call("share.iscsi.create_quick", {
+                target = await ctx.client.call("share.iscsi.create", {
                     "name": f"test-iscsi{i+1}-clone-{ctx.tag}",
                     "device_path": block_dev,
                 })

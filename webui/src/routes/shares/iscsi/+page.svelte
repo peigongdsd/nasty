@@ -90,7 +90,7 @@
 	async function create() {
 		if (!newName || !newDevice) return;
 		const ok = await withToast(
-			() => client.call('share.iscsi.create_quick', {
+			() => client.call('share.iscsi.create', {
 				name: newName,
 				device_path: newDevice,
 			}),
