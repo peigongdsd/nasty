@@ -31,13 +31,21 @@
 	let newDescription = $state('');
 	let newBootOrder = $state('disk');
 	let newAutostart = $state(false);
+	let newPassthrough = $state<string[]>([]);
+
+	// Passthrough edit state (for running/stopped VM detail view)
+	let editPtVm = $state<string | null>(null);
 
 	// Console state
 	let consoleVm: VmStatus | null = $state(null);
+	let consoleMode: 'serial' | 'vnc' = $state('serial');
 	let consoleEl: HTMLDivElement | undefined = $state(undefined);
 	let consoleTerm: Terminal | null = $state(null);
 	let consoleWs: WebSocket | null = $state(null);
 	let consoleFit: FitAddon | null = $state(null);
+	// VNC state
+	let vncEl: HTMLDivElement | undefined = $state(undefined);
+	let vncRfb: any = $state(null);
 
 	const client = getClient();
 
@@ -45,9 +53,9 @@
 		if (showCreate) loadSubvolumes();
 	});
 
-	// Initialize xterm when console element mounts
+	// Initialize serial console (xterm) when element mounts
 	$effect(() => {
-		if (consoleEl && consoleVm && !consoleTerm) {
+		if (consoleEl && consoleVm && consoleMode === 'serial' && !consoleTerm) {
 			const term = new Terminal({
 				cursorBlink: true,
 				fontSize: 14,
@@ -66,7 +74,6 @@
 			consoleTerm = term;
 			consoleFit = fit;
 
-			// Connect WebSocket to serial console
 			const token = getToken();
 			const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 			const ws = new WebSocket(`${proto}//${window.location.host}/ws/vm/${consoleVm.id}/serial`);
@@ -96,6 +103,39 @@
 			});
 
 			consoleWs = ws;
+		}
+	});
+
+	// Initialize VNC console (noVNC) when element mounts
+	$effect(() => {
+		if (vncEl && consoleVm && consoleMode === 'vnc' && !vncRfb) {
+			const token = getToken();
+			const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const url = `${proto}//${window.location.host}/ws/vm/${consoleVm.id}/vnc`;
+
+			import('@novnc/novnc/lib/rfb.js').then(({ default: RFB }) => {
+				// noVNC expects a WebSocket URL. We need to send auth first,
+				// so we create a custom WebSocket that sends the token on open.
+				const rfb = new RFB(vncEl!, url, {
+					wsProtocols: [],
+				});
+				rfb.scaleViewport = true;
+				rfb.resizeSession = true;
+
+				// noVNC doesn't support sending auth on connect natively.
+				// We'll use the query param approach instead — but our proxy
+				// expects the first message to be auth. For now, we connect
+				// directly and the proxy will receive the RFB handshake first.
+				// TODO: implement token auth via query param or subprotocol.
+
+				vncRfb = rfb;
+
+				rfb.addEventListener('disconnect', () => {
+					vncRfb = null;
+				});
+			}).catch((e) => {
+				console.error('Failed to load noVNC:', e);
+			});
 		}
 	});
 
@@ -144,6 +184,12 @@
 			if (!newDisk) params.boot_order = 'cdrom';
 		}
 		if (newDescription) params.description = newDescription;
+		if (newPassthrough.length > 0) {
+			params.passthrough_devices = newPassthrough.map(addr => {
+				const dev = capabilities?.passthrough_devices.find(d => d.address === addr);
+				return { address: addr, label: dev?.description ?? null };
+			});
+		}
 
 		const ok = await withToast(
 			() => client.call('vm.create', params),
@@ -152,7 +198,8 @@
 		if (ok !== undefined) {
 			showCreate = false;
 			newName = ''; newCpus = 1; newMemory = 1024; newDisk = '';
-			newIso = ''; newDescription = ''; newBootOrder = 'disk'; newAutostart = false;
+			newIso = ''; newDescription = ''; newBootOrder = 'disk';
+			newAutostart = false; newPassthrough = [];
 			await refresh();
 		}
 	}
@@ -206,19 +253,64 @@
 		await refresh();
 	}
 
-	function openConsole(vm: VmStatus) {
+	function openConsole(vm: VmStatus, mode: 'serial' | 'vnc' = 'serial') {
 		closeConsole();
+		consoleMode = mode;
+		consoleVm = vm;
+	}
+
+	function switchConsoleMode(mode: 'serial' | 'vnc') {
+		const vm = consoleVm;
+		if (!vm) return;
+		closeConsole();
+		consoleMode = mode;
 		consoleVm = vm;
 	}
 
 	function closeConsole() {
 		consoleWs?.close();
 		consoleTerm?.dispose();
+		if (vncRfb) {
+			try { vncRfb.disconnect(); } catch { /* ignore */ }
+		}
 		consoleVm = null;
 		consoleTerm = null;
 		consoleWs = null;
 		consoleFit = null;
+		vncRfb = null;
 	}
+
+	async function addPassthroughDevice(vmId: string, address: string) {
+		const vm = vms.find(v => v.id === vmId);
+		if (!vm) return;
+		const existing = vm.passthrough_devices.map(d => d.address);
+		if (existing.includes(address)) return;
+		const dev = capabilities?.passthrough_devices.find(d => d.address === address);
+		const updated = [...vm.passthrough_devices, { address, label: dev?.description ?? null }];
+		await withToast(
+			() => client.call('vm.update', { id: vmId, passthrough_devices: updated }),
+			'Passthrough device added'
+		);
+		await refresh();
+	}
+
+	async function removePassthroughDevice(vmId: string, address: string) {
+		const vm = vms.find(v => v.id === vmId);
+		if (!vm) return;
+		const updated = vm.passthrough_devices.filter(d => d.address !== address);
+		await withToast(
+			() => client.call('vm.update', { id: vmId, passthrough_devices: updated }),
+			'Passthrough device removed'
+		);
+		await refresh();
+	}
+
+	// PCI devices not assigned to any VM
+	const availablePciDevices = $derived.by(() => {
+		if (!capabilities) return [];
+		const assigned = new Set(vms.flatMap(v => v.passthrough_devices.map(d => d.address)));
+		return capabilities.passthrough_devices.filter(d => !assigned.has(d.address));
+	});
 
 	function formatMemory(mib: number): string {
 		if (mib >= 1024) return `${(mib / 1024).toFixed(1)} GiB`;
@@ -318,6 +410,35 @@
 				<Label for="vm-desc">Description</Label>
 				<Input id="vm-desc" bind:value={newDescription} placeholder="Optional description" class="mt-1" />
 			</div>
+			{#if availablePciDevices.length > 0}
+				<div class="mb-4">
+					<Label>PCI Passthrough</Label>
+					<div class="mt-1 max-h-40 overflow-y-auto rounded border border-input p-2 space-y-1">
+						{#each availablePciDevices as dev}
+							<label class="flex items-start gap-2 text-xs cursor-pointer hover:bg-muted/30 rounded p-1">
+								<input
+									type="checkbox"
+									class="mt-0.5 rounded border-input"
+									checked={newPassthrough.includes(dev.address)}
+									onchange={() => {
+										if (newPassthrough.includes(dev.address)) {
+											newPassthrough = newPassthrough.filter(a => a !== dev.address);
+										} else {
+											newPassthrough = [...newPassthrough, dev.address];
+										}
+									}}
+								/>
+								<div>
+									<span class="font-mono">{dev.address}</span>
+									<span class="text-muted-foreground ml-1">{dev.description}</span>
+									<span class="text-muted-foreground ml-1">(IOMMU group {dev.iommu_group})</span>
+								</div>
+							</label>
+						{/each}
+					</div>
+					<span class="mt-1 block text-xs text-muted-foreground">Devices are bound to vfio-pci when the VM starts.</span>
+				</div>
+			{/if}
 			<div class="mb-4 flex items-center gap-2">
 				<input id="vm-autostart" type="checkbox" bind:checked={newAutostart} class="rounded border-input" />
 				<Label for="vm-autostart">Auto-start on NASty boot</Label>
@@ -452,21 +573,42 @@
 								</div>
 
 								<!-- Passthrough -->
-								{#if vm.passthrough_devices.length > 0}
-									<div>
-										<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">PCI Passthrough</h4>
+								<div>
+									<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">PCI Passthrough</h4>
+									{#if vm.passthrough_devices.length === 0}
+										<p class="text-xs text-muted-foreground">No devices assigned</p>
+									{:else}
 										<div class="space-y-1">
 											{#each vm.passthrough_devices as dev}
 												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<span class="font-mono text-xs">{dev.address}</span>
 													{#if dev.label}
-														<span class="text-xs text-muted-foreground">{dev.label}</span>
+														<span class="text-xs text-muted-foreground truncate">{dev.label}</span>
+													{/if}
+													{#if !vm.running}
+														<Button variant="destructive" size="xs" onclick={() => removePassthroughDevice(vm.id, dev.address)}>Remove</Button>
 													{/if}
 												</div>
 											{/each}
 										</div>
-									</div>
-								{/if}
+									{/if}
+									{#if !vm.running && availablePciDevices.length > 0}
+										{#if editPtVm === vm.id}
+											<div class="mt-2 max-h-32 overflow-y-auto rounded border p-2 space-y-1">
+												{#each availablePciDevices as dev}
+													<div class="flex items-center gap-2 text-xs hover:bg-muted/30 rounded p-1">
+														<Button size="xs" variant="outline" onclick={() => { addPassthroughDevice(vm.id, dev.address); editPtVm = null; }}>Add</Button>
+														<span class="font-mono">{dev.address}</span>
+														<span class="text-muted-foreground truncate">{dev.description}</span>
+													</div>
+												{/each}
+											</div>
+											<Button size="xs" variant="ghost" class="mt-1" onclick={() => editPtVm = null}>Cancel</Button>
+										{:else}
+											<Button size="xs" variant="outline" class="mt-2" onclick={() => editPtVm = vm.id}>+ Add Device</Button>
+										{/if}
+									{/if}
+								</div>
 
 								<!-- Actions -->
 								<div class="flex gap-2 pt-2">
@@ -483,17 +625,33 @@
 	</table>
 {/if}
 
-<!-- Serial Console Modal -->
+<!-- Console Modal -->
 {#if consoleVm}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
 		<div class="flex flex-col w-[90vw] max-w-4xl h-[70vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl">
 			<div class="flex items-center justify-between px-4 py-2 border-b border-border">
-				<span class="text-sm font-semibold text-white">Console: {consoleVm.name}</span>
+				<div class="flex items-center gap-3">
+					<span class="text-sm font-semibold text-white">{consoleVm.name}</span>
+					<div class="flex rounded-md overflow-hidden border border-white/20">
+						<button
+							class="px-2 py-0.5 text-xs transition-colors {consoleMode === 'serial' ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80'}"
+							onclick={() => switchConsoleMode('serial')}
+						>Serial</button>
+						<button
+							class="px-2 py-0.5 text-xs transition-colors {consoleMode === 'vnc' ? 'bg-white/20 text-white' : 'text-white/50 hover:text-white/80'}"
+							onclick={() => switchConsoleMode('vnc')}
+						>VNC</button>
+					</div>
+				</div>
 				<Button variant="ghost" size="xs" onclick={closeConsole} class="text-white hover:text-white/80">
 					Close
 				</Button>
 			</div>
-			<div class="flex-1 p-2 overflow-hidden" bind:this={consoleEl}></div>
+			{#if consoleMode === 'serial'}
+				<div class="flex-1 p-2 overflow-hidden" bind:this={consoleEl}></div>
+			{:else}
+				<div class="flex-1 overflow-hidden" bind:this={vncEl}></div>
+			{/if}
 		</div>
 	</div>
 {/if}
