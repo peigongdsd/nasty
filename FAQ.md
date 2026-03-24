@@ -48,6 +48,8 @@ NASty is developed with heavy AI assistance — architecture discussions, code g
 
 This isn't a toy or a demo. It's a serious project built faster than a single developer could manage alone. The vibecoding approach lets one person build what would normally require a team — a full NAS appliance with engine, WebUI, CSI driver, NixOS integration, and CI/CD pipeline.
 
+The same approach was used to build [tns-csi](https://github.com/fenio/tns-csi), a TrueNAS CSI driver that has an active userbase running it in production without issues. NASty's CSI driver evolved from that codebase.
+
 ## What protocols does NASty support?
 
 - **NFS** — Network File System. Standard Linux/Unix file sharing.
