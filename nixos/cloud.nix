@@ -55,6 +55,9 @@
     echo "$CFG" > /var/lib/nasty/system-config
   '';
 
+  # No mDNS/Avahi on cloud — no local network discovery needed
+  services.avahi.enable = lib.mkForce false;
+
   system.nixos.distroName = "NASty";
   system.nixos.distroId = "nasty";
   system.stateVersion = "24.11";
