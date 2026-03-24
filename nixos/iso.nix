@@ -151,7 +151,7 @@ in
       echo ""
       echo "Partitioning mode:"
       echo "  1) Use entire disk for NASty OS (recommended if you have separate data disks)"
-      echo "  2) Split disk: 20 GiB for OS, rest for data (single-disk setup)"
+      echo "  2) Split disk: 15 GiB for OS, rest for data (single-disk setup)"
       echo ""
       read -p "Choose [1/2]: " PART_MODE
 
@@ -160,10 +160,6 @@ in
         exit 1
       fi
 
-      if [ "$PART_MODE" = "2" ] && [ "$DISK_SIZE_G" -lt 24 ]; then
-        echo "Error: disk too small for split mode (need at least 24 GiB for 20 GiB OS + data, have ''${DISK_SIZE_G} GiB)"
-        exit 1
-      fi
 
       # ── Network configuration ─────────────────────────────────────
       echo ""
@@ -222,8 +218,8 @@ in
           mklabel gpt \
           mkpart ESP fat32 1MiB 512MiB \
           set 1 esp on \
-          mkpart root ext4 512MiB 20GiB \
-          mkpart data 20GiB 100%
+          mkpart root ext4 512MiB 15GiB \
+          mkpart data 15GiB 100%
       fi
 
       PART1="''${DISK}''${PSEP}1"
