@@ -477,3 +477,21 @@ export interface PciDevice {
 	iommu_group: number;
 	bound_to_vfio: boolean;
 }
+
+// ── Apps ────────────────────────────────────────────────────
+
+export interface AppsStatus {
+	enabled: boolean;
+	running: boolean;
+	app_count: number;
+	memory_bytes?: number;
+}
+
+export interface App {
+	name: string;
+	namespace: string;
+	image: string;
+	chart: string;
+	status: string;
+	updated: string;
+}

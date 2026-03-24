@@ -27,6 +27,9 @@ fn is_operator_allowed(method: &str) -> bool {
             | "vm.create" | "vm.update" | "vm.delete"
             | "vm.start" | "vm.stop" | "vm.kill"
             | "vm.snapshot" | "vm.clone"
+            | "apps.enable" | "apps.disable"
+            | "apps.install" | "apps.remove"
+            | "apps.install_chart"
         )
 }
 
@@ -1191,6 +1194,65 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "vm.clone" => match parse_params::<nasty_vm::CloneVmRequest>(req) {
             Ok(p) => match vm_clone(state, &p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+
+        // ── Apps ──────────────────────────────────────────────
+        "apps.status" => match state.apps.status().await {
+            s => ok(req, s),
+        },
+        "apps.enable" => match state.apps.enable().await {
+            Ok(()) => ok(req, "ok"),
+            Err(e) => err(req, e),
+        },
+        "apps.disable" => match state.apps.disable().await {
+            Ok(()) => ok(req, "ok"),
+            Err(e) => err(req, e),
+        },
+        "apps.list" => match state.apps.list().await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
+        },
+        "apps.get" => match require_str(req, "name") {
+            Ok(name) => match state.apps.get(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "apps.install" => match parse_params(req) {
+            Ok(p) => match state.apps.install(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "apps.remove" => match require_str(req, "name") {
+            Ok(name) => match state.apps.remove(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "apps.logs" => {
+            let name = match require_str(req, "name") {
+                Ok(n) => n,
+                Err(r) => return r,
+            };
+            let tail = req.params.as_ref()
+                .and_then(|p| p.get("tail"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            match state.apps.logs(name, tail).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            }
+        },
+        "apps.install_chart" => match parse_params(req) {
+            Ok(p) => match state.apps.install_chart(p).await {
                 Ok(v) => ok(req, v),
                 Err(e) => err(req, e),
             },

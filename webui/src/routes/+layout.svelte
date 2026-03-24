@@ -42,6 +42,7 @@
 		PanelLeftOpen,
 		Bug,
 		Monitor,
+		Box,
 	} from '@lucide/svelte';
 	import { refreshState } from '$lib/refresh.svelte';
 	import { rebootState } from '$lib/reboot.svelte';
@@ -230,6 +231,7 @@
 			items.push({ href: '/vms', label: 'Virtual Machines', icon: Monitor });
 		}
 		items.push(
+			{ href: '/apps',          label: 'Apps',             icon: Box },
 			{ href: '/disks',         label: 'Disks',           icon: HardDrive },
 			{ href: '/alerts',        label: 'Alerts',          icon: Bell },
 			{ href: '/services',      label: 'Services',        icon: Network },

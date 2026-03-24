@@ -11,6 +11,7 @@ nasty-sharing = { path = "../nasty-sharing" }
 nasty-snapshot = { path = "../nasty-snapshot" }
 nasty-system = { path = "../nasty-system" }
 nasty-vm = { path = "../nasty-vm" }
+nasty-apps = { path = "../nasty-apps" }
 tokio.workspace = true
 axum.workspace = true
 serde.workspace = true

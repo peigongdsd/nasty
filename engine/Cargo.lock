@@ -783,6 +783,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nasty-apps"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "nasty-common"
 version = "0.1.0"
 dependencies = [
@@ -803,6 +815,7 @@ dependencies = [
  "axum",
  "base64",
  "futures-util",
+ "nasty-apps",
  "nasty-common",
  "nasty-sharing",
  "nasty-snapshot",

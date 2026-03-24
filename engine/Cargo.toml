@@ -10,6 +10,7 @@ members = [
     "nasty-snapshot",
     "nasty-system",
     "nasty-vm",
+    "nasty-apps",
 ]
 
 [workspace.package]
