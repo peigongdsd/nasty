@@ -288,7 +288,7 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
   commit -m "local: appliance adjustments" || true
 
 echo "==> Rebuilding system..."
-nixos-rebuild switch --flake {local_flake}
+NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
 
 # Detect if the webui store path changed so the frontend knows whether to prompt a reload.
 # /run/current-system now points to the newly activated closure.
@@ -768,7 +768,7 @@ git add flake.lock flake.nix
 git -c user.email="nasty@localhost" -c user.name="NASty" \
   commit -m "bcachefs-tools: switch to {git_ref} (${{RESOLVED_SHA:-unknown}})" || true
 echo "==> Rebuilding system..."
-nixos-rebuild switch --flake {local_flake}
+NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
 echo "success" > {BCACHEFS_SWITCH_RESULT}
 printf '%s  success  %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S')" "{git_ref}" >> "$SWITCH_LOG"
 echo "==> bcachefs switch complete!"
