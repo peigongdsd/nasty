@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
+	import { getToken } from '$lib/auth';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import type { VmStatus, VmCapabilities, Subvolume } from '$lib/types';
@@ -10,6 +11,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import { Terminal } from '@xterm/xterm';
+	import { FitAddon } from '@xterm/addon-fit';
 
 	let vms: VmStatus[] = $state([]);
 	let capabilities: VmCapabilities | null = $state(null);
@@ -29,10 +32,71 @@
 	let newBootOrder = $state('disk');
 	let newAutostart = $state(false);
 
+	// Console state
+	let consoleVm: VmStatus | null = $state(null);
+	let consoleEl: HTMLDivElement | undefined = $state(undefined);
+	let consoleTerm: Terminal | null = $state(null);
+	let consoleWs: WebSocket | null = $state(null);
+	let consoleFit: FitAddon | null = $state(null);
+
 	const client = getClient();
 
 	$effect(() => {
 		if (showCreate) loadSubvolumes();
+	});
+
+	// Initialize xterm when console element mounts
+	$effect(() => {
+		if (consoleEl && consoleVm && !consoleTerm) {
+			const term = new Terminal({
+				cursorBlink: true,
+				fontSize: 14,
+				fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+				theme: {
+					background: '#0f1117',
+					foreground: '#e0e0e0',
+					cursor: '#e0e0e0',
+				},
+			});
+			const fit = new FitAddon();
+			term.loadAddon(fit);
+			term.open(consoleEl);
+			fit.fit();
+
+			consoleTerm = term;
+			consoleFit = fit;
+
+			// Connect WebSocket to serial console
+			const token = getToken();
+			const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const ws = new WebSocket(`${proto}//${window.location.host}/ws/vm/${consoleVm.id}/serial`);
+			ws.binaryType = 'arraybuffer';
+
+			ws.onopen = () => {
+				ws.send(JSON.stringify({ token }));
+				term.writeln('\x1b[33mConnecting to serial console...\x1b[0m\r\n');
+			};
+
+			ws.onmessage = (event) => {
+				if (event.data instanceof ArrayBuffer) {
+					term.write(new Uint8Array(event.data));
+				} else {
+					term.write(event.data);
+				}
+			};
+
+			ws.onclose = () => {
+				term.writeln('\r\n\x1b[31mConsole disconnected.\x1b[0m');
+			};
+
+			term.onData((input) => {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.send(input);
+				}
+			});
+
+			consoleWs = ws;
+		}
 	});
 
 	onMount(async () => {
@@ -140,6 +204,20 @@
 			vm.autostart ? 'Autostart disabled' : 'Autostart enabled'
 		);
 		await refresh();
+	}
+
+	function openConsole(vm: VmStatus) {
+		closeConsole();
+		consoleVm = vm;
+	}
+
+	function closeConsole() {
+		consoleWs?.close();
+		consoleTerm?.dispose();
+		consoleVm = null;
+		consoleTerm = null;
+		consoleWs = null;
+		consoleFit = null;
 	}
 
 	function formatMemory(mib: number): string {
@@ -291,6 +369,9 @@
 					<td class="p-3" onclick={(e) => e.stopPropagation()}>
 						<div class="flex gap-2">
 							{#if vm.running}
+								<Button variant="outline" size="xs" onclick={() => openConsole(vm)}>
+									Console
+								</Button>
 								<Button variant="secondary" size="xs" onclick={() => stopVm(vm.id)} disabled={actionInProgress[vm.id]}>
 									Stop
 								</Button>
@@ -400,4 +481,19 @@
 			{/each}
 		</tbody>
 	</table>
+{/if}
+
+<!-- Serial Console Modal -->
+{#if consoleVm}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+		<div class="flex flex-col w-[90vw] max-w-4xl h-[70vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl">
+			<div class="flex items-center justify-between px-4 py-2 border-b border-border">
+				<span class="text-sm font-semibold text-white">Console: {consoleVm.name}</span>
+				<Button variant="ghost" size="xs" onclick={closeConsole} class="text-white hover:text-white/80">
+					Close
+				</Button>
+			</div>
+			<div class="flex-1 p-2 overflow-hidden" bind:this={consoleEl}></div>
+		</div>
+	</div>
 {/if}

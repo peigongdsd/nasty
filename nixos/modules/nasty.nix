@@ -815,6 +815,16 @@ in {
           '';
         };
 
+        locations."/ws/vm/" = {
+          proxyPass = "http://127.0.0.1:${toString cfg.engine.port}";
+          proxyWebsockets = true;
+          priority = 400;
+          extraConfig = ''
+            proxy_read_timeout 28800s;
+            proxy_send_timeout 28800s;
+          '';
+        };
+
         # Proxy API calls to engine
         locations."/api/" = {
           proxyPass = "http://127.0.0.1:${toString cfg.engine.port}";
