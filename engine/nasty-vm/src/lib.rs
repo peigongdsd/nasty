@@ -30,6 +30,8 @@ pub enum VmError {
     NotRunning(String),
     #[error("KVM not available: /dev/kvm not found")]
     KvmNotAvailable,
+    #[error("invalid disk path: {0}")]
+    InvalidDiskPath(String),
     #[error("QEMU command failed: {0}")]
     QemuFailed(String),
     #[error("QMP error: {0}")]
@@ -46,6 +48,7 @@ impl VmError {
             Self::AlreadyRunning(_) => -32003,
             Self::NotRunning(_) => -32004,
             Self::KvmNotAvailable => -32005,
+            Self::InvalidDiskPath(_) => -32009,
             Self::QemuFailed(_) => -32006,
             Self::Qmp(_) => -32007,
             Self::Io(_) => -32008,
@@ -367,6 +370,24 @@ impl VmService {
             return Err(VmError::AlreadyExists(req.name));
         }
 
+        // Validate disk paths exist
+        if let Some(ref disks) = req.disks {
+            for disk in disks {
+                if !Path::new(&disk.path).exists() {
+                    return Err(VmError::InvalidDiskPath(format!(
+                        "disk path {} does not exist", disk.path
+                    )));
+                }
+            }
+        }
+        if let Some(ref iso) = req.boot_iso {
+            if !Path::new(iso).exists() {
+                return Err(VmError::InvalidDiskPath(format!(
+                    "boot ISO {} does not exist", iso
+                )));
+            }
+        }
+
         let id = Uuid::new_v4().to_string();
 
         let config = VmConfig {
@@ -468,6 +489,22 @@ impl VmService {
 
         if !self.kvm_available() {
             return Err(VmError::KvmNotAvailable);
+        }
+
+        // Validate all disk paths exist before starting
+        for disk in &config.disks {
+            if !Path::new(&disk.path).exists() {
+                return Err(VmError::InvalidDiskPath(format!(
+                    "disk path {} does not exist", disk.path
+                )));
+            }
+        }
+        if let Some(ref iso) = config.boot_iso {
+            if !Path::new(iso).exists() {
+                return Err(VmError::InvalidDiskPath(format!(
+                    "boot ISO {} does not exist", iso
+                )));
+            }
         }
 
         // Ensure runtime directory exists
