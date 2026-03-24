@@ -151,7 +151,7 @@ in
       echo ""
       echo "Partitioning mode:"
       echo "  1) Use entire disk for NASty OS (recommended if you have separate data disks)"
-      echo "  2) Split disk: 8 GiB for OS, rest for data (single-disk setup)"
+      echo "  2) Split disk: 20 GiB for OS, rest for data (single-disk setup)"
       echo ""
       read -p "Choose [1/2]: " PART_MODE
 
@@ -222,8 +222,8 @@ in
           mklabel gpt \
           mkpart ESP fat32 1MiB 512MiB \
           set 1 esp on \
-          mkpart root ext4 512MiB 8GiB \
-          mkpart data 8GiB 100%
+          mkpart root ext4 512MiB 20GiB \
+          mkpart data 20GiB 100%
       fi
 
       PART1="''${DISK}''${PSEP}1"
