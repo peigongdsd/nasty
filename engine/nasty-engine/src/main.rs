@@ -47,6 +47,7 @@ pub struct AppState {
     pub smb: nasty_sharing::SmbService,
     pub iscsi: nasty_sharing::IscsiService,
     pub nvmeof: Arc<nasty_sharing::NvmeofService>,
+    pub vms: nasty_vm::VmService,
 }
 
 /// Base URL for the nasty-metrics service.
@@ -90,6 +91,7 @@ async fn main() -> anyhow::Result<()> {
         smb: nasty_sharing::SmbService::new(),
         iscsi: nasty_sharing::IscsiService::new(),
         nvmeof,
+        vms: nasty_vm::VmService::new(),
     });
 
     // Restore state from previous session:
@@ -108,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
     }
     state.protocols.restore().await;
     state.nvmeof.restore().await;
+    state.vms.restore().await;
 
     // Pre-warm caches so first page loads are fast.
     // Runs before sd_notify_ready() — nginx won't serve until this completes.

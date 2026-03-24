@@ -808,6 +808,7 @@ dependencies = [
  "nasty-snapshot",
  "nasty-storage",
  "nasty-system",
+ "nasty-vm",
  "portable-pty",
  "rand",
  "reqwest",
@@ -887,6 +888,20 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "nasty-vm"
+version = "0.1.0"
+dependencies = [
+ "nasty-common",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

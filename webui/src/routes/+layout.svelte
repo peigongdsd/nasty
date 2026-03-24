@@ -41,6 +41,7 @@
 		PanelLeftClose,
 		PanelLeftOpen,
 		Bug,
+		Monitor,
 	} from '@lucide/svelte';
 	import { refreshState } from '$lib/refresh.svelte';
 	import { rebootState } from '$lib/reboot.svelte';
@@ -86,7 +87,7 @@
 	}
 
 	// Version info (loaded once after connect)
-	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null; bcachefs_pinned_ref: string | null; bcachefs_is_custom: boolean; bcachefs_debug_checks: boolean } | null = $state(null);
+	let sysInfo: { version: string; kernel: string; bcachefs_version: string; bcachefs_commit: string | null; bcachefs_pinned_ref: string | null; bcachefs_is_custom: boolean; bcachefs_debug_checks: boolean; kvm_available: boolean } | null = $state(null);
 	let clock24h = $state(true);
 
 	$effect(() => {
@@ -215,22 +216,30 @@
 		try { await getClient().call('system.shutdown'); } catch { /* expected — engine dies */ }
 	}
 
-	const nav = [
-		{ href: '/',              label: 'Dashboard',      icon: LayoutDashboard },
-		{ href: '/filesystems',   label: 'Filesystems',    icon: Database },
-		{ href: '/subvolumes',    label: 'Subvolumes',     icon: Layers },
-		{ href: '/shares/nfs',    label: 'NFS',            icon: FolderOpen },
-		{ href: '/shares/smb',    label: 'SMB',            icon: Share2 },
-		{ href: '/shares/iscsi',  label: 'iSCSI',          icon: Server },
-		{ href: '/shares/nvmeof', label: 'NVMe-oF',        icon: Zap },
-		{ href: '/disks',         label: 'Disks',           icon: HardDrive },
-		{ href: '/alerts',        label: 'Alerts',          icon: Bell },
-		{ href: '/services',      label: 'Services',        icon: Network },
-		{ href: '/update',        label: 'Update',          icon: RefreshCw },
-		{ href: '/terminal',      label: 'Terminal',        icon: Terminal },
-		{ href: '/users',         label: 'Access Control',  icon: ShieldCheck },
-		{ href: '/settings',      label: 'Settings',        icon: Settings },
-	];
+	const nav = $derived.by(() => {
+		const items = [
+			{ href: '/',              label: 'Dashboard',      icon: LayoutDashboard },
+			{ href: '/filesystems',   label: 'Filesystems',    icon: Database },
+			{ href: '/subvolumes',    label: 'Subvolumes',     icon: Layers },
+			{ href: '/shares/nfs',    label: 'NFS',            icon: FolderOpen },
+			{ href: '/shares/smb',    label: 'SMB',            icon: Share2 },
+			{ href: '/shares/iscsi',  label: 'iSCSI',          icon: Server },
+			{ href: '/shares/nvmeof', label: 'NVMe-oF',        icon: Zap },
+		];
+		if (sysInfo?.kvm_available) {
+			items.push({ href: '/vms', label: 'Virtual Machines', icon: Monitor });
+		}
+		items.push(
+			{ href: '/disks',         label: 'Disks',           icon: HardDrive },
+			{ href: '/alerts',        label: 'Alerts',          icon: Bell },
+			{ href: '/services',      label: 'Services',        icon: Network },
+			{ href: '/update',        label: 'Update',          icon: RefreshCw },
+			{ href: '/terminal',      label: 'Terminal',        icon: Terminal },
+			{ href: '/users',         label: 'Access Control',  icon: ShieldCheck },
+			{ href: '/settings',      label: 'Settings',        icon: Settings },
+		);
+		return items;
+	});
 
 	// Derive current nav entry from path
 	const currentNav = $derived.by(() => {

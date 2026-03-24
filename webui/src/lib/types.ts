@@ -422,3 +422,58 @@ export interface ActiveAlert {
 	threshold: number;
 	source: string;
 }
+
+// ── Virtual Machines ────────────────────────────────────────
+
+export interface VmDisk {
+	path: string;
+	interface: string;
+	readonly: boolean;
+}
+
+export interface VmNetwork {
+	mode: string;
+	bridge?: string;
+	mac?: string;
+}
+
+export interface PassthroughDevice {
+	address: string;
+	label?: string;
+}
+
+export interface VmConfig {
+	id: string;
+	name: string;
+	cpus: number;
+	memory_mib: number;
+	disks: VmDisk[];
+	networks: VmNetwork[];
+	passthrough_devices: PassthroughDevice[];
+	boot_iso?: string;
+	boot_order: string;
+	uefi: boolean;
+	description?: string;
+	autostart: boolean;
+}
+
+export interface VmStatus extends VmConfig {
+	running: boolean;
+	pid?: number;
+	vnc_port?: number;
+}
+
+export interface VmCapabilities {
+	kvm_available: boolean;
+	uefi_available: boolean;
+	arch: string;
+	passthrough_devices: PciDevice[];
+}
+
+export interface PciDevice {
+	address: string;
+	vendor_device: string;
+	description: string;
+	iommu_group: number;
+	bound_to_vfio: boolean;
+}

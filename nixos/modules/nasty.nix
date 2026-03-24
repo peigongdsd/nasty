@@ -160,7 +160,11 @@ in {
       themePackages = [ nasty-plymouth-theme ];
     };
     # Plymouth NixOS module adds "splash" automatically; we only add "quiet".
-    boot.kernelParams = [ "quiet" ];
+    # IOMMU enabled for VFIO passthrough (VM feature). Harmless when unused.
+    boot.kernelParams = [ "quiet" "intel_iommu=on" "amd_iommu=on" "iommu=pt" ];
+
+    # VFIO modules for PCI passthrough (loaded on demand, not at boot).
+    boot.kernelModules = [ "vfio-pci" "vfio" "vfio_iommu_type1" ];
     boot.initrd.verbose = false;
     # Systemd in initrd: required for Plymouth to start early enough to
     # intercept boot messages. Without this Plymouth starts after systemd
@@ -368,6 +372,12 @@ in {
     # They are loaded on demand by the engine when the user enables
     # a protocol, keeping a clean default state on fresh installs.
 
+    # ── VM support (OVMF firmware symlinks) ────────────────────
+    # The engine expects OVMF firmware at a well-known path. NixOS stores
+    # it in the Nix store, so we create stable symlinks.
+    environment.etc."nasty/ovmf/OVMF_CODE.fd".source = "${pkgs.OVMF.fd}/FV/OVMF_CODE.fd";
+    environment.etc."nasty/ovmf/OVMF_VARS.fd".source = "${pkgs.OVMF.fd}/FV/OVMF_VARS.fd";
+
     # ── System packages ────────────────────────────────────────
 
     environment.systemPackages = with pkgs; [
@@ -375,6 +385,9 @@ in {
       smartmontools     # smartctl for disk health
       jq                # JSON parsing (used by engine scripts)
       htop
+      qemu              # QEMU/KVM for virtual machines
+      OVMF              # UEFI firmware for VMs
+      pciutils          # lspci for passthrough device discovery
 
       (writeShellScriptBin "nasty-report" ''
         set -euo pipefail

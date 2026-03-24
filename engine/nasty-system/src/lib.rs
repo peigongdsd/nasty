@@ -59,6 +59,8 @@ pub struct SystemInfo {
     /// Whether the RUNNING bcachefs module was built with debug checks.
     /// Only true when debug checks are configured AND the system has been rebooted into it.
     pub bcachefs_debug_checks: bool,
+    /// Whether KVM hardware virtualization is available (/dev/kvm exists).
+    pub kvm_available: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -168,6 +170,7 @@ impl SystemService {
             ntp_synced,
             bcachefs_debug_symbols: cached.debug_symbols,
             bcachefs_debug_checks: cached.bcachefs_debug_checks_running,
+            kvm_available: std::path::Path::new("/dev/kvm").exists(),
         }
     }
 

@@ -24,6 +24,8 @@ fn is_operator_allowed(method: &str) -> bool {
             | "share.nvmeof.add_namespace" | "share.nvmeof.remove_namespace"
             | "share.nvmeof.add_port" | "share.nvmeof.remove_port"
             | "share.nvmeof.add_host" | "share.nvmeof.remove_host"
+            | "vm.create" | "vm.update" | "vm.delete"
+            | "vm.start" | "vm.stop" | "vm.kill"
         )
 }
 
@@ -1120,6 +1122,64 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
+        },
+
+        // ── Virtual Machines ───────────────────────────────────
+        "vm.capabilities" => match state.vms.capabilities().await {
+            c => ok(req, c),
+        },
+        "vm.list" => match state.vms.list().await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
+        },
+        "vm.get" => match require_str(req, "id") {
+            Ok(id) => match state.vms.get(id).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "vm.create" => match parse_params(req) {
+            Ok(p) => match state.vms.create(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "vm.update" => match parse_params(req) {
+            Ok(p) => match state.vms.update(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "vm.delete" => match require_str(req, "id") {
+            Ok(id) => match state.vms.delete(id).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "vm.start" => match require_str(req, "id") {
+            Ok(id) => match state.vms.start(id).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "vm.stop" => match require_str(req, "id") {
+            Ok(id) => match state.vms.stop(id).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "vm.kill" => match require_str(req, "id") {
+            Ok(id) => match state.vms.kill(id).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
         },
 
         // ── Unknown ─────────────────────────────────────────────
