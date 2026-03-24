@@ -383,7 +383,7 @@
 			<div class="mb-4">
 				<Label for="sv-type">Type</Label>
 				<select id="sv-type" bind:value={newType} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-					<option value="filesystem">Filesystem (NFS, SMB)</option>
+					<option value="filesystem">File Share (NFS, SMB)</option>
 					<option value="block">Block Device (iSCSI, NVMe-oF)</option>
 				</select>
 			</div>
@@ -446,7 +446,7 @@
 					<td class="p-3">
 						<Badge variant={sv.subvolume_type === 'filesystem' ? 'secondary' : 'outline'}
 							class={sv.subvolume_type === 'filesystem' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'}>
-							{sv.subvolume_type === 'filesystem' ? 'Filesystem' : 'Block'}
+							{sv.subvolume_type === 'filesystem' ? 'File Share' : 'Block'}
 						</Badge>
 					</td>
 					<td class="p-3 text-sm">
@@ -521,7 +521,7 @@
 										<span>
 											<Badge variant={detailSv.subvolume_type === 'filesystem' ? 'secondary' : 'outline'}
 												class={detailSv.subvolume_type === 'filesystem' ? 'bg-blue-950 text-blue-400' : 'bg-purple-950 text-purple-400'}>
-												{detailSv.subvolume_type === 'filesystem' ? 'Filesystem' : 'Block'}
+												{detailSv.subvolume_type === 'filesystem' ? 'File Share' : 'Block'}
 											</Badge>
 										</span>
 										<span class="text-muted-foreground">Path</span>
