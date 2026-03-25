@@ -97,11 +97,10 @@
 
 			const token = getToken();
 			const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const ws = new WebSocket(`${proto}//${window.location.host}/ws/vm/${consoleVm.id}/serial`);
+			const ws = new WebSocket(`${proto}//${window.location.host}/ws/vm/${consoleVm.id}/serial?token=${encodeURIComponent(token ?? '')}`);
 			ws.binaryType = 'arraybuffer';
 
 			ws.onopen = () => {
-				ws.send(JSON.stringify({ token }));
 				term.writeln('\x1b[33mConnecting to serial console...\x1b[0m\r\n');
 			};
 

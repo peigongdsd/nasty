@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use std::net::SocketAddr;
-
 use axum::extract::{
-    ConnectInfo,
     Path,
     Query,
     State,
@@ -31,12 +28,11 @@ const QMP_DIR: &str = "/run/nasty/vm";
 pub async fn vnc_handler(
     ws: WebSocketUpgrade,
     Path(vm_id): Path<String>,
+    headers: axum::http::HeaderMap,
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(query): Query<ConsoleQuery>,
 ) -> impl IntoResponse {
-    let client_ip = addr.ip().to_string();
-    // VNC auth via query param — noVNC can't send a message before the RFB handshake
+    let client_ip = extract_client_ip(&headers);
     let pre_auth_token = query.token;
     ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.vnc"), "vnc", vm_id, state, client_ip, pre_auth_token))
 }
@@ -45,14 +41,21 @@ pub async fn vnc_handler(
 pub async fn serial_handler(
     ws: WebSocketUpgrade,
     Path(vm_id): Path<String>,
+    headers: axum::http::HeaderMap,
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(query): Query<ConsoleQuery>,
 ) -> impl IntoResponse {
-    let client_ip = addr.ip().to_string();
-    // Serial can use either query param or first-message auth
+    let client_ip = extract_client_ip(&headers);
     let pre_auth_token = query.token;
     ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.serial"), "serial", vm_id, state, client_ip, pre_auth_token))
+}
+
+fn extract_client_ip(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 /// Bidirectional proxy: WebSocket ↔ Unix socket.
