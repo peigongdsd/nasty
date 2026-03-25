@@ -5,16 +5,24 @@ use std::net::SocketAddr;
 use axum::extract::{
     ConnectInfo,
     Path,
+    Query,
     State,
     ws::{Message, WebSocket, WebSocketUpgrade},
 };
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tracing::{info, warn};
 
 use crate::AppState;
+
+#[derive(Deserialize, Default)]
+pub struct ConsoleQuery {
+    /// Auth token passed as query param (used by noVNC which can't send a message before RFB handshake)
+    token: Option<String>,
+}
 
 const QMP_DIR: &str = "/run/nasty/vm";
 
@@ -25,9 +33,12 @@ pub async fn vnc_handler(
     Path(vm_id): Path<String>,
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(query): Query<ConsoleQuery>,
 ) -> impl IntoResponse {
     let client_ip = addr.ip().to_string();
-    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.vnc"), "vnc", vm_id, state, client_ip))
+    // VNC auth via query param — noVNC can't send a message before the RFB handshake
+    let pre_auth_token = query.token;
+    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.vnc"), "vnc", vm_id, state, client_ip, pre_auth_token))
 }
 
 /// WebSocket handler for serial console (text frames → serial unix socket).
@@ -36,9 +47,12 @@ pub async fn serial_handler(
     Path(vm_id): Path<String>,
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Query(query): Query<ConsoleQuery>,
 ) -> impl IntoResponse {
     let client_ip = addr.ip().to_string();
-    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.serial"), "serial", vm_id, state, client_ip))
+    // Serial can use either query param or first-message auth
+    let pre_auth_token = query.token;
+    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.serial"), "serial", vm_id, state, client_ip, pre_auth_token))
 }
 
 /// Bidirectional proxy: WebSocket ↔ Unix socket.
@@ -52,17 +66,22 @@ async fn proxy_unix_socket(
     vm_id: String,
     state: Arc<AppState>,
     client_ip: String,
+    pre_auth_token: Option<String>,
 ) {
-    // Authenticate: first message must be a JSON token
-    let token = match ws.recv().await {
-        Some(Ok(Message::Text(text))) => {
-            let parsed: Result<serde_json::Value, _> = serde_json::from_str(&text);
-            match parsed {
-                Ok(v) => v.get("token").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-                Err(_) => text.to_string(),
+    // Authenticate: either via query param (noVNC) or first WebSocket message (serial)
+    let token = if let Some(t) = pre_auth_token {
+        t
+    } else {
+        match ws.recv().await {
+            Some(Ok(Message::Text(text))) => {
+                let parsed: Result<serde_json::Value, _> = serde_json::from_str(&text);
+                match parsed {
+                    Ok(v) => v.get("token").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                    Err(_) => text.to_string(),
+                }
             }
+            _ => return,
         }
-        _ => return,
     };
 
     if state.auth.validate(&token, &client_ip).await.is_err() {

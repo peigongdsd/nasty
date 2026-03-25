@@ -132,22 +132,14 @@
 		if (vncEl && consoleVm && consoleMode === 'vnc' && !vncRfb) {
 			const token = getToken();
 			const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const url = `${proto}//${window.location.host}/ws/vm/${consoleVm.id}/vnc`;
+			const url = `${proto}//${window.location.host}/ws/vm/${consoleVm.id}/vnc?token=${encodeURIComponent(token ?? '')}`;
 
 			import('@novnc/novnc/lib/rfb.js').then(({ default: RFB }) => {
-				// noVNC expects a WebSocket URL. We need to send auth first,
-				// so we create a custom WebSocket that sends the token on open.
 				const rfb = new RFB(vncEl!, url, {
 					wsProtocols: [],
 				});
 				rfb.scaleViewport = true;
 				rfb.resizeSession = true;
-
-				// noVNC doesn't support sending auth on connect natively.
-				// We'll use the query param approach instead — but our proxy
-				// expects the first message to be auth. For now, we connect
-				// directly and the proxy will receive the RFB handshake first.
-				// TODO: implement token auth via query param or subprotocol.
 
 				vncRfb = rfb;
 
