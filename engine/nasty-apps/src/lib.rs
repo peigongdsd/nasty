@@ -237,23 +237,55 @@ impl AppsService {
         // Write state file
         tokio::fs::write(STATE_PATH, "1").await?;
 
-        // Start k3s via systemd
+        // Start k3s via systemd (non-blocking — k3s takes 30-60s to initialize)
         run_cmd("systemctl", &["start", K3S_SERVICE]).await?;
 
-        info!("Apps runtime enabled — k3s starting");
+        info!("Apps runtime enabled — k3s starting (bootstrap will run in background)");
 
-        // Wait for k3s to be ready (up to 60s)
-        for _ in 0..30 {
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            if self.is_k3s_ready().await {
-                break;
+        // Bootstrap in background — don't block the RPC response
+        tokio::spawn(async {
+            // Wait for k3s to be ready (up to 90s)
+            let mut ready = false;
+            for _ in 0..45 {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                let output = tokio::process::Command::new("k3s")
+                    .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "nodes", "-o", "name"])
+                    .output()
+                    .await;
+                if let Ok(o) = output {
+                    if o.status.success() && !o.stdout.is_empty() {
+                        ready = true;
+                        break;
+                    }
+                }
             }
-        }
 
-        // Set up namespace and Helm repo
-        self.bootstrap().await?;
+            if !ready {
+                error!("k3s did not become ready within 90s");
+                return;
+            }
 
-        info!("Apps runtime ready");
+            // Create namespace
+            let _ = tokio::process::Command::new("k3s")
+                .args(["kubectl", "--kubeconfig", KUBECONFIG, "create", "namespace", NAMESPACE])
+                .output()
+                .await;
+
+            // Add bjw-s Helm repo
+            let _ = tokio::process::Command::new("helm")
+                .args(["repo", "add", "bjw-s", APP_TEMPLATE_REPO, "--kubeconfig", KUBECONFIG])
+                .output()
+                .await;
+
+            // Update repos
+            let _ = tokio::process::Command::new("helm")
+                .args(["repo", "update", "--kubeconfig", KUBECONFIG])
+                .output()
+                .await;
+
+            info!("Apps bootstrap complete (namespace: {NAMESPACE}, repo: bjw-s)");
+        });
+
         Ok(())
     }
 
@@ -409,8 +441,9 @@ impl AppsService {
         let tail_str = tail.unwrap_or(100).to_string();
         let label = format!("app.kubernetes.io/instance={name}");
 
-        let output = Command::new("kubectl")
+        let output = Command::new("k3s")
             .args([
+                "kubectl",
                 "logs",
                 "--namespace", NAMESPACE,
                 "-l", &label,
@@ -681,8 +714,8 @@ impl AppsService {
     // ── Internal helpers ────────────────────────────────────
 
     async fn is_k3s_ready(&self) -> bool {
-        let output = Command::new("kubectl")
-            .args(["--kubeconfig", KUBECONFIG, "get", "nodes", "-o", "name"])
+        let output = Command::new("k3s")
+            .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "nodes", "-o", "name"])
             .output()
             .await;
 
@@ -702,29 +735,6 @@ impl AppsService {
         Ok(())
     }
 
-    /// One-time bootstrap after k3s starts: create namespace, add Helm repo.
-    async fn bootstrap(&self) -> Result<(), AppsError> {
-        // Create namespace
-        let _ = Command::new("kubectl")
-            .args(["--kubeconfig", KUBECONFIG, "create", "namespace", NAMESPACE])
-            .output()
-            .await;
-
-        // Add bjw-s Helm repo
-        let _ = Command::new("helm")
-            .args(["repo", "add", "bjw-s", APP_TEMPLATE_REPO, "--kubeconfig", KUBECONFIG])
-            .output()
-            .await;
-
-        // Update repos
-        let _ = Command::new("helm")
-            .args(["repo", "update", "--kubeconfig", KUBECONFIG])
-            .output()
-            .await;
-
-        info!("Apps bootstrap complete (namespace: {NAMESPACE}, repo: bjw-s)");
-        Ok(())
-    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

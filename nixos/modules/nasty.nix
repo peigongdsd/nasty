@@ -405,8 +405,8 @@ in {
       OVMF              # UEFI firmware for VMs
       pciutils          # lspci for passthrough device discovery
       k3s               # lightweight Kubernetes for app runtime (optional)
-      helm              # Helm chart manager for app deployment
-      kubectl           # Kubernetes CLI
+      kubernetes-helm   # Helm chart manager for app deployment
+      kubectl           # Kubernetes CLI (also available via k3s kubectl)
 
       (writeShellScriptBin "nasty-report" ''
         set -euo pipefail
