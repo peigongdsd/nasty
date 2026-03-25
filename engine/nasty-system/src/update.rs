@@ -78,9 +78,9 @@ impl std::str::FromStr for ReleaseChannel {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_lowercase().as_str() {
-            "mild" | "stable" => Ok(Self::Mild),
-            "spicy" | "beta" => Ok(Self::Spicy),
-            "nasty" | "edge" => Ok(Self::Nasty),
+            "mild" => Ok(Self::Mild),
+            "spicy" => Ok(Self::Spicy),
+            "nasty" => Ok(Self::Nasty),
             other => Err(format!("unknown channel: {other}")),
         }
     }
@@ -1095,7 +1095,7 @@ echo "==> bcachefs switch complete!"
     }
 }
 
-/// Remove any `fileSystems."/storage/..."` blocks from hardware-configuration.nix.
+/// Remove any `fileSystems."/fs/..."` blocks from hardware-configuration.nix.
 ///
 /// Filesystem mounts are managed at runtime by the engine. If a user ran
 /// `nixos-generate-config` while pools were mounted, those entries end up in
