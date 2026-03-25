@@ -5,7 +5,7 @@
 </script>
 
 {#if toasts.length > 0}
-	<div class="fixed bottom-4 right-4 z-[1000] flex max-w-[420px] flex-col-reverse gap-2">
+	<div class="fixed bottom-4 right-4 z-[1000] flex max-w-[560px] flex-col-reverse gap-2">
 		{#each toasts as toast (toast.id)}
 			<div
 				class="flex animate-in slide-in-from-bottom-2 items-start gap-2.5 rounded-lg border px-4 py-3 text-sm shadow-lg {
