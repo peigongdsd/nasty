@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
+use std::net::SocketAddr;
+
 use axum::extract::{
+    ConnectInfo,
     Path,
     State,
     ws::{Message, WebSocket, WebSocketUpgrade},
@@ -21,8 +24,10 @@ pub async fn vnc_handler(
     ws: WebSocketUpgrade,
     Path(vm_id): Path<String>,
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.vnc"), "vnc", vm_id, state))
+    let client_ip = addr.ip().to_string();
+    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.vnc"), "vnc", vm_id, state, client_ip))
 }
 
 /// WebSocket handler for serial console (text frames → serial unix socket).
@@ -30,8 +35,10 @@ pub async fn serial_handler(
     ws: WebSocketUpgrade,
     Path(vm_id): Path<String>,
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.serial"), "serial", vm_id, state))
+    let client_ip = addr.ip().to_string();
+    ws.on_upgrade(move |socket| proxy_unix_socket(socket, format!("{QMP_DIR}/{vm_id}.serial"), "serial", vm_id, state, client_ip))
 }
 
 /// Bidirectional proxy: WebSocket ↔ Unix socket.
@@ -44,6 +51,7 @@ async fn proxy_unix_socket(
     console_type: &str,
     vm_id: String,
     state: Arc<AppState>,
+    client_ip: String,
 ) {
     // Authenticate: first message must be a JSON token
     let token = match ws.recv().await {
@@ -57,8 +65,7 @@ async fn proxy_unix_socket(
         _ => return,
     };
 
-    // Validate token — use "127.0.0.1" as IP since this is an internal proxy
-    if state.auth.validate(&token, "127.0.0.1").await.is_err() {
+    if state.auth.validate(&token, &client_ip).await.is_err() {
         let _ = ws.send(Message::Text("unauthorized".into())).await;
         return;
     }
