@@ -12,10 +12,61 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import SortTh from '$lib/components/SortTh.svelte';
-	import { Camera, Copy, Trash2, Pencil, Check, X } from '@lucide/svelte';
+	import { Camera, Copy, Trash2, Pencil, Check, X, AlertTriangle } from '@lucide/svelte';
+
+	let pageTab = $state<'subvolumes' | 'snapshots'>(
+		typeof window !== 'undefined' && window.location.hash === '#snapshots' ? 'snapshots' : 'subvolumes'
+	);
 
 	let filesystems: Filesystem[] = $state([]);
 	let selectedFs = $state('');
+
+	// Snapshots tab state
+	let allSnapshots: Snapshot[] = $state([]);
+	let snapshotsLoading = $state(false);
+	let snapshotSearch = $state('');
+
+	async function loadSnapshots() {
+		if (!selectedFs) return;
+		snapshotsLoading = true;
+		try {
+			allSnapshots = await client.call<Snapshot[]>('snapshot.list', { filesystem: selectedFs });
+		} catch {
+			allSnapshots = [];
+		}
+		snapshotsLoading = false;
+	}
+
+	const filteredSnapshots = $derived(
+		snapshotSearch.trim()
+			? allSnapshots.filter(s =>
+				s.name.toLowerCase().includes(snapshotSearch.toLowerCase()) ||
+				s.subvolume.toLowerCase().includes(snapshotSearch.toLowerCase()))
+			: allSnapshots
+	);
+
+	function switchToSubvolumeAndExpand(subvolumeName: string) {
+		pageTab = 'subvolumes';
+		history.replaceState(null, '', '#subvolumes');
+		const sv = subvolumes.find(s => s.name === subvolumeName);
+		if (sv) {
+			openDetail(sv);
+		}
+	}
+
+	async function deleteSnapshotFromTab(subvolume: string, snap: string) {
+		if (!await confirm(`Delete snapshot "${snap}"?`)) return;
+		await withToast(
+			() => client.call('snapshot.delete', {
+				filesystem: selectedFs,
+				subvolume,
+				name: snap,
+			}),
+			`Snapshot "${snap}" deleted`
+		);
+		await loadSnapshots();
+		await refresh();
+	}
 	let subvolumes: Subvolume[] = $state([]);
 	let loading = $state(true);
 
@@ -168,7 +219,10 @@
 
 	function handleEvent(_: string, params: unknown) {
 		const p = params as { collection?: string };
-		if (p?.collection === 'subvolume' || p?.collection === 'snapshot') refresh();
+		if (p?.collection === 'subvolume' || p?.collection === 'snapshot') {
+			refresh();
+			if (pageTab === 'snapshots') loadSnapshots();
+		}
 	}
 
 	onMount(async () => {
@@ -178,6 +232,7 @@
 		if (mounted.length > 0) {
 			selectedFs = mounted[0].name;
 			await refresh();
+			if (pageTab === 'snapshots') await loadSnapshots();
 		}
 		loading = false;
 	});
@@ -194,6 +249,7 @@
 	async function selectFs(name: string) {
 		selectedFs = name;
 		await refresh();
+		if (pageTab === 'snapshots') await loadSnapshots();
 	}
 
 	async function createSubvolume() {
@@ -357,6 +413,22 @@
 	});
 </script>
 
+
+<!-- Page-level tabs -->
+<div class="mb-4 flex items-center gap-4 border-b border-border">
+	<button
+		onclick={() => { pageTab = 'subvolumes'; history.replaceState(null, '', '#subvolumes'); }}
+		class="px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px
+			{pageTab === 'subvolumes' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+	>Subvolumes</button>
+	<button
+		onclick={() => { pageTab = 'snapshots'; history.replaceState(null, '', '#snapshots'); loadSnapshots(); }}
+		class="px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px
+			{pageTab === 'snapshots' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
+	>Snapshots</button>
+</div>
+
+{#if pageTab === 'subvolumes'}
 
 {#if mountedFilesystems.length > 0}
 	<div class="mb-4 flex items-center gap-4">
@@ -715,6 +787,85 @@
 	</table>
 {/if}
 
+
+{/if}
+
+{#if pageTab === 'snapshots'}
+
+{#if mountedFilesystems.length > 0}
+	<div class="mb-4 flex items-center gap-4">
+		<select value={selectedFs} onchange={(e) => selectFs((e.target as HTMLSelectElement).value)} class="h-9 w-auto rounded-md border border-input bg-transparent px-3 text-sm">
+			{#each mountedFilesystems as p}
+				<option value={p.name}>{p.name}</option>
+			{/each}
+		</select>
+		<Input bind:value={snapshotSearch} placeholder="Search snapshots..." class="h-9 w-48" />
+	</div>
+{/if}
+
+{#if snapshotsLoading}
+	<p class="text-muted-foreground">Loading snapshots...</p>
+{:else if !selectedFs}
+	<p class="text-muted-foreground">No mounted filesystems.</p>
+{:else if filteredSnapshots.length === 0}
+	<p class="text-muted-foreground">{snapshotSearch ? 'No matching snapshots.' : `No snapshots in filesystem "${selectedFs}".`}</p>
+{:else}
+	<table class="w-full text-sm">
+		<thead>
+			<tr>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Snapshot Name</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Parent Subvolume</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Read-only</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Type</th>
+				<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
+			</tr>
+		</thead>
+		<tbody>
+			{#each filteredSnapshots as snap}
+				<tr class="border-b border-border">
+					<td class="p-3">
+						<span class="font-mono text-sm">{snap.name}</span>
+						{#if snap.path}
+							<span class="block font-mono text-xs text-muted-foreground">{snap.path}</span>
+						{/if}
+					</td>
+					<td class="p-3">
+						{#if subvolumes.find(sv => sv.name === snap.subvolume)}
+							<button
+								class="font-mono text-sm text-blue-400 hover:text-blue-300 transition-colors"
+								onclick={() => switchToSubvolumeAndExpand(snap.subvolume)}
+							>{snap.subvolume}</button>
+						{:else}
+							<span class="flex items-center gap-1.5">
+								<span class="font-mono text-sm text-muted-foreground">{snap.subvolume}</span>
+								<Badge variant="outline" class="bg-amber-950 text-amber-400 text-[0.6rem]">
+									<AlertTriangle class="mr-0.5 h-2.5 w-2.5" />deleted
+								</Badge>
+							</span>
+						{/if}
+					</td>
+					<td class="p-3">
+						{#if snap.read_only}
+							<Badge class="bg-green-950 text-green-400">read-only</Badge>
+						{:else}
+							<Badge variant="outline" class="text-muted-foreground">writable</Badge>
+						{/if}
+					</td>
+					<td class="p-3">
+						<Badge variant="secondary" class="bg-amber-950 text-amber-400">snapshot</Badge>
+					</td>
+					<td class="p-3">
+						<Button variant="destructive" size="xs" onclick={() => deleteSnapshotFromTab(snap.subvolume, snap.name)}>
+							<Trash2 class="mr-1 h-3 w-3" />Delete
+						</Button>
+					</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+{/if}
+
+{/if}
 
 <Dialog.Root open={showSnap !== null} onOpenChange={(open) => { if (!open) showSnap = null; }}>
 	<Dialog.Content>
