@@ -139,7 +139,9 @@ impl SmbService {
         if !Path::new(&req.path).exists() {
             return Err(SmbError::PathNotFound(req.path));
         }
-        if !req.path.starts_with("/fs/") {
+        let canonical = std::fs::canonicalize(&req.path)
+            .map_err(|_| SmbError::PathNotFound(req.path.clone()))?;
+        if !canonical.starts_with("/fs/") {
             return Err(SmbError::PathNotInFilesystem(req.path));
         }
 
@@ -247,6 +249,14 @@ impl SmbService {
     }
 }
 
+/// Strip characters that could inject new Samba config directives.
+/// Removes newlines, carriage returns, semicolons, and other control characters.
+fn sanitize_smb_value(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_control() && *c != ';' && *c != '\n' && *c != '\r')
+        .collect()
+}
+
 fn validate_share_name(name: &str) -> Result<(), SmbError> {
     if name.is_empty()
         || name.len() > 80
@@ -270,11 +280,11 @@ async fn write_share_conf(share: &SmbShare) -> Result<(), SmbError> {
         return Ok(());
     }
 
-    let mut conf = format!("[{}]\n", share.name);
+    let mut conf = format!("[{}]\n", sanitize_smb_value(&share.name));
     conf.push_str(&format!("    path = {}\n", share.path));
 
     if let Some(ref comment) = share.comment {
-        conf.push_str(&format!("    comment = {comment}\n"));
+        conf.push_str(&format!("    comment = {}\n", sanitize_smb_value(comment)));
     }
 
     conf.push_str(&format!(
@@ -298,22 +308,25 @@ async fn write_share_conf(share: &SmbShare) -> Result<(), SmbError> {
     } else if !share.valid_users.is_empty() {
         // Authenticated share: force operations as the first valid user
         // so writes use that identity regardless of the connecting user.
-        conf.push_str(&format!("    force user = {}\n", share.valid_users[0]));
+        conf.push_str(&format!("    force user = {}\n", sanitize_smb_value(&share.valid_users[0])));
         conf.push_str("    create mask = 0664\n");
         conf.push_str("    directory mask = 0775\n");
     }
 
     if !share.valid_users.is_empty() {
+        let sanitized_users: Vec<String> = share.valid_users.iter()
+            .map(|u| sanitize_smb_value(u))
+            .collect();
         conf.push_str(&format!(
             "    valid users = {}\n",
-            share.valid_users.join(" ")
+            sanitized_users.join(" ")
         ));
     }
 
     let mut extra: Vec<_> = share.extra_params.iter().collect();
     extra.sort_by_key(|(k, _)| *k);
     for (key, value) in extra {
-        conf.push_str(&format!("    {key} = {value}\n"));
+        conf.push_str(&format!("    {} = {}\n", sanitize_smb_value(key), sanitize_smb_value(value)));
     }
 
     tokio::fs::write(&path, &conf).await?;

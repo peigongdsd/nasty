@@ -275,6 +275,20 @@ fn state_dir() -> StateDir {
     StateDir::new(STATE_DIR)
 }
 
+/// Validate that a VM disk/ISO path resolves to an allowed location.
+/// After symlink resolution, the path must be under `/fs/` or be a `/dev/` block device.
+fn validate_vm_path(path: &str) -> Result<(), VmError> {
+    let canonical = std::fs::canonicalize(path)
+        .map_err(|_| VmError::InvalidDiskPath(format!("{} does not exist or cannot be resolved", path)))?;
+    let canonical_str = canonical.to_string_lossy();
+    if !canonical_str.starts_with("/fs/") && !canonical_str.starts_with("/dev/") {
+        return Err(VmError::InvalidDiskPath(format!(
+            "{} resolves to {} which is not under /fs/ or /dev/", path, canonical_str
+        )));
+    }
+    Ok(())
+}
+
 /// Path to the QMP unix socket for a given VM.
 fn qmp_socket_path(vm_id: &str) -> String {
     format!("{QMP_DIR}/{vm_id}.qmp")
@@ -370,7 +384,7 @@ impl VmService {
             return Err(VmError::AlreadyExists(req.name));
         }
 
-        // Validate disk paths exist
+        // Validate disk paths exist and are within allowed locations
         if let Some(ref disks) = req.disks {
             for disk in disks {
                 if !Path::new(&disk.path).exists() {
@@ -378,6 +392,7 @@ impl VmService {
                         "disk path {} does not exist", disk.path
                     )));
                 }
+                validate_vm_path(&disk.path)?;
             }
         }
         if let Some(ref iso) = req.boot_iso {
@@ -386,6 +401,7 @@ impl VmService {
                     "boot ISO {} does not exist", iso
                 )));
             }
+            validate_vm_path(iso)?;
         }
 
         let id = Uuid::new_v4().to_string();
@@ -491,13 +507,14 @@ impl VmService {
             return Err(VmError::KvmNotAvailable);
         }
 
-        // Validate all disk paths exist before starting
+        // Validate all disk paths exist and are within allowed locations before starting
         for disk in &config.disks {
             if !Path::new(&disk.path).exists() {
                 return Err(VmError::InvalidDiskPath(format!(
                     "disk path {} does not exist", disk.path
                 )));
             }
+            validate_vm_path(&disk.path)?;
         }
         if let Some(ref iso) = config.boot_iso {
             if !Path::new(iso).exists() {
@@ -505,6 +522,7 @@ impl VmService {
                     "boot ISO {} does not exist", iso
                 )));
             }
+            validate_vm_path(iso)?;
         }
 
         // Ensure runtime directory exists

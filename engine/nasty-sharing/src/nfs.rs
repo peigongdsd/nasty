@@ -20,10 +20,32 @@ pub enum NfsError {
     PathNotFound(String),
     #[error("path is not within a NASty filesystem: {0}")]
     PathNotInFilesystem(String),
+    #[error("invalid NFS client spec: {0}")]
+    InvalidClient(String),
     #[error("exportfs failed: {0}")]
     ExportFailed(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+/// Validate an NFS client host and options string.
+/// Rejects values containing whitespace, newlines, parentheses, quotes, or semicolons
+/// which could inject additional export entries.
+fn validate_nfs_client(client: &NfsClient) -> Result<(), NfsError> {
+    let bad_chars = |s: &str| -> bool {
+        s.chars().any(|c| c.is_whitespace() || matches!(c, '\n' | '\r' | '(' | ')' | '"' | '\'' | ';'))
+    };
+    if bad_chars(&client.host) {
+        return Err(NfsError::InvalidClient(format!(
+            "host '{}' contains invalid characters", client.host
+        )));
+    }
+    if bad_chars(&client.options) {
+        return Err(NfsError::InvalidClient(format!(
+            "options '{}' contain invalid characters", client.options
+        )));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -120,10 +142,16 @@ impl NfsService {
         if !Path::new(&req.path).exists() {
             return Err(NfsError::PathNotFound(req.path));
         }
-        if !req.path.starts_with("/fs/") {
+        let canonical = std::fs::canonicalize(&req.path)
+            .map_err(|_| NfsError::PathNotFound(req.path.clone()))?;
+        if !canonical.starts_with("/fs/") {
             return Err(NfsError::PathNotInFilesystem(req.path));
         }
 
+        // Validate all client specs before writing anything
+        for client in &req.clients {
+            validate_nfs_client(client)?;
+        }
 
         let shares: Vec<NfsShare> = state_dir().load_all().await;
 
