@@ -222,7 +222,7 @@
 			{ href: '/sharing',       label: 'Sharing',         icon: Share2 },
 		];
 		if (sysInfo?.kvm_available) {
-			items.push({ href: '/vms', label: 'Virtual Machines', icon: Monitor });
+			items.push({ href: '/vms', label: 'VMs', icon: Monitor });
 		}
 		items.push(
 			{ href: '/apps',          label: 'Apps',             icon: Box },

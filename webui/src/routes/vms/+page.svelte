@@ -274,7 +274,7 @@
 	}
 
 	async function deleteVm(id: string) {
-		if (!await confirm('Delete this virtual machine?', 'The VM configuration will be removed. Disk subvolumes are NOT deleted.')) return;
+		if (!await confirm('Delete this VM?', 'The VM configuration will be removed. Disk subvolumes are NOT deleted.')) return;
 		await withToast(
 			() => client.call('vm.delete', { id }),
 			'VM deleted'
@@ -427,7 +427,7 @@
 {#if showCreate}
 	<Card class="mb-6 max-w-lg">
 		<CardContent class="pt-6">
-			<h3 class="mb-4 text-lg font-semibold">New Virtual Machine</h3>
+			<h3 class="mb-4 text-lg font-semibold">New VM</h3>
 			<div class="mb-4">
 				<Label for="vm-name">Name</Label>
 				<Input id="vm-name" bind:value={newName} placeholder="my-vm" class="mt-1" />
@@ -534,7 +534,7 @@
 {#if loading}
 	<p class="text-muted-foreground">Loading...</p>
 {:else if vms.length === 0}
-	<p class="text-muted-foreground">No virtual machines configured.</p>
+	<p class="text-muted-foreground">No VMs configured.</p>
 {:else}
 	<table class="w-full text-sm">
 		<thead>
