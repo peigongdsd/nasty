@@ -119,8 +119,10 @@
 					uploadProgress = Math.round((e.loaded / e.total) * 100);
 				}
 			};
+			xhr.timeout = 3600_000; // 1 hour, matching nginx proxy timeouts
 
 			await new Promise<void>((resolve, reject) => {
+				xhr.ontimeout = () => reject(new Error('Upload timed out'));
 				xhr.onload = () => {
 					if (xhr.status >= 200 && xhr.status < 300) {
 						resolve();

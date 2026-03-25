@@ -232,59 +232,78 @@ async fn upload_vm_image_handler(
     };
 
     // Process the uploaded file
-    while let Ok(Some(mut field)) = multipart.next_field().await {
-        let file_name = field.file_name().unwrap_or("").to_string();
-        
-        if file_name.is_empty() {
-            continue;
-        }
+    let Some(mut field) = multipart.next_field().await.ok().flatten() else {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No file provided" }))).into_response();
+    };
 
-        let extensions = ["iso", "qcow2", "img", "raw"];
-        let ext = std::path::Path::new(&file_name)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase())
-            .unwrap_or_default();
+    let raw_name = field.file_name().unwrap_or("").to_string();
+    // Sanitize: strip any path components to prevent path traversal
+    let file_name = std::path::Path::new(&raw_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string();
 
-        if !extensions.contains(&ext.as_str()) {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Invalid file type. Supported: {:?}", extensions) }))).into_response();
-        }
-
-        let dest_path = std::path::Path::new(&subvolume.path).join(&file_name);
-        
-        // Stream file content to disk
-        let mut file = match tokio::fs::File::create(&dest_path).await {
-            Ok(f) => f,
-            Err(e) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create file: {}", e) }))).into_response();
-            }
-        };
-        use tokio::io::AsyncWriteExt;
-        loop {
-            match field.chunk().await {
-                Ok(Some(chunk)) => {
-                    if let Err(e) = file.write_all(&chunk).await {
-                        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to write chunk: {}", e) }))).into_response();
-                    }
-                }
-                Ok(None) => break,
-                Err(e) => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to read chunk: {}", e) }))).into_response();
-                }
-            }
-        }
-        if let Err(e) = file.sync_all().await {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to sync file: {}", e) }))).into_response();
-        }
-        info!("User '{}' uploaded VM image: {}", session.username, file_name);
-        return (StatusCode::OK, Json(serde_json::json!({ 
-            "name": file_name,
-            "path": dest_path.to_string_lossy(),
-            "filesystem": fs_name,
-        }))).into_response();
+    if file_name.is_empty() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No file provided" }))).into_response();
     }
 
-    (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No file provided" }))).into_response()
+    let extensions = ["iso", "qcow2", "img", "raw"];
+    let ext = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+
+    if !extensions.contains(&ext.as_str()) {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Invalid file type. Supported: {:?}", extensions) }))).into_response();
+    }
+
+    let dest_path = std::path::Path::new(&subvolume.path).join(&file_name);
+
+    if dest_path.exists() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({ "error": format!("Image '{}' already exists", file_name) }))).into_response();
+    }
+
+    // Stream file content to disk
+    let mut file = match tokio::fs::File::create(&dest_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create file: {}", e) }))).into_response();
+        }
+    };
+
+    use tokio::io::AsyncWriteExt;
+    let cleanup = || async { let _ = tokio::fs::remove_file(&dest_path).await; };
+    loop {
+        match field.chunk().await {
+            Ok(Some(chunk)) => {
+                if let Err(e) = file.write_all(&chunk).await {
+                    drop(file);
+                    cleanup().await;
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to write chunk: {}", e) }))).into_response();
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                cleanup().await;
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to read chunk: {}", e) }))).into_response();
+            }
+        }
+    }
+    if let Err(e) = file.sync_all().await {
+        drop(file);
+        cleanup().await;
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to sync file: {}", e) }))).into_response();
+    }
+
+    info!("User '{}' uploaded VM image: {}", session.username, file_name);
+    (StatusCode::OK, Json(serde_json::json!({
+        "name": file_name,
+        "path": dest_path.to_string_lossy(),
+        "filesystem": fs_name,
+    }))).into_response()
 }
 
 // ── Login endpoint ──────────────────────────────────────────────
