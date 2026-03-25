@@ -372,6 +372,9 @@ in {
     # They are loaded on demand by the engine when the user enables
     # a protocol, keeping a clean default state on fresh installs.
 
+    # ── Firmware updates (fwupd) ────────────────────────────────
+    services.fwupd.enable = true;
+
     # ── k3s (app runtime, disabled by default) ─────────────────
     # k3s is installed but NOT started automatically. The engine starts it
     # via systemctl when the user enables apps from the WebUI.

@@ -50,6 +50,7 @@ pub struct AppState {
     pub nvmeof: Arc<nasty_sharing::NvmeofService>,
     pub vms: nasty_vm::VmService,
     pub apps: nasty_apps::AppsService,
+    pub firmware: nasty_system::firmware::FirmwareService,
 }
 
 /// Base URL for the nasty-metrics service.
@@ -95,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         nvmeof,
         vms: nasty_vm::VmService::new(),
         apps: nasty_apps::AppsService::new(),
+        firmware: nasty_system::firmware::FirmwareService::new(),
     });
 
     // Restore state from previous session:

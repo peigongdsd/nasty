@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { UpdateInfo, UpdateStatus, BcachefsToolsInfo, Generation } from '$lib/types';
+	import type { UpdateInfo, UpdateStatus, BcachefsToolsInfo, Generation, FirmwareDevice, FirmwareUpdateResult } from '$lib/types';
 	import { Tag, Trash2, ArrowRightLeft, Pencil, X, Check } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -12,9 +12,10 @@
 	import { rebootState } from '$lib/reboot.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
 
-	let activeTab: 'system' | 'generations' | 'bcachefs' = $state(
+	let activeTab: 'system' | 'generations' | 'bcachefs' | 'firmware' = $state(
 		typeof window !== 'undefined' && window.location.hash === '#bcachefs' ? 'bcachefs'
 		: typeof window !== 'undefined' && window.location.hash === '#generations' ? 'generations'
+		: typeof window !== 'undefined' && window.location.hash === '#firmware' ? 'firmware'
 		: 'system'
 	);
 
@@ -53,6 +54,13 @@
 	let bcachefsLogEl: HTMLPreElement | undefined = $state();
 	let bcachefsPollInterval: ReturnType<typeof setInterval> | null = null;
 	let bcachefsLogCollapsed = $state(false);
+
+	// ── Firmware tab state ─────────────────────────────────
+	let firmwareAvailable = $state(false);
+	let firmwareDevices: FirmwareDevice[] = $state([]);
+	let firmwareLoading = $state(false);
+	let firmwareLoaded = $state(false);
+	let firmwareUpdating: Record<string, boolean> = $state({});
 
 	const phases = [
 		{ label: 'Fetch',    marker: '==> Pulling' },
@@ -226,6 +234,38 @@
 			info = { ...info, channel: channel as any };
 		}
 	}
+
+	// ── Firmware functions ──────────────────────────────────
+
+	async function loadFirmware() {
+		firmwareLoading = true;
+		try {
+			firmwareAvailable = await client.call<boolean>('firmware.available');
+			if (firmwareAvailable) {
+				firmwareDevices = await client.call<FirmwareDevice[]>('firmware.check');
+			}
+		} catch { /* ignore */ }
+		firmwareLoading = false;
+		firmwareLoaded = true;
+	}
+
+	async function updateFirmware(deviceId: string) {
+		if (!await confirm('Apply firmware update?', 'This will flash new firmware to the device. Do not power off during the update. A reboot may be required.')) return;
+		firmwareUpdating[deviceId] = true;
+		const result = await withToast(
+			() => client.call<FirmwareUpdateResult>('firmware.update', { device_id: deviceId }),
+			'Firmware update applied'
+		);
+		firmwareUpdating[deviceId] = false;
+		if (result?.reboot_required) {
+			rebootState.set();
+		}
+		await loadFirmware();
+	}
+
+	$effect(() => {
+		if (activeTab === 'firmware' && !firmwareLoaded) loadFirmware();
+	});
 
 	function startPolling() {
 		stopPolling();
@@ -425,10 +465,17 @@
 		</button>
 		<button
 			onclick={() => activeTab = 'bcachefs'}
-			class="flex items-center gap-2 rounded-r-md px-5 py-1.5 font-medium transition-colors
+			class="flex items-center gap-2 px-5 py-1.5 font-medium transition-colors
 				{activeTab === 'bcachefs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
 		>
 			bcachefs
+		</button>
+		<button
+			onclick={() => activeTab = 'firmware'}
+			class="flex items-center gap-2 rounded-r-md px-5 py-1.5 font-medium transition-colors
+				{activeTab === 'firmware' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
+		>
+			Firmware
 		</button>
 	</div>
 
@@ -905,6 +952,73 @@
 							<Button size="sm" onclick={doBcachefsSwitch} disabled={!bcachefsRef.trim()}>Retry</Button>
 							<Button variant="secondary" size="sm" onclick={() => bcachefsStatus = { state: 'idle', log: '', reboot_required: false, webui_changed: false }}>Dismiss</Button>
 						</div>
+					{/if}
+				</CardContent>
+			</Card>
+		{/if}
+	<!-- Firmware tab -->
+	{:else if activeTab === 'firmware'}
+		{#if firmwareLoading}
+			<p class="text-muted-foreground">Checking firmware...</p>
+		{:else if !firmwareAvailable}
+			<Card>
+				<CardContent class="py-5">
+					<p class="text-muted-foreground">Firmware management is not available on this system (virtual machine detected).</p>
+				</CardContent>
+			</Card>
+		{:else}
+			<Card class="mb-4">
+				<CardContent class="py-5">
+					<div class="flex items-center justify-between mb-4">
+						<div>
+							<h3 class="text-lg font-semibold">Firmware Updates</h3>
+							<p class="text-sm text-muted-foreground">Manage device firmware via fwupd (LVFS).</p>
+						</div>
+						<Button size="sm" onclick={loadFirmware} disabled={firmwareLoading}>
+							{firmwareLoading ? 'Checking...' : 'Check for Updates'}
+						</Button>
+					</div>
+
+					{#if firmwareDevices.length === 0}
+						<p class="text-sm text-muted-foreground">No firmware-capable devices detected.</p>
+					{:else}
+						<table class="w-full text-sm">
+							<thead>
+								<tr>
+									<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Device</th>
+									<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Vendor</th>
+									<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Version</th>
+									<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Update</th>
+									<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each firmwareDevices as dev}
+									<tr class="border-b border-border">
+										<td class="p-3 font-semibold">{dev.name}</td>
+										<td class="p-3 text-muted-foreground">{dev.vendor}</td>
+										<td class="p-3 font-mono text-xs">{dev.version}</td>
+										<td class="p-3">
+											{#if dev.update_available}
+												<Badge variant="default">{dev.update_version}</Badge>
+												{#if dev.update_description}
+													<span class="ml-2 text-xs text-muted-foreground">{dev.update_description}</span>
+												{/if}
+											{:else}
+												<span class="text-xs text-muted-foreground">Up to date</span>
+											{/if}
+										</td>
+										<td class="p-3">
+											{#if dev.update_available}
+												<Button size="xs" onclick={() => updateFirmware(dev.device_id)} disabled={firmwareUpdating[dev.device_id]}>
+													{firmwareUpdating[dev.device_id] ? 'Updating...' : 'Update'}
+												</Button>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
 					{/if}
 				</CardContent>
 			</Card>

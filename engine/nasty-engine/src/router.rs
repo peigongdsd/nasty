@@ -32,6 +32,7 @@ fn is_operator_allowed(method: &str) -> bool {
             | "apps.install_chart"
             | "apps.repo.add" | "apps.repo.remove" | "apps.repo.update"
             | "apps.ingress.set" | "apps.ingress.remove"
+            | "firmware.update"
         )
 }
 
@@ -307,6 +308,13 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "system.update.status" => ok(req, state.updates.status().await),
         "system.update.channel.get" => ok(req, state.updates.get_channel().await),
+        "firmware.available" => ok(req, state.firmware.is_available().await),
+        "firmware.devices" => ok(req, state.firmware.list_devices().await),
+        "firmware.check" => ok(req, state.firmware.check_updates().await),
+        "firmware.update" => match require_str(req, "device_id") {
+            Ok(id) => ok(req, state.firmware.update_device(id).await),
+            Err(r) => r,
+        },
         "system.update.channel.set" => match require_str(req, "channel") {
             Ok(ch) => match ch.parse::<nasty_system::update::ReleaseChannel>() {
                 Ok(channel) => match state.updates.set_channel(channel).await {

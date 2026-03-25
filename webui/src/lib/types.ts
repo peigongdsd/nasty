@@ -316,6 +316,23 @@ export interface SmartAttribute {
 	failing: boolean;
 }
 
+export interface FirmwareDevice {
+	name: string;
+	device_id: string;
+	version: string;
+	vendor: string;
+	update_available: boolean;
+	update_version?: string;
+	update_description?: string;
+}
+
+export interface FirmwareUpdateResult {
+	device_name: string;
+	success: boolean;
+	message: string;
+	reboot_required: boolean;
+}
+
 export type ReleaseChannel = 'stable' | 'beta' | 'edge';
 
 export interface UpdateInfo {
