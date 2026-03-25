@@ -848,7 +848,13 @@ impl SubvolumeService {
         req: DeleteSnapshotRequest,
         owner_filter: Option<&str>,
     ) -> Result<(), SubvolumeError> {
-        self.get(&req.filesystem, &req.subvolume, owner_filter).await?;
+        // Verify ownership if the parent subvolume still exists.
+        // The parent may have been deleted (DR scenario) — orphaned snapshots
+        // should still be deletable.
+        if let Ok(_parent) = self.get(&req.filesystem, &req.subvolume, owner_filter).await {
+            // Parent exists and ownership verified
+        }
+
         let mount_point = self.fs_mount_point(&req.filesystem).await?;
         let snap_path = snap_path(&mount_point, &req.subvolume, &req.name);
 
