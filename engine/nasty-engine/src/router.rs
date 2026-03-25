@@ -738,6 +738,8 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Ok(p) => {
                 if session.filesystem.as_deref().map_or(false, |f| f != p.filesystem) {
                     err(req, "access denied")
+                } else if let Some(conflict) = check_subvolume_in_use(state, &p.filesystem, &p.name).await {
+                    err(req, conflict)
                 } else {
                     match state.subvolumes.delete(p, session.owner.as_deref()).await {
                         Ok(()) => ok(req, "ok"),
@@ -1414,6 +1416,60 @@ async fn check_block_device_conflict(
                             device_path, sub.nqn
                         ));
                     }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// ── Subvolume in-use check ───────────────────────────────────────
+
+/// Check if a subvolume is in use by a VM, iSCSI target, or NVMe-oF subsystem.
+/// Returns an error message if in use, None if safe to delete.
+async fn check_subvolume_in_use(state: &AppState, filesystem: &str, name: &str) -> Option<String> {
+    // Resolve the block device path for this subvolume
+    let sv = state.subvolumes.get(filesystem, name, None).await.ok()?;
+    let block_device = sv.block_device.as_deref()?;
+
+    // Check VMs
+    if let Ok(vms) = state.vms.list().await {
+        for vm in &vms {
+            for disk in &vm.config.disks {
+                if disk.path == block_device {
+                    return Some(format!(
+                        "subvolume is in use as a disk by VM '{}'. Stop and remove the VM first.",
+                        vm.config.name
+                    ));
+                }
+            }
+        }
+    }
+
+    // Check iSCSI targets
+    if let Ok(targets) = state.iscsi.list().await {
+        for target in &targets {
+            for lun in &target.luns {
+                if lun.backstore_path == block_device {
+                    return Some(format!(
+                        "subvolume is in use by iSCSI target '{}'. Delete the target first.",
+                        target.iqn
+                    ));
+                }
+            }
+        }
+    }
+
+    // Check NVMe-oF subsystems
+    if let Ok(subsystems) = state.nvmeof.list().await {
+        for subsys in &subsystems {
+            for ns in &subsys.namespaces {
+                if ns.device_path == block_device {
+                    return Some(format!(
+                        "subvolume is in use by NVMe-oF subsystem '{}'. Delete the subsystem first.",
+                        subsys.nqn
+                    ));
                 }
             }
         }
