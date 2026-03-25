@@ -509,21 +509,32 @@
 					<div class="mb-5 flex items-center gap-3">
 						<span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Channel</span>
 						<div class="flex rounded-md overflow-hidden border border-border">
-							{#each ['stable', 'beta', 'edge'] as ch}
-								<button
-									class="px-3 py-1 text-xs transition-colors {info.channel === ch ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}"
-									onclick={() => changeChannel(ch)}
-									disabled={status?.state === 'running'}
-								>{ch.charAt(0).toUpperCase() + ch.slice(1)}</button>
-							{/each}
+							<button
+								title="Tagged releases only. Safe, tested, boring."
+								class="px-3 py-1 text-xs transition-colors {info.channel === 'mild' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}"
+								onclick={() => changeChannel('mild')}
+								disabled={status?.state === 'running'}
+							>Mild</button>
+							<button
+								title="Pre-release branch. New features, occasional heartburn."
+								class="px-3 py-1 text-xs transition-colors {info.channel === 'spicy' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}"
+								onclick={() => changeChannel('spicy')}
+								disabled={status?.state === 'running'}
+							>Spicy</button>
+							<button
+								title="Latest development branch. Bleeding edge — you asked for it."
+								class="px-3 py-1 text-xs transition-colors {info.channel === 'nasty' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted text-muted-foreground'}"
+								onclick={() => changeChannel('nasty')}
+								disabled={status?.state === 'running'}
+							>Nasty</button>
 						</div>
 						<span class="text-xs text-muted-foreground">
-							{#if info.channel === 'stable'}
-								Tagged releases. Most reliable.
-							{:else if info.channel === 'beta'}
-								Pre-release branch. May have rough edges.
+							{#if info.channel === 'mild'}
+								Safe, tested, boring.
+							{:else if info.channel === 'spicy'}
+								New features, occasional heartburn.
 							{:else}
-								Latest development. May break.
+								Bleeding edge — you asked for it.
 							{/if}
 						</span>
 					</div>
