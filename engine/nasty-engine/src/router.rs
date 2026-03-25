@@ -1223,6 +1223,18 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Err(e) => invalid(req, e),
         },
 
+        // List ISO files from isos subvolumes across all filesystems
+        "vm.iso.list" => ok(req, list_isos(state).await),
+
+        // Ensure an "isos" subvolume exists on the given filesystem, create if missing
+        "vm.iso.ensure" => match require_str(req, "filesystem") {
+            Ok(fs) => match ensure_isos_subvolume(state, fs).await {
+                Ok(path) => ok(req, path),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+
         // ── Apps ──────────────────────────────────────────────
         "apps.status" => match state.apps.status().await {
             s => ok(req, s),
@@ -1422,6 +1434,67 @@ async fn check_block_device_conflict(
     }
 
     None
+}
+
+// ── ISO management ──────────────────────────────────────────────
+
+/// List all .iso files from "isos" subvolumes across all filesystems.
+async fn list_isos(state: &AppState) -> Vec<serde_json::Value> {
+    let subvols = state.subvolumes.list_all(None, None).await.unwrap_or_default();
+    let mut isos = Vec::new();
+
+    for sv in &subvols {
+        if sv.name == "isos" {
+            let dir = &sv.path;
+            if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
+                while let Ok(Some(entry)) = entries.next_entry().await {
+                    let path = entry.path();
+                    if let Some(ext) = path.extension() {
+                        if ext.eq_ignore_ascii_case("iso") {
+                            let name = path.file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let size = tokio::fs::metadata(&path).await
+                                .map(|m| m.len())
+                                .unwrap_or(0);
+                            isos.push(serde_json::json!({
+                                "name": name,
+                                "path": path.to_string_lossy(),
+                                "filesystem": sv.filesystem,
+                                "size_bytes": size,
+                            }));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    isos
+}
+
+/// Ensure an "isos" subvolume exists on a filesystem. Creates it if missing.
+/// Returns the path to the isos directory.
+async fn ensure_isos_subvolume(state: &AppState, filesystem: &str) -> Result<String, String> {
+    // Check if it already exists
+    if let Ok(sv) = state.subvolumes.get(filesystem, "isos", None).await {
+        return Ok(sv.path);
+    }
+
+    // Create it
+    let req = nasty_storage::subvolume::CreateSubvolumeRequest {
+        filesystem: filesystem.to_string(),
+        name: "isos".to_string(),
+        subvolume_type: nasty_storage::subvolume::SubvolumeType::Filesystem,
+        volsize_bytes: None,
+        compression: Some("zstd".to_string()),
+        comments: Some("ISO images for VMs".to_string()),
+    };
+
+    let sv = state.subvolumes.create(req, None::<String>).await
+        .map_err(|e| format!("failed to create isos subvolume: {e}"))?;
+
+    Ok(sv.path)
 }
 
 // ── Subvolume in-use check ───────────────────────────────────────
