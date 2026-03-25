@@ -7,26 +7,10 @@
     ./tls.nix
   ];
 
-  # Boot loader — UEFI with Limine
-  boot.loader.limine.enable = true;
-  boot.loader.limine.maxGenerations = 10;
+  # Boot loader — systemd-boot (UEFI)
+  boot.loader.systemd-boot.enable = true;
+  boot.loader.systemd-boot.configurationLimit = 10;
   boot.loader.efi.canTouchEfiVariables = true;
-
-  boot.loader.limine.style.wallpapers = [
-    (pkgs.runCommand "nasty-limine-bg.png" {
-      nativeBuildInputs = [ pkgs.librsvg pkgs.imagemagick ];
-    } ''
-      rsvg-convert -w 460 -h 460 \
-        ${../webui/src/lib/assets/nasty-white.svg} \
-        -o /tmp/logo.png
-      magick \
-        -size 1920x1080 xc:'#0f1117' \
-        /tmp/logo.png -gravity SouthEast -geometry +100+120 -composite \
-        PNG24:$out
-    '')
-  ];
-  boot.loader.limine.style.wallpaperStyle = "stretched";
-  boot.loader.limine.style.interface.branding = "NASty";
 
   networking.hostName = "nasty";
 

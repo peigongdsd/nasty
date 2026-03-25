@@ -95,7 +95,7 @@
         modules = [
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
-          ./modules/limine
+
           ./modules/nasty.nix
           ./configuration.nix
         ];
@@ -120,7 +120,7 @@
         modules = [
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
-          ./modules/limine
+
           ./modules/nasty.nix
           ./configuration.nix
           ./vm.nix
