@@ -166,8 +166,13 @@ fn sd_notify_ready() {
     info!("Notified systemd: READY");
 }
 
-async fn health() -> &'static str {
-    "ok"
+async fn health() -> impl IntoResponse {
+    Json(serde_json::json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "commit": env!("NASTY_GIT_COMMIT"),
+        "built": env!("NASTY_BUILD_DATE"),
+    }))
 }
 
 // ── VM Image Upload ────────────────────────────────────────────────
@@ -177,6 +182,13 @@ async fn upload_vm_image_handler(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
+    let client_ip = headers.get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+
+    info!("VM image upload request from {}", client_ip);
+
     // Authenticate
     let token = headers
         .get("authorization")
@@ -187,17 +199,15 @@ async fn upload_vm_image_handler(
     let token = match token {
         Some(t) => t,
         None => {
+            info!("VM image upload rejected: missing auth token (from {})", client_ip);
             return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Missing authorization token" }))).into_response();
         }
     };
 
-    let client_ip = headers.get("x-real-ip")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown");
-
-    let session = match state.auth.validate(&token, client_ip).await {
+    let session = match state.auth.validate(&token, &client_ip).await {
         Ok(s) => s,
         Err(e) => {
+            info!("VM image upload rejected: invalid token (from {})", client_ip);
             return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": format!("Invalid token: {}", e) }))).into_response();
         }
     };
@@ -245,8 +255,11 @@ async fn upload_vm_image_handler(
         .to_string();
 
     if file_name.is_empty() {
+        info!("VM image upload rejected: empty filename (user '{}')", session.username);
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No file provided" }))).into_response();
     }
+
+    info!("User '{}' uploading VM image: '{}' to {}", session.username, file_name, subvolume.path);
 
     let extensions = ["iso", "qcow2", "img", "raw"];
     let ext = std::path::Path::new(&file_name)
@@ -275,12 +288,16 @@ async fn upload_vm_image_handler(
 
     use tokio::io::AsyncWriteExt;
     let cleanup = || async { let _ = tokio::fs::remove_file(&dest_path).await; };
+    let start = std::time::Instant::now();
+    let mut total_bytes: u64 = 0;
     loop {
         match field.chunk().await {
             Ok(Some(chunk)) => {
+                total_bytes += chunk.len() as u64;
                 if let Err(e) = file.write_all(&chunk).await {
                     drop(file);
                     cleanup().await;
+                    tracing::error!("VM image upload write failed after {} bytes for '{}': {}", total_bytes, file_name, e);
                     return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to write chunk: {}", e) }))).into_response();
                 }
             }
@@ -288,6 +305,7 @@ async fn upload_vm_image_handler(
             Err(e) => {
                 drop(file);
                 cleanup().await;
+                tracing::error!("VM image upload stream failed after {} bytes for '{}': {}", total_bytes, file_name, e);
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to read chunk: {}", e) }))).into_response();
             }
         }
@@ -295,10 +313,14 @@ async fn upload_vm_image_handler(
     if let Err(e) = file.sync_all().await {
         drop(file);
         cleanup().await;
+        tracing::error!("VM image upload sync failed for '{}': {}", file_name, e);
         return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to sync file: {}", e) }))).into_response();
     }
 
-    info!("User '{}' uploaded VM image: {}", session.username, file_name);
+    let elapsed = start.elapsed();
+    let size_mib = total_bytes as f64 / (1024.0 * 1024.0);
+    let rate_mibs = if elapsed.as_secs_f64() > 0.0 { size_mib / elapsed.as_secs_f64() } else { 0.0 };
+    info!("User '{}' uploaded VM image: '{}' ({:.1} MiB in {:.1}s, {:.1} MiB/s)", session.username, file_name, size_mib, elapsed.as_secs_f64(), rate_mibs);
     (StatusCode::OK, Json(serde_json::json!({
         "name": file_name,
         "path": dest_path.to_string_lossy(),
@@ -321,12 +343,14 @@ async fn login_handler(
 ) -> impl IntoResponse {
     let client_ip = headers.get("x-real-ip").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
     match state.auth.login(&req.username, &req.password, client_ip).await {
-        Ok(token) => (StatusCode::OK, Json(serde_json::json!({ "token": token }))).into_response(),
-        Err(_) => (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "invalid credentials" })),
-        )
-            .into_response(),
+        Ok(token) => {
+            info!("Login successful: user '{}' from {}", req.username, client_ip);
+            (StatusCode::OK, Json(serde_json::json!({ "token": token }))).into_response()
+        }
+        Err(_) => {
+            tracing::warn!("Login failed: user '{}' from {}", req.username, client_ip);
+            (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "invalid credentials" }))).into_response()
+        }
     }
 }
 
