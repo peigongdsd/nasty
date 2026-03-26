@@ -540,11 +540,17 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(e) => invalid(req, e),
         },
-        "fs.destroy" => match parse_params(req) {
-            Ok(p) => match state.filesystems.destroy(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
+        "fs.destroy" => match parse_params::<nasty_storage::filesystem::DestroyFilesystemRequest>(req) {
+            Ok(p) => {
+                if let Some(reason) = check_filesystem_in_use(state, &p.name).await {
+                    err(req, reason)
+                } else {
+                    match state.filesystems.destroy(p).await {
+                        Ok(()) => ok(req, "ok"),
+                        Err(e) => err(req, e),
+                    }
+                }
+            }
             Err(e) => invalid(req, e),
         },
         "fs.mount" => match require_str(req, "name") {
@@ -1682,6 +1688,42 @@ async fn check_subvolume_in_use(state: &AppState, filesystem: &str, name: &str) 
                         ));
                     }
                 }
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if a filesystem has any subvolumes with dependencies that would prevent destruction.
+async fn check_filesystem_in_use(state: &AppState, name: &str) -> Option<String> {
+    // Get all subvolumes on this filesystem
+    let subvols = state.subvolumes.list_all(None, None).await.unwrap_or_default();
+    let fs_subvols: Vec<_> = subvols.iter().filter(|sv| sv.filesystem == name).collect();
+
+    if fs_subvols.is_empty() {
+        return None;
+    }
+
+    // Check each subvolume for dependencies
+    for sv in &fs_subvols {
+        if let Some(reason) = check_subvolume_in_use(state, name, &sv.name).await {
+            return Some(format!(
+                "filesystem '{}' cannot be destroyed: subvolume '{}' is in use — {}",
+                name, sv.name, reason
+            ));
+        }
+    }
+
+    // Check if apps runtime uses this filesystem
+    if state.apps.is_enabled() {
+        let config = nasty_apps::AppsService::load_config();
+        if let Some(ref path) = config.storage_path {
+            if path.starts_with(&format!("/fs/{name}/")) {
+                return Some(format!(
+                    "filesystem '{}' cannot be destroyed: apps runtime storage is on this filesystem. Disable Apps first.",
+                    name
+                ));
             }
         }
     }

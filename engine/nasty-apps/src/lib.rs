@@ -88,11 +88,11 @@ pub struct EnableAppsRequest {
 
 /// Persisted apps configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct AppsConfig {
+pub struct AppsConfig {
     #[serde(default)]
-    enabled: bool,
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    storage_path: Option<String>,
+    pub storage_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -270,7 +270,7 @@ impl AppsService {
         Path::new(STATE_PATH).exists()
     }
 
-    fn load_config() -> AppsConfig {
+    pub fn load_config() -> AppsConfig {
         let content = match std::fs::read_to_string(STATE_PATH) {
             Ok(c) => c,
             Err(_) => return AppsConfig::default(),
