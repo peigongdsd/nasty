@@ -57,9 +57,9 @@ impl GcConfig {
 
     pub async fn save(&self) -> Result<(), UpdateError> {
         let json = serde_json::to_string_pretty(self)
-            .map_err(|e| UpdateError::Failed(e.to_string()))?;
+            .map_err(|e| UpdateError::CommandFailed(e.to_string()))?;
         tokio::fs::write(GC_CONFIG_PATH, json).await
-            .map_err(|e| UpdateError::Failed(e.to_string()))
+            .map_err(|e| UpdateError::CommandFailed(e.to_string()))
     }
 }
 
