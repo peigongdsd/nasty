@@ -673,7 +673,7 @@ in {
       after = [ "network.target" "nasty-engine.service" ];
 
       serviceConfig = {
-        ExecStart = "${pkgs.dufs}/bin/dufs /fs --bind 127.0.0.1 --port 5171 --allow-search --allow-archive --render-try-index";
+        ExecStart = "${pkgs.dufs}/bin/dufs /fs --bind 127.0.0.1 --port 5171 --path-prefix /files --allow-all";
         Restart = "always";
         RestartSec = 5;
       };
@@ -885,8 +885,8 @@ in {
         };
 
         # File browser (dufs)
-        locations."/files/" = {
-          proxyPass = "http://127.0.0.1:5171/";
+        locations."/files" = {
+          proxyPass = "http://127.0.0.1:5171";
           extraConfig = ''
             proxy_set_header X-Real-IP $remote_addr;
           '';
