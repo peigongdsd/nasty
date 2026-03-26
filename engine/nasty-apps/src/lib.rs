@@ -939,13 +939,13 @@ fn generate_app_template_values(req: &InstallAppRequest) -> serde_json::Value {
         env_list.insert(e.name.clone(), serde_json::json!(e.value));
     }
 
-    let mut ports = serde_json::Map::new();
-    for p in &req.ports {
-        ports.insert(p.name.clone(), serde_json::json!({
-            "port": p.container_port,
+    let ports: Vec<serde_json::Value> = req.ports.iter().map(|p| {
+        serde_json::json!({
+            "containerPort": p.container_port,
+            "name": p.name,
             "protocol": p.protocol,
-        }));
-    }
+        })
+    }).collect();
 
     let mut persistence = serde_json::Map::new();
     for v in &req.volumes {
