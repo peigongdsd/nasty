@@ -200,6 +200,9 @@
 
 		term = new Terminal({
 			cursorBlink: false,
+			cursorStyle: 'bar',
+			cursorInactiveStyle: 'none',
+			scrollback: 0,
 			fontSize: 13,
 			fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
 			theme: {
@@ -285,20 +288,32 @@
 		}
 	});
 
-	// Helper to render timestats sections as tables
-	function timestatsEntries(section: any): { name: string; count: number; dur_min: string; dur_max: string; dur_total: string; mean: string; mean_recent: string; stddev: string; stddev_recent: string }[] {
+	// Format nanoseconds to human-readable duration
+	function fmtNs(ns: number): string {
+		if (ns === 0) return '0';
+		if (ns < 1000) return `${ns}ns`;
+		if (ns < 1_000_000) return `${(ns / 1000).toFixed(1)}us`;
+		if (ns < 1_000_000_000) return `${(ns / 1_000_000).toFixed(1)}ms`;
+		return `${(ns / 1_000_000_000).toFixed(2)}s`;
+	}
+
+	// Parse timestats JSON: { device: { operation: { count, duration_ns: {min,max,total,mean,stddev}, duration_ewma_ns: {mean,stddev} } } }
+	function timestatsEntries(section: any): { name: string; count: number; dur_min: string; dur_max: string; dur_total: string; mean: string; ewma_mean: string; stddev: string }[] {
 		if (!section || typeof section !== 'object') return [];
-		return Object.entries(section).map(([name, v]: [string, any]) => ({
-			name,
-			count: v?.count ?? 0,
-			dur_min: v?.duration_min ?? '—',
-			dur_max: v?.duration_max ?? '—',
-			dur_total: v?.duration_total ?? '—',
-			mean: v?.mean ?? v?.mean_since ?? '—',
-			mean_recent: v?.mean_recent ?? '—',
-			stddev: v?.stddev ?? v?.stddev_since ?? '—',
-			stddev_recent: v?.stddev_recent ?? '—',
-		})).filter(e => e.count > 0);
+		return Object.entries(section).map(([name, v]: [string, any]) => {
+			const dur = v?.duration_ns ?? {};
+			const ewma = v?.duration_ewma_ns ?? {};
+			return {
+				name,
+				count: v?.count ?? 0,
+				dur_min: fmtNs(dur.min ?? 0),
+				dur_max: fmtNs(dur.max ?? 0),
+				dur_total: fmtNs(dur.total ?? 0),
+				mean: fmtNs(dur.mean ?? 0),
+				ewma_mean: fmtNs(ewma.mean ?? 0),
+				stddev: fmtNs(dur.stddev ?? 0),
+			};
+		}).filter(e => e.count > 0);
 	}
 </script>
 
@@ -479,7 +494,7 @@
 					{#if entries.length > 0}
 						<div class="rounded-lg border border-border bg-card overflow-hidden">
 							<div class="px-4 py-2 border-b border-border bg-secondary/30">
-								<h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{sectionName.replace(/_/g, ' ')}</h3>
+								<h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{sectionName}</h3>
 							</div>
 							<div class="overflow-x-auto">
 								<table class="w-full text-xs font-mono">
@@ -491,7 +506,7 @@
 											<th class="px-3 py-2 text-right">Max</th>
 											<th class="px-3 py-2 text-right">Total</th>
 											<th class="px-3 py-2 text-right">Mean</th>
-											<th class="px-3 py-2 text-right">Recent</th>
+											<th class="px-3 py-2 text-right">EWMA</th>
 											<th class="px-3 py-2 text-right">Stddev</th>
 										</tr>
 									</thead>
@@ -504,7 +519,7 @@
 												<td class="px-3 py-1.5 text-right">{row.dur_max}</td>
 												<td class="px-3 py-1.5 text-right">{row.dur_total}</td>
 												<td class="px-3 py-1.5 text-right">{row.mean}</td>
-												<td class="px-3 py-1.5 text-right">{row.mean_recent}</td>
+												<td class="px-3 py-1.5 text-right">{row.ewma_mean}</td>
 												<td class="px-3 py-1.5 text-right">{row.stddev}</td>
 											</tr>
 										{/each}
