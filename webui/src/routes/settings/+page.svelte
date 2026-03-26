@@ -424,7 +424,7 @@
 					<h2 class="mb-4 text-base font-semibold">System Cleanup</h2>
 					<p class="mb-3 text-xs text-muted-foreground">
 						Old NixOS generations are cleaned up before each update to free disk space.
-						You can roll back to any kept generation via the bootloader.
+						The currently booted generation is always protected. You can roll back to any kept generation via the bootloader.
 					</p>
 					<div class="flex flex-wrap gap-4 mb-3">
 						<div>
