@@ -70,6 +70,8 @@ export interface FilesystemOptions {
 	metadata_target: string | null;
 	erasure_code: boolean | null;
 	encrypted: boolean | null;
+	locked: boolean | null;
+	key_stored: boolean | null;
 	error_action: string | null;
 	version_upgrade: string | null;
 	degraded: boolean | null;

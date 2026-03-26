@@ -561,6 +561,42 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(r) => r,
         },
+        "fs.unlock" => match parse_params::<serde_json::Value>(req) {
+            Ok(p) => {
+                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let passphrase = p.get("passphrase").and_then(|v| v.as_str()).unwrap_or("");
+                match state.filesystems.unlock(name, passphrase).await {
+                    Ok(fs) => {
+                        // Cascade: restore block devices, shares, VMs, apps
+                        let _ = state.subvolumes.restore_block_devices().await;
+                        ok(req, fs)
+                    }
+                    Err(e) => err(req, e),
+                }
+            }
+            Err(e) => invalid(req, e),
+        },
+        "fs.lock" => match require_str(req, "name") {
+            Ok(name) => match state.filesystems.lock(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "fs.key.export" => match require_str(req, "name") {
+            Ok(name) => match state.filesystems.export_key(name).await {
+                Ok(key) => ok(req, key),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "fs.key.delete" => match require_str(req, "name") {
+            Ok(name) => match state.filesystems.delete_key(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
         "device.list" => match state.filesystems.list_devices().await {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),

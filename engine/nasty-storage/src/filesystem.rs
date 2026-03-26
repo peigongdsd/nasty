@@ -10,6 +10,7 @@ use crate::cmd;
 
 const NASTY_MOUNT_BASE: &str = "/fs";
 const FS_STATE_PATH: &str = "/var/lib/nasty/fs-state.json";
+const KEYS_DIR: &str = "/var/lib/nasty/keys";
 
 #[derive(Debug, Error)]
 pub enum FilesystemError {
@@ -78,6 +79,10 @@ pub struct FilesystemOptions {
     pub erasure_code: Option<bool>,
     /// Whether the filesystem is encrypted at rest.
     pub encrypted: Option<bool>,
+    /// Whether the encrypted filesystem is currently locked (needs unlock before mount).
+    pub locked: Option<bool>,
+    /// Whether a stored key exists for auto-unlock on boot.
+    pub key_stored: Option<bool>,
     /// Action on unrecoverable read errors (`continue`, `ro`, `panic`).
     pub error_action: Option<String>,
     /// Version upgrade behavior at mount: `compatible`, `incompatible`, or `none`.
@@ -136,6 +141,12 @@ pub struct CreateFilesystemRequest {
     pub compression: Option<String>,
     /// Whether to enable encryption at format time.
     pub encryption: Option<bool>,
+    /// Passphrase for encryption (required when encryption is true).
+    pub passphrase: Option<String>,
+    /// Whether to store the key for auto-unlock on boot (default true).
+    /// When false, user must enter passphrase via WebUI after every reboot.
+    #[serde(default = "default_store_key")]
+    pub store_key: Option<bool>,
     /// Filesystem-wide label (used as default when no per-device labels set).
     pub label: Option<String>,
     /// Tiering targets set at format time.
@@ -160,9 +171,8 @@ pub struct CreateFilesystemRequest {
     pub version_upgrade: Option<String>,
 }
 
-fn default_replicas() -> u32 {
-    1
-}
+fn default_replicas() -> u32 { 1 }
+fn default_store_key() -> Option<bool> { Some(true) }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DestroyFilesystemRequest {
@@ -415,6 +425,15 @@ impl FilesystemService {
                 if fs.options.verbose.is_none() { fs.options.verbose = opts.verbose; }
                 if fs.options.fsck.is_none() { fs.options.fsck = opts.fsck; }
                 if fs.options.journal_flush_disabled.is_none() { fs.options.journal_flush_disabled = opts.journal_flush_disabled; }
+
+                // Encryption state
+                if opts.encrypted == Some(true) {
+                    if fs.options.encrypted.is_none() { fs.options.encrypted = Some(true); }
+                    let key_path = format!("{KEYS_DIR}/{}.key", fs.name);
+                    fs.options.key_stored = Some(Path::new(&key_path).exists());
+                    // Locked = encrypted + not mounted
+                    fs.options.locked = Some(!fs.mounted);
+                }
             }
         }
 
@@ -528,22 +547,60 @@ impl FilesystemService {
         // Format
         let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
         let dev_paths: Vec<&str> = req.devices.iter().map(|d| d.path.as_str()).collect();
-        info!("Formatting bcachefs filesystem '{}' on {:?}", req.name, dev_paths);
-        cmd::run_ok("bcachefs", &arg_refs)
-            .await
-            .map_err(FilesystemError::CommandFailed)?;
+        let is_encrypted = req.encryption == Some(true);
+        info!("Formatting bcachefs filesystem '{}' on {:?}{}", req.name, dev_paths, if is_encrypted { " (encrypted)" } else { "" });
+
+        if is_encrypted {
+            let passphrase = req.passphrase.as_deref().ok_or_else(|| {
+                FilesystemError::CommandFailed("passphrase required for encrypted filesystem".to_string())
+            })?;
+            // bcachefs format --encrypted reads passphrase twice from stdin (passphrase + confirm)
+            let stdin = format!("{passphrase}\n{passphrase}\n");
+            cmd::run_ok_stdin("bcachefs", &arg_refs, stdin.as_bytes())
+                .await
+                .map_err(FilesystemError::CommandFailed)?;
+
+            // Store key for auto-unlock (default: yes)
+            if req.store_key != Some(false) {
+                tokio::fs::create_dir_all(KEYS_DIR).await?;
+                let key_path = format!("{KEYS_DIR}/{}.key", req.name);
+                tokio::fs::write(&key_path, passphrase.as_bytes()).await?;
+                info!("Encryption key stored at {key_path}");
+            }
+        } else {
+            cmd::run_ok("bcachefs", &arg_refs)
+                .await
+                .map_err(FilesystemError::CommandFailed)?;
+        }
 
         // Create mount point
         tokio::fs::create_dir_all(&mount_point).await?;
 
-        // Mount — bcachefs mount takes device(s) colon-separated
         let device_arg = req
             .devices
             .iter()
             .map(|d| d.path.as_str())
             .collect::<Vec<_>>()
             .join(":");
+
+        // Unlock encrypted filesystem before mounting
+        if is_encrypted {
+            let key_path = format!("{KEYS_DIR}/{}.key", req.name);
+            if Path::new(&key_path).exists() {
+                cmd::run_ok("bcachefs", &["unlock", "-f", &key_path, &req.devices[0].path])
+                    .await
+                    .map_err(FilesystemError::CommandFailed)?;
+            } else if let Some(ref passphrase) = req.passphrase {
+                let stdin = format!("{passphrase}\n");
+                cmd::run_ok_stdin("bcachefs", &["unlock", &req.devices[0].path], stdin.as_bytes())
+                    .await
+                    .map_err(FilesystemError::CommandFailed)?;
+            }
+        }
+
+        // Mount
         let mount_opts = FsMountOptions {
+            encrypted: if is_encrypted { Some(true) } else { None },
             version_upgrade: req.version_upgrade.clone(),
             ..FsMountOptions::default()
         };
@@ -636,6 +693,22 @@ impl FilesystemService {
         let mount_point = format!("{NASTY_MOUNT_BASE}/{name}");
         tokio::fs::create_dir_all(&mount_point).await?;
 
+        let first_device = fs.devices.first().map(|d| d.path.as_str()).unwrap_or("");
+
+        // Unlock encrypted filesystem if key is stored
+        if opts.encrypted == Some(true) {
+            let key_path = format!("{KEYS_DIR}/{name}.key");
+            if Path::new(&key_path).exists() {
+                cmd::run_ok("bcachefs", &["unlock", "-f", &key_path, first_device])
+                    .await
+                    .map_err(FilesystemError::CommandFailed)?;
+            } else {
+                return Err(FilesystemError::CommandFailed(
+                    format!("encrypted filesystem '{name}' requires unlock — no stored key found. Unlock via WebUI.")
+                ));
+            }
+        }
+
         let device_arg = fs
             .devices
             .iter()
@@ -651,6 +724,60 @@ impl FilesystemService {
         save_fs_mounted_with_opts(name, opts.clone()).await;
 
         self.get(name).await
+    }
+
+    /// Unlock an encrypted filesystem with a passphrase and mount it.
+    pub async fn unlock(&self, name: &str, passphrase: &str) -> Result<Filesystem, FilesystemError> {
+        let fs = self.get(name).await?;
+        if fs.mounted {
+            return Ok(fs);
+        }
+
+        let first_device = fs.devices.first()
+            .map(|d| d.path.clone())
+            .ok_or_else(|| FilesystemError::CommandFailed("no devices".to_string()))?;
+
+        // Unlock with passphrase via stdin
+        let stdin = format!("{passphrase}\n");
+        cmd::run_ok_stdin("bcachefs", &["unlock", &first_device], stdin.as_bytes())
+            .await
+            .map_err(FilesystemError::CommandFailed)?;
+
+        // Now mount normally
+        let state = load_fs_state().await;
+        let opts = get_fs_mount_options(&state, name);
+        let mount_point = format!("{NASTY_MOUNT_BASE}/{name}");
+        tokio::fs::create_dir_all(&mount_point).await?;
+
+        let device_arg = fs.devices.iter().map(|d| d.path.as_str()).collect::<Vec<_>>().join(":");
+        let mount_opt_str = build_mount_opts(&opts);
+        cmd::run_ok("bcachefs", &["mount", "-o", &mount_opt_str, &device_arg, &mount_point])
+            .await
+            .map_err(FilesystemError::CommandFailed)?;
+
+        save_fs_mounted_with_opts(name, opts).await;
+        self.get(name).await
+    }
+
+    /// Lock an encrypted filesystem (unmount it).
+    pub async fn lock(&self, name: &str) -> Result<(), FilesystemError> {
+        self.unmount(name).await
+    }
+
+    /// Export the stored encryption key for a filesystem.
+    pub async fn export_key(&self, name: &str) -> Result<String, FilesystemError> {
+        let key_path = format!("{KEYS_DIR}/{name}.key");
+        tokio::fs::read_to_string(&key_path)
+            .await
+            .map_err(|_| FilesystemError::CommandFailed(format!("no stored key for filesystem '{name}'")))
+    }
+
+    /// Delete the stored encryption key (switch to passphrase-only mode).
+    pub async fn delete_key(&self, name: &str) -> Result<(), FilesystemError> {
+        let key_path = format!("{KEYS_DIR}/{name}.key");
+        tokio::fs::remove_file(&key_path)
+            .await
+            .map_err(|_| FilesystemError::CommandFailed(format!("no stored key for filesystem '{name}'")))
     }
 
     /// Update runtime-mutable options on a mounted filesystem via sysfs.
@@ -1438,6 +1565,8 @@ async fn read_fs_options_sysfs(uuid: &str) -> FilesystemOptions {
         encrypted: read_opt_bool(&base, "encrypted").await,
         error_action: read_opt(&base, "errors").await,
         version_upgrade: read_opt(&base, "version_upgrade").await,
+        locked: None,
+        key_stored: None,
         degraded: None,
         verbose: None,
         fsck: None,
@@ -1597,6 +1726,8 @@ async fn discover_unmounted_bcachefs(
 /// Per-filesystem mount state, persisted across reboots.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct FsMountOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    encrypted: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     version_upgrade: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -29,6 +29,10 @@
 	let showPartitions = $state(false);
 	let erasureCode = $state(false);
 	let versionUpgrade = $state('');
+	let encryption = $state(false);
+	let passphrase = $state('');
+	let passphraseConfirm = $state('');
+	let storeKey = $state(true);
 	let dataChecksum = $state('');
 	let metadataChecksum = $state('');
 	let bucketSize = $state('');
@@ -55,6 +59,8 @@
 	let showAddPartitions = $state(false);
 	let editErasureCode = $state(false);
 	let editVersionUpgrade = $state('');
+	let unlockFs: string | null = $state(null);
+	let unlockPassphrase = $state('');
 	let editDegraded = $state(false);
 	let editVerbose = $state(false);
 	let editFsck = $state(false);
@@ -237,6 +243,7 @@
 		if (profile.metadata_target) args.push(`--metadata_target=${profile.metadata_target}`);
 		if (profile.background_target) args.push(`--background_target=${profile.background_target}`);
 		if (profile.promote_target) args.push(`--promote_target=${profile.promote_target}`);
+		if (encryption) args.push('--encrypted');
 		if (erasureCode) args.push('--erasure_code');
 		if (dataChecksum) args.push(`--data_checksum=${dataChecksum}`);
 		if (metadataChecksum) args.push(`--metadata_checksum=${metadataChecksum}`);
@@ -295,6 +302,7 @@
 	async function createFs() {
 		if (!newName || selectedPaths.length === 0) return;
 		if (erasureCode && selectedPaths.length < replicas + 1) return;
+		if (encryption && (!passphrase || passphrase !== passphraseConfirm)) return;
 		const profile = activeProfile();
 		const ok = await withToast(
 			() => client.call('fs.create', {
@@ -310,6 +318,9 @@
 				background_target: profile.background_target || undefined,
 				promote_target: profile.promote_target || undefined,
 				erasure_code: erasureCode || undefined,
+				encryption: encryption || undefined,
+				passphrase: encryption ? passphrase : undefined,
+				store_key: encryption ? storeKey : undefined,
 				data_checksum: dataChecksum || undefined,
 				metadata_checksum: metadataChecksum || undefined,
 				bucket_size: bucketSize || undefined,
@@ -330,6 +341,10 @@
 			manualPromoteTarget = '';
 			erasureCode = false;
 			versionUpgrade = '';
+			encryption = false;
+			passphrase = '';
+			passphraseConfirm = '';
+			storeKey = true;
 			dataChecksum = '';
 			metadataChecksum = '';
 			bucketSize = '';
@@ -470,6 +485,18 @@
 		editVerbose = fs.options.verbose ?? false;
 		editFsck = fs.options.fsck ?? false;
 		editJournalFlushDisabled = fs.options.journal_flush_disabled ?? false;
+	}
+
+	async function doUnlock() {
+		if (!unlockFs || !unlockPassphrase) return;
+		const name = unlockFs;
+		await withToast(
+			() => client.call('fs.unlock', { name, passphrase: unlockPassphrase }),
+			`Filesystem "${name}" unlocked`
+		);
+		unlockFs = null;
+		unlockPassphrase = '';
+		await refresh();
 	}
 
 	async function saveOptions(fsName: string) {
@@ -895,6 +922,47 @@
 					</div>
 				</div>
 
+				<!-- Encryption -->
+				<div class="mb-5 rounded-lg border border-border p-4">
+					<label class="flex cursor-pointer items-center gap-2 text-sm font-medium">
+						<input type="checkbox" bind:checked={encryption} class="h-4 w-4" />
+						Encrypt filesystem
+					</label>
+					{#if encryption}
+						<div class="mt-3 grid grid-cols-2 gap-4">
+							<div>
+								<Label for="passphrase">Passphrase</Label>
+								<input id="passphrase" type="password" bind:value={passphrase}
+									class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+									placeholder="Enter passphrase" />
+							</div>
+							<div>
+								<Label for="passphrase-confirm">Confirm</Label>
+								<input id="passphrase-confirm" type="password" bind:value={passphraseConfirm}
+									class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+									placeholder="Confirm passphrase" />
+							</div>
+						</div>
+						{#if passphrase && passphraseConfirm && passphrase !== passphraseConfirm}
+							<p class="mt-1 text-xs text-destructive">Passphrases do not match.</p>
+						{/if}
+						<label class="mt-3 flex cursor-pointer items-center gap-2 text-sm">
+							<input type="checkbox" bind:checked={storeKey} class="h-4 w-4" />
+							Store key for auto-unlock on boot
+						</label>
+						<p class="mt-1 text-xs text-muted-foreground">
+							{#if storeKey}
+								Key stored on boot drive. Filesystem auto-unlocks on boot. Protects data at rest against drive theft.
+							{:else}
+								Passphrase required after every reboot via WebUI. More secure but requires manual intervention.
+							{/if}
+						</p>
+						<p class="mt-2 text-xs text-amber-400">Warning: losing the passphrase with no stored key means permanent data loss.</p>
+					{:else}
+						<p class="mt-1 text-xs text-muted-foreground">Data at rest will not be encrypted.</p>
+					{/if}
+				</div>
+
 				<!-- Advanced format options -->
 				<details class="mb-5">
 					<summary class="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Advanced options</summary>
@@ -974,7 +1042,7 @@
 
 				<div class="flex gap-2">
 					<Button variant="secondary" size="sm" onclick={() => wizardStep = 2}>← Back</Button>
-					<Button size="sm" onclick={createFs} disabled={erasureCode && selectedPaths.length < replicas + 1}>Create Filesystem</Button>
+					<Button size="sm" onclick={createFs} disabled={(erasureCode && selectedPaths.length < replicas + 1) || (encryption && (!passphrase || passphrase !== passphraseConfirm))}>Create Filesystem</Button>
 				</div>
 			{/if}
 		</CardContent>
@@ -995,7 +1063,7 @@
 						onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') expandedFs = expandedFs === fs.name ? null : fs.name; }}>
 						<strong class="text-lg">{fs.name}</strong>
 						<Badge variant={fs.mounted ? 'default' : 'destructive'}>
-							{fs.mounted ? 'Mounted' : 'Unmounted'}
+							{fs.mounted ? 'Mounted' : fs.options.locked ? 'Locked' : 'Unmounted'}
 						</Badge>
 						{#if fs.mounted && fs.mount_point}
 							<span class="font-mono text-xs text-muted-foreground">{fs.mount_point}</span>
@@ -1013,9 +1081,34 @@
 								{healthFs === fs.name ? 'Hide Health' : 'Health'}
 							</Button>
 						{/if}
-						<Button variant="secondary" size="xs" onclick={() => toggleMount(fs)}>
-							{fs.mounted ? 'Unmount' : 'Mount'}
-						</Button>
+						{#if fs.options.encrypted && fs.options.locked}
+							<Button variant="default" size="xs" onclick={() => { unlockFs = fs.name; unlockPassphrase = ''; }}>
+								Unlock
+							</Button>
+						{:else if fs.options.encrypted && !fs.options.locked}
+							<Button variant="secondary" size="xs" onclick={async () => {
+								await withToast(() => client.call('fs.lock', { name: fs.name }), 'Filesystem locked');
+								await refresh();
+							}}>
+								Lock
+							</Button>
+						{:else}
+							<Button variant="secondary" size="xs" onclick={() => toggleMount(fs)}>
+								{fs.mounted ? 'Unmount' : 'Mount'}
+							</Button>
+						{/if}
+						{#if fs.options.encrypted && fs.options.key_stored}
+							<Button variant="secondary" size="xs" onclick={async () => {
+								const key = await client.call<string>('fs.key.export', { name: fs.name });
+								const blob = new Blob([key], { type: 'text/plain' });
+								const a = document.createElement('a');
+								a.href = URL.createObjectURL(blob);
+								a.download = `${fs.name}.key`;
+								a.click();
+							}}>
+								Export Key
+							</Button>
+						{/if}
 						<Button variant="destructive" size="xs" onclick={() => destroyFs(fs.name)}>Destroy</Button>
 					</div>
 				</div>
@@ -1177,7 +1270,21 @@
 							<span class="text-muted-foreground">Compression</span>
 							<span>{fs.options.compression ?? 'none'}{#if fs.options.background_compression} / bg: {fs.options.background_compression}{/if}</span>
 							<span class="text-muted-foreground">Encrypted</span>
-							<span>{fs.options.encrypted ? 'Yes' : 'No'}</span>
+							<span>
+								{#if fs.options.encrypted}
+									Yes
+									{#if fs.options.locked}
+										<Badge variant="destructive" class="ml-1 text-[0.6rem]">Locked</Badge>
+									{:else}
+										<Badge variant="default" class="ml-1 text-[0.6rem]">Unlocked</Badge>
+									{/if}
+									{#if fs.options.key_stored}
+										<Badge variant="secondary" class="ml-1 text-[0.6rem]">Auto-unlock</Badge>
+									{/if}
+								{:else}
+									No
+								{/if}
+							</span>
 							{#if fs.options.foreground_target}
 								<span class="text-muted-foreground">FG Target</span>
 								<span>{fs.options.foreground_target}</span>
@@ -1325,3 +1432,23 @@
 
 {/if}
 <!-- end pageTab === 'manage' -->
+
+<!-- Unlock Modal -->
+{#if unlockFs}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+		<Card class="w-full max-w-sm">
+			<CardContent class="pt-6">
+				<h3 class="mb-2 text-lg font-semibold">Unlock "{unlockFs}"</h3>
+				<p class="mb-4 text-sm text-muted-foreground">Enter the passphrase to unlock this encrypted filesystem.</p>
+				<input type="password" bind:value={unlockPassphrase}
+					class="mb-4 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm"
+					placeholder="Passphrase"
+					onkeydown={(e) => { if (e.key === 'Enter' && unlockPassphrase) doUnlock(); }} />
+				<div class="flex gap-2">
+					<Button onclick={doUnlock} disabled={!unlockPassphrase}>Unlock</Button>
+					<Button variant="secondary" onclick={() => unlockFs = null}>Cancel</Button>
+				</div>
+			</CardContent>
+		</Card>
+	</div>
+{/if}
