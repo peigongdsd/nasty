@@ -504,7 +504,7 @@
 </div>
 
 {#if showCreate}
-	<Card class="mb-6 max-w-lg">
+	<Card class="mb-6 max-w-2xl">
 		<CardContent class="pt-6">
 			<h3 class="mb-4 text-lg font-semibold">New VM</h3>
 			<div class="mb-4">
@@ -564,10 +564,15 @@
 							<option value={iso.path}>{iso.name} ({iso.filesystem}, {formatSize(iso.size_bytes)})</option>
 						{/each}
 					</select>
-					<div class="mt-2 flex items-center gap-2">
-						<Label for="file-upload" class="cursor-pointer text-xs text-primary hover:underline">
+					<div class="mt-2 flex items-center gap-3">
+						<Button
+							size="sm"
+							variant="outline"
+							disabled={uploading}
+							onclick={() => document.getElementById('file-upload')?.click()}
+						>
 							{uploading ? 'Uploading...' : 'Upload new image'}
-						</Label>
+						</Button>
 						<input
 							id="file-upload"
 							type="file"
@@ -576,16 +581,16 @@
 							onchange={uploadImage}
 							disabled={uploading}
 						/>
-						{#if uploading}
-							<div class="flex items-center gap-2">
-								<div class="h-2 w-24 rounded-full bg-muted overflow-hidden">
-									<div class="h-full bg-primary transition-all" style="width: {uploadProgress}%"></div>
-								</div>
-								<span class="text-xs text-muted-foreground">{uploadProgress}%</span>
-							</div>
-						{/if}
+						<span class="text-xs text-muted-foreground">ISO, qcow2, img, raw</span>
 					</div>
-					<span class="mt-1 block text-xs text-muted-foreground">Supports ISO, qcow2, img, raw.</span>
+					{#if uploading}
+						<div class="mt-2 flex items-center gap-2">
+							<div class="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+								<div class="h-full bg-primary transition-all" style="width: {uploadProgress}%"></div>
+							</div>
+							<span class="text-xs text-muted-foreground w-10 text-right">{uploadProgress}%</span>
+						</div>
+					{/if}
 				{:else if filesystems.length > 0}
 					<div class="mt-1 rounded border border-dashed border-muted-foreground/30 p-3 text-sm text-muted-foreground">
 						<p class="mb-2">No image storage found. Create an "images" subvolume to store VM images.</p>
