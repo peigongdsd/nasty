@@ -221,7 +221,7 @@
 			{ href: '/filesystems',   label: 'Filesystems',    icon: Database },
 			{ href: '/subvolumes',    label: 'Subvolumes',     icon: Layers },
 			{ href: '/sharing',       label: 'Sharing',         icon: Share2 },
-			{ href: '/files/',        label: 'Files',           icon: FolderOpen },
+			{ href: '/files',         label: 'Files',           icon: FolderOpen },
 		];
 		if (sysInfo?.kvm_available) {
 			items.push({ href: '/vms', label: 'VMs', icon: Monitor });
@@ -326,7 +326,6 @@
 					{@const active = currentNav.href === item.href}
 					<a
 						href={item.href}
-						data-sveltekit-reload={item.href.startsWith('/files') ? '' : undefined}
 						title={sidebarCollapsed ? item.label : undefined}
 						class="relative mx-2 flex items-center rounded-md py-2 text-sm no-underline transition-all border-2
 							{sidebarCollapsed ? 'justify-center px-0' : 'gap-2.5 pl-4 pr-4'}
