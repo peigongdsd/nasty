@@ -21,7 +21,8 @@
 	let expanded: Record<string, boolean> = $state({});
 	let logsApp: string | null = $state(null);
 	let logsContent = $state('');
-	let mode: 'easy' | 'expert' | 'settings' = $state('easy');
+	let page: 'apps' | 'runtime' = $state('apps');
+	let mode: 'easy' | 'expert' = $state('easy');
 
 	// Setup wizard state
 	let filesystems: Filesystem[] = $state([]);
@@ -386,7 +387,20 @@
 {:else if !status?.running}
 	<p class="text-muted-foreground">Waiting for app runtime to start...</p>
 {:else}
-	<!-- Mode tabs -->
+	<!-- Top-level tabs: Apps / Runtime -->
+	<div class="mb-4 flex rounded-md overflow-hidden border border-border w-fit">
+		<button
+			class="px-3 py-1.5 text-sm transition-colors {page === 'apps' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
+			onclick={() => page = 'apps'}
+		>Apps</button>
+		<button
+			class="px-3 py-1.5 text-sm transition-colors {page === 'runtime' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
+			onclick={() => page = 'runtime'}
+		>Runtime</button>
+	</div>
+
+	{#if page === 'apps'}
+	<!-- Sub-tabs: Easy / Helm Charts -->
 	<div class="mb-4 flex items-center gap-4">
 		<div class="flex rounded-md overflow-hidden border border-border">
 			<button
@@ -397,10 +411,6 @@
 				class="px-3 py-1.5 text-sm transition-colors {mode === 'expert' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
 				onclick={() => mode = 'expert'}
 			>Helm Charts</button>
-			<button
-				class="px-3 py-1.5 text-sm transition-colors {mode === 'settings' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}"
-				onclick={() => mode = 'settings'}
-			>Settings</button>
 		</div>
 		{#if mode === 'easy'}
 			<Button size="sm" onclick={() => showInstall = !showInstall}>
@@ -705,8 +715,9 @@
 			</tbody>
 		</table>
 	{/if}
-	{:else if mode === 'settings'}
-	<!-- Settings tab -->
+	{/if}
+	{:else if page === 'runtime'}
+	<!-- Runtime tab -->
 	<div class="max-w-2xl space-y-4">
 		<Card>
 			<CardContent class="pt-6">
