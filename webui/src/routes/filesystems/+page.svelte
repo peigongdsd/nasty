@@ -151,7 +151,7 @@
 				metadata_target: null,
 				background_target: null,
 				promote_target: null,
-				device_labels: singleLabels,
+				device_labels: {},
 			},
 			{
 				id: 'write_cache',
@@ -225,10 +225,14 @@
 		if (profile.promote_target) args.push(`--promote_target=${profile.promote_target}`);
 		if (erasureCode) args.push('--erasure_code');
 
-		const defaultLabel = profile.id === 'none' ? null : newName;
+		const hasTargets = !!(profile.foreground_target || profile.metadata_target || profile.background_target || profile.promote_target);
 		for (const path of selectedPaths) {
-			const label = profile.device_labels[path] ?? defaultLabel;
-			if (label) args.push(`--label=${label}`);
+			const label = profile.device_labels[path];
+			if (label) {
+				args.push(`--label=${label}`);
+			} else if (hasTargets) {
+				args.push(`--label=${newName}`);
+			}
 			args.push(path);
 		}
 

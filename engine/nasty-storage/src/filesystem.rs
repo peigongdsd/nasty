@@ -447,10 +447,20 @@ impl FilesystemService {
         }
 
         // Per-device options go immediately before each device path
-        let default_label = req.label.as_deref().unwrap_or(&req.name);
+        let has_targets = req.foreground_target.is_some()
+            || req.metadata_target.is_some()
+            || req.background_target.is_some()
+            || req.promote_target.is_some();
+
         for dev in &req.devices {
-            let label = dev.label.as_deref().unwrap_or(default_label);
-            args.push(format!("--label={label}"));
+            // Only add labels when tiering targets are configured or device has an explicit label
+            if let Some(ref label) = dev.label {
+                args.push(format!("--label={label}"));
+            } else if has_targets {
+                // Fall back to filesystem-level label or name when targets need labels to route to
+                let default_label = req.label.as_deref().unwrap_or(&req.name);
+                args.push(format!("--label={default_label}"));
+            }
 
             if let Some(durability) = dev.durability {
                 args.push(format!("--durability={durability}"));
