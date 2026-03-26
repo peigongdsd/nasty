@@ -1335,8 +1335,9 @@ impl FilesystemService {
         // Strip ANSI escapes and extract the last complete frame
         let clean = strip_ansi(&raw);
         // Split on clear-screen artifacts and take the last substantial frame
-        let frames: Vec<&str> = clean.split("\x1b[?1049h").collect();
-        let frame = frames.last().unwrap_or(&clean.as_str());
+        let clean_ref = clean.as_str();
+        let frames: Vec<&str> = clean_ref.split("\x1b[?1049h").collect();
+        let frame = frames.last().unwrap_or(&clean_ref);
         // Clean up: remove carriage returns, control chars, and the header/help lines
         let lines: Vec<&str> = frame
             .lines()
