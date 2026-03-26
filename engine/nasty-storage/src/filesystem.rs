@@ -1438,6 +1438,10 @@ async fn read_fs_options_sysfs(uuid: &str) -> FilesystemOptions {
         encrypted: read_opt_bool(&base, "encrypted").await,
         error_action: read_opt(&base, "errors").await,
         version_upgrade: read_opt(&base, "version_upgrade").await,
+        degraded: None,
+        verbose: None,
+        fsck: None,
+        journal_flush_disabled: None,
     }
 }
 
