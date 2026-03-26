@@ -411,6 +411,7 @@ in {
       k3s               # lightweight Kubernetes for app runtime (optional)
       kubernetes-helm   # Helm chart manager for app deployment
       kubectl           # Kubernetes CLI (also available via k3s kubectl)
+      dufs              # Lightweight file browser for WebUI
 
       (writeShellScriptBin "nasty-report" ''
         set -euo pipefail
@@ -664,6 +665,20 @@ in {
 
     # ── NASty Metrics service ────────────────────────────────
 
+    # ── File browser (dufs) ──────────────────────────────────
+    # Lightweight read-only file browser for /fs, proxied via nginx.
+    systemd.services.nasty-filebrowser = {
+      description = "NASty File Browser (dufs)";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" "nasty-engine.service" ];
+
+      serviceConfig = {
+        ExecStart = "${pkgs.dufs}/bin/dufs /fs --bind 127.0.0.1 --port 5171 --allow-search --allow-archive --render-try-index";
+        Restart = "always";
+        RestartSec = 5;
+      };
+    };
+
     systemd.services.nasty-metrics = {
       description = "NASty Metrics Collector";
       wantedBy = [ "multi-user.target" ];
@@ -867,6 +882,14 @@ in {
 
         locations."/health" = {
           proxyPass = "http://127.0.0.1:${toString cfg.engine.port}";
+        };
+
+        # File browser (dufs)
+        locations."/files/" = {
+          proxyPass = "http://127.0.0.1:5171/";
+          extraConfig = ''
+            proxy_set_header X-Real-IP $remote_addr;
+          '';
         };
       };
     };
