@@ -46,7 +46,7 @@
 	let tlsChanged = $state(false);
 
 	// GC config
-	let gcKeep = $state(5);
+	let gcKeep = $state(10);
 	let gcMaxAge = $state(0);
 	let savingGc = $state(false);
 

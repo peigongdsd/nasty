@@ -30,7 +30,7 @@ const GC_CONFIG_PATH: &str = "/var/lib/nasty/gc-config.json";
 /// Configuration for NixOS generation garbage collection.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GcConfig {
-    /// Minimum number of generations to keep (default 5).
+    /// Minimum number of generations to keep (default 10).
     #[serde(default = "default_keep_generations")]
     pub keep_generations: u32,
     /// Delete generations older than this many days (0 = disabled).
@@ -39,11 +39,11 @@ pub struct GcConfig {
     pub max_age_days: u32,
 }
 
-fn default_keep_generations() -> u32 { 5 }
+fn default_keep_generations() -> u32 { 10 }
 
 impl Default for GcConfig {
     fn default() -> Self {
-        Self { keep_generations: 5, max_age_days: 0 }
+        Self { keep_generations: 10, max_age_days: 0 }
     }
 }
 
@@ -453,9 +453,30 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
   commit -m "local: appliance adjustments" || true
 
 # Garbage-collect old generations.
+# The booted generation is always protected — even if it's older than KEEP.
 KEEP={gc_keep}
 MAX_AGE={gc_max_age}
 GENS=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null | wc -l)
+# Find which generation we actually booted from (may differ from current profile)
+BOOTED_GEN=$(readlink /run/booted-system 2>/dev/null || true)
+BOOTED_NUM=""
+if [ -n "$BOOTED_GEN" ]; then
+    for link in /nix/var/nix/profiles/system-*-link; do
+        if [ "$(readlink -f "$link")" = "$(readlink -f "$BOOTED_GEN")" ]; then
+            BOOTED_NUM=$(echo "$link" | grep -o '[0-9]*' | tail -1)
+            break
+        fi
+    done
+fi
+# If booted generation is outside the keep range, increase KEEP to include it
+if [ -n "$BOOTED_NUM" ]; then
+    LATEST_NUM=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null | grep -o '[0-9]*' | sort -n | tail -1)
+    DISTANCE=$(( LATEST_NUM - BOOTED_NUM + 1 ))
+    if [ "$DISTANCE" -gt "$KEEP" ]; then
+        echo "==> Booted generation $BOOTED_NUM is $DISTANCE generations back, expanding KEEP from $KEEP to $DISTANCE"
+        KEEP=$DISTANCE
+    fi
+fi
 if [ "$GENS" -gt "$KEEP" ]; then
     if [ "$MAX_AGE" -gt 0 ]; then
         echo "==> Cleaning generations older than ${{MAX_AGE}}d (keeping at least $KEEP)..."
