@@ -410,6 +410,15 @@ git add -A
 git -c user.email="nasty@localhost" -c user.name="NASty" \
   commit -m "local: appliance adjustments" || true
 
+# Garbage-collect old generations, keeping the last 5 for rollback.
+KEEP=5
+GENS=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null | wc -l)
+if [ "$GENS" -gt "$KEEP" ]; then
+    echo "==> Cleaning up old generations ($GENS found, keeping $KEEP)..."
+    nix-env --profile /nix/var/nix/profiles/system --delete-generations "+$KEEP" 2>/dev/null || true
+    nix-collect-garbage 2>/dev/null || true
+fi
+
 echo "==> Rebuilding system..."
 NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
 
