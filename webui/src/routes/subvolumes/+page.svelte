@@ -282,8 +282,17 @@
 		}
 	}
 
+	const SYSTEM_SUBVOLUMES: Record<string, string> = {
+		'images': 'VM boot images',
+		'apps-data': 'Apps runtime storage (k3s)',
+	};
+
 	async function deleteSubvolume(name: string) {
-		if (!await confirm(`Delete "${name}"?`, 'All snapshots will also be deleted.')) return;
+		const systemUse = SYSTEM_SUBVOLUMES[name];
+		const warning = systemUse
+			? `This subvolume is used by the system for: ${systemUse}. Deleting it may break functionality. All snapshots will also be deleted.`
+			: 'All snapshots will also be deleted.';
+		if (!await confirm(`Delete "${name}"?`, warning)) return;
 		await withToast(
 			() => client.call('subvolume.delete', { filesystem: selectedFs, name }),
 			`Subvolume "${name}" deleted`

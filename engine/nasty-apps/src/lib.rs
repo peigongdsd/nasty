@@ -75,6 +75,8 @@ pub struct AppsStatus {
     pub k3s_version: Option<String>,
     /// Node readiness status (e.g. "Ready", "NotReady").
     pub node_status: Option<String>,
+    /// Whether the storage subvolume exists on disk.
+    pub storage_ok: bool,
 }
 
 /// Request to enable the apps runtime.
@@ -391,11 +393,14 @@ impl AppsService {
         let config = Self::load_config();
         let enabled = self.is_enabled();
         let storage_path = config.storage_path.clone();
+        let storage_ok = storage_path.as_ref()
+            .map(|p| Path::new(p).is_dir())
+            .unwrap_or(false);
 
         if !enabled {
             return AppsStatus {
                 enabled, running: false, app_count: 0, memory_bytes: None,
-                storage_path, k3s_version: None, node_status: None,
+                storage_path, k3s_version: None, node_status: None, storage_ok,
             };
         }
 
@@ -403,7 +408,7 @@ impl AppsService {
         if !running {
             return AppsStatus {
                 enabled, running: false, app_count: 0, memory_bytes: None,
-                storage_path, k3s_version: None, node_status: None,
+                storage_path, k3s_version: None, node_status: None, storage_ok,
             };
         }
 
@@ -418,7 +423,7 @@ impl AppsService {
 
         AppsStatus {
             enabled, running, app_count, memory_bytes,
-            storage_path, k3s_version, node_status,
+            storage_path, k3s_version, node_status, storage_ok,
         }
     }
 

@@ -317,6 +317,17 @@
 			</span>
 		</CardContent>
 	</Card>
+	{#if !status.storage_ok && status.storage_path}
+		<Card class="mb-4 border-destructive">
+			<CardContent class="flex items-center gap-4 py-3">
+				<Badge variant="destructive">Storage Missing</Badge>
+				<span class="text-sm text-muted-foreground">
+					Apps storage subvolume <code class="text-xs">{status.storage_path}</code> no longer exists.
+					App data may be lost. Recreate the subvolume or disable and re-enable apps.
+				</span>
+			</CardContent>
+		</Card>
+	{/if}
 {/if}
 
 {#if loading}
@@ -746,7 +757,14 @@
 				<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Storage</h4>
 				<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
 					<span class="text-muted-foreground">Path</span>
-					<code class="text-xs">{status?.storage_path ?? 'Not configured'}</code>
+					<div>
+						<code class="text-xs">{status?.storage_path ?? 'Not configured'}</code>
+						{#if status && !status.storage_ok && status.storage_path}
+							<Badge variant="destructive" class="ml-2 text-[0.6rem]">Missing</Badge>
+						{/if}
+					</div>
+					<span class="text-muted-foreground">Status</span>
+					<span>{status?.storage_ok ? 'OK' : 'Not available'}</span>
 					<span class="text-muted-foreground">Provisioner</span>
 					<span>local-path-provisioner</span>
 				</div>

@@ -513,6 +513,7 @@ export interface AppsStatus {
 	storage_path?: string;
 	k3s_version?: string;
 	node_status?: string;
+	storage_ok: boolean;
 }
 
 export interface App {
