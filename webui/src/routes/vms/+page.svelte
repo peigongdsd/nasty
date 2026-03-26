@@ -383,6 +383,24 @@
 		await refresh();
 	}
 
+	async function detachDisk(vm: VmStatus, index: number) {
+		const disks = vm.disks.filter((_, i) => i !== index);
+		await withToast(
+			() => client.call('vm.update', { id: vm.id, disks }),
+			'Disk detached'
+		);
+		await refresh();
+	}
+
+	async function attachDisk(vmId: string, currentDisks: VmStatus['disks'], blockDevice: string) {
+		const disks = [...currentDisks, { path: blockDevice, interface: 'virtio', readonly: false }];
+		await withToast(
+			() => client.call('vm.update', { id: vmId, disks }),
+			'Disk attached'
+		);
+		await refresh();
+	}
+
 	async function toggleAutostart(vm: VmStatus) {
 		await withToast(
 			() => client.call('vm.update', { id: vm.id, autostart: !vm.autostart }),
@@ -875,9 +893,38 @@
 													{#if disk.readonly}
 														<Badge variant="secondary" class="text-[0.6rem]">readonly</Badge>
 													{/if}
+													{#if !vm.running}
+														<Button variant="ghost" size="xs" class="ml-auto text-destructive hover:text-destructive" onclick={() => detachDisk(vm, i)}>
+															Detach
+														</Button>
+													{/if}
 												</div>
 											{/each}
 										</div>
+									{/if}
+									{#if !vm.running}
+										{@const attachedPaths = new Set(vm.disks.map(d => d.path))}
+										{@const available = blockSubvolumes.filter(s => s.block_device && !attachedPaths.has(s.block_device))}
+										{#if available.length > 0}
+											<div class="mt-2 flex items-center gap-2">
+												<select
+													id="attach-disk-{vm.id}"
+													class="h-7 rounded-md border border-input bg-transparent px-2 text-xs"
+												>
+													{#each available as sv}
+														<option value={sv.block_device}>{sv.filesystem}/{sv.name} ({sv.block_device})</option>
+													{/each}
+												</select>
+												<Button variant="outline" size="xs" onclick={() => {
+													const sel = document.getElementById(`attach-disk-${vm.id}`) as HTMLSelectElement;
+													if (sel?.value) attachDisk(vm.id, vm.disks, sel.value);
+												}}>
+													Attach disk
+												</Button>
+											</div>
+										{:else if vm.disks.length === 0}
+											<p class="mt-1 text-xs text-muted-foreground">No block subvolumes available. Create one in Subvolumes first.</p>
+										{/if}
 									{/if}
 								</div>
 
