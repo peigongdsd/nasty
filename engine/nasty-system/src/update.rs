@@ -39,11 +39,11 @@ pub struct GcConfig {
     pub max_age_days: u32,
 }
 
-fn default_keep_generations() -> u32 { 10 }
+fn default_keep_generations() -> u32 { 20 }
 
 impl Default for GcConfig {
     fn default() -> Self {
-        Self { keep_generations: 10, max_age_days: 0 }
+        Self { keep_generations: 20, max_age_days: 0 }
     }
 }
 
