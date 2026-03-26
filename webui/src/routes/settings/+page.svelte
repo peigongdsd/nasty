@@ -424,7 +424,8 @@
 					<h2 class="mb-4 text-base font-semibold">System Cleanup</h2>
 					<p class="mb-3 text-xs text-muted-foreground">
 						Old NixOS generations are cleaned up before each update to free disk space.
-						The currently booted generation is always protected. You can roll back to any kept generation via the bootloader.
+						The booted generation is always protected — if it falls outside the keep range, the range is automatically expanded to include it.
+						You can roll back to any kept generation via the bootloader.
 					</p>
 					<div class="flex flex-wrap gap-4 mb-3">
 						<div>
@@ -440,9 +441,9 @@
 					</div>
 					<p class="mb-3 text-xs text-muted-foreground">
 						{#if gcMaxAge > 0}
-							Generations older than {gcMaxAge} days will be deleted, but at least {gcKeep} will always be kept.
+							Generations older than {gcMaxAge} days will be deleted, but at least {gcKeep} will always be kept. The booted generation is never removed.
 						{:else}
-							The {gcKeep} most recent generations will be kept. Older ones are deleted before each update.
+							The {gcKeep} most recent generations will be kept. Older ones are deleted before each update. The booted generation is never removed even if outside this range.
 						{/if}
 					</p>
 					<Button size="sm" onclick={saveGc} disabled={savingGc || gcKeep < 1}>
