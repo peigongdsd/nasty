@@ -232,7 +232,7 @@
 	});
 
 	onMount(async () => {
-		await Promise.all([refresh(), loadCapabilities(), loadFilesystems(), loadImages()]);
+		await Promise.all([refresh(), loadCapabilities(), loadFilesystems(), loadImages(), loadSubvolumes()]);
 		loading = false;
 	});
 
@@ -731,9 +731,9 @@
 				<Label for="vm-desc">Description</Label>
 				<Input id="vm-desc" bind:value={newDescription} placeholder="Optional description" class="mt-1" />
 			</div>
-			{#if availablePciDevices.length > 0}
-				<div class="mb-4">
-					<Label>PCI Passthrough</Label>
+			<div class="mb-4">
+				<Label>PCI Passthrough</Label>
+				{#if availablePciDevices.length > 0}
 					<div class="mt-1 max-h-40 overflow-y-auto rounded border border-input p-2 space-y-1">
 						{#each availablePciDevices as dev}
 							<label class="flex items-start gap-2 text-xs cursor-pointer hover:bg-muted/30 rounded p-1">
@@ -758,8 +758,10 @@
 						{/each}
 					</div>
 					<span class="mt-1 block text-xs text-muted-foreground">Devices are bound to vfio-pci when the VM starts.</span>
-				</div>
-			{/if}
+				{:else}
+					<p class="mt-1 text-xs text-muted-foreground">No PCI devices available for passthrough. Requires bare-metal host with IOMMU enabled.</p>
+				{/if}
+			</div>
 			<div class="mb-4 flex items-center gap-2">
 				<input id="vm-autostart" type="checkbox" bind:checked={newAutostart} class="rounded border-input" />
 				<Label for="vm-autostart">Auto-start on NASty boot</Label>
@@ -860,9 +862,15 @@
 									{:else}
 										<div class="space-y-1">
 											{#each vm.disks as disk, i}
+												{@const sv = blockSubvolumes.find(s => s.block_device === disk.path)}
 												<div class="flex items-center gap-3 rounded bg-secondary/50 px-2 py-1.5">
 													<span class="font-mono text-xs font-semibold">Disk {i}</span>
-													<span class="text-xs text-muted-foreground">{disk.path}</span>
+													{#if sv}
+														<span class="text-xs">{sv.filesystem}/{sv.name}</span>
+														<span class="text-xs text-muted-foreground">{disk.path}</span>
+													{:else}
+														<span class="text-xs text-muted-foreground">{disk.path}</span>
+													{/if}
 													<Badge variant="secondary" class="text-[0.6rem]">{disk.interface}</Badge>
 													{#if disk.readonly}
 														<Badge variant="secondary" class="text-[0.6rem]">readonly</Badge>
