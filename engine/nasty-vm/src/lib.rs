@@ -458,6 +458,10 @@ impl VmService {
             uefi: req.uefi.unwrap_or(true),
             description: req.description,
             autostart: req.autostart.unwrap_or(false),
+            cpu_model: None,
+            machine_type: None,
+            vga: None,
+            extra_args: None,
         };
 
         state_dir().save(&id, &config).await?;
