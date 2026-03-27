@@ -1052,40 +1052,110 @@
 
 							<div>
 								<!-- General tab -->
+								<!-- General tab -->
 								{#if editTab === 'general'}
-								<div>
-									<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">General</h4>
-									{#if vm.running}
-										<div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
-											<div><span class="text-muted-foreground">CPU:</span> {vm.cpus} core{vm.cpus !== 1 ? 's' : ''}{vm.cpu_model ? ` (${vm.cpu_model})` : ''}</div>
-											<div><span class="text-muted-foreground">Memory:</span> {formatMemory(vm.memory_mib)}</div>
-											<div><span class="text-muted-foreground">Boot:</span> {vm.boot_order}</div>
-											<div><span class="text-muted-foreground">UEFI:</span> {vm.uefi ? 'Yes' : 'No'}</div>
-											{#if vm.vga}<div><span class="text-muted-foreground">VGA:</span> {vm.vga}</div>{/if}
-											{#if vm.machine_type}<div><span class="text-muted-foreground">Machine:</span> {vm.machine_type}</div>{/if}
-											{#if vm.boot_iso}
-												<div class="col-span-2"><span class="text-muted-foreground">ISO:</span> <code class="text-xs">{vm.boot_iso}</code></div>
-											{/if}
-											{#if vm.description}
-												<div class="col-span-2"><span class="text-muted-foreground">Description:</span> {vm.description}</div>
-											{/if}
-										</div>
+								<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+									<span class="text-muted-foreground">Name</span>
+									<span class="font-semibold">{vm.name}</span>
+									<span class="text-muted-foreground">Description</span>
+									{#if !vm.running}
+										<input type="text" value={vm.description ?? ''} placeholder="Optional"
+											class="h-7 rounded-md border border-input bg-transparent px-2 text-sm"
+											onchange={(e) => updateVmField(vm.id, 'description', (e.target as HTMLInputElement).value)} />
 									{:else}
-										<div class="grid grid-cols-2 gap-4 text-sm">
-											<div>
-												<label class="text-xs text-muted-foreground">CPU Cores</label>
-												<input type="number" value={vm.cpus} min={1} max={64}
-													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-													onchange={(e) => updateVmField(vm.id, 'cpus', parseInt((e.target as HTMLInputElement).value))} />
-											</div>
-											<div>
-												<label class="text-xs text-muted-foreground">Memory (MiB)</label>
-												<input type="number" value={vm.memory_mib} min={128} step={128}
-													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-													onchange={(e) => updateVmField(vm.id, 'memory_mib', parseInt((e.target as HTMLInputElement).value))} />
-											</div>
-											<div>
-												<label class="text-xs text-muted-foreground">Boot Order</label>
+										<span>{vm.description || '—'}</span>
+									{/if}
+									<span class="text-muted-foreground">Autostart</span>
+									<span>{vm.autostart ? 'Yes' : 'No'}
+										{#if !vm.running}
+											<Button variant="ghost" size="xs" class="ml-2" onclick={() => toggleAutostart(vm)}>
+												{vm.autostart ? 'Disable' : 'Enable'}
+											</Button>
+										{/if}
+									</span>
+								</div>
+								{#if vm.disks.length > 0}
+									<div class="mt-3 flex flex-wrap gap-2">
+										<Button size="xs" variant="outline" onclick={() => { snapshotVm = vm.id; snapshotName = ''; }}>Snapshot</Button>
+										{#if !vm.running}
+											<Button size="xs" variant="outline" onclick={() => { cloneVm = vm.id; cloneName = ''; }}>Clone</Button>
+										{/if}
+									</div>
+								{/if}
+
+								<!-- System tab -->
+								{:else if editTab === 'system'}
+								{#if vm.running}
+									<div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+										<div><span class="text-muted-foreground">CPU:</span> {vm.cpus} core{vm.cpus !== 1 ? 's' : ''}{vm.cpu_model ? ` (${vm.cpu_model})` : ''}</div>
+										<div><span class="text-muted-foreground">Memory:</span> {formatMemory(vm.memory_mib)}</div>
+										<div><span class="text-muted-foreground">UEFI:</span> {vm.uefi ? 'Yes' : 'No'}</div>
+										{#if vm.vga}<div><span class="text-muted-foreground">VGA:</span> {vm.vga}</div>{/if}
+										{#if vm.machine_type}<div><span class="text-muted-foreground">Machine:</span> {vm.machine_type}</div>{/if}
+									</div>
+								{:else}
+									<div class="grid grid-cols-2 gap-4 text-sm">
+										<div>
+											<label class="text-xs text-muted-foreground">CPU Cores</label>
+											<input type="number" value={vm.cpus} min={1} max={64}
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+												onchange={(e) => updateVmField(vm.id, 'cpus', parseInt((e.target as HTMLInputElement).value))} />
+										</div>
+										<div>
+											<label class="text-xs text-muted-foreground">Memory (MiB)</label>
+											<input type="number" value={vm.memory_mib} min={128} step={128}
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+												onchange={(e) => updateVmField(vm.id, 'memory_mib', parseInt((e.target as HTMLInputElement).value))} />
+										</div>
+										<div>
+											<label class="text-xs text-muted-foreground">CPU Model</label>
+											<select value={vm.cpu_model ?? 'host'}
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+												onchange={(e) => updateVmField(vm.id, 'cpu_model', (e.target as HTMLSelectElement).value)}>
+												<option value="host">host (passthrough)</option>
+												<option value="max">max (all features)</option>
+												<option value="qemu64">qemu64 (generic)</option>
+											</select>
+										</div>
+										<div>
+											<label class="text-xs text-muted-foreground">Machine Type</label>
+											<select value={vm.machine_type ?? 'q35'}
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+												onchange={(e) => updateVmField(vm.id, 'machine_type', (e.target as HTMLSelectElement).value)}>
+												<option value="q35">Q35 (modern, PCIe)</option>
+												<option value="i440fx">i440FX (legacy PCI)</option>
+											</select>
+										</div>
+										<div>
+											<label class="text-xs text-muted-foreground">VGA Type</label>
+											<select value={vm.vga ?? 'virtio'}
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+												onchange={(e) => updateVmField(vm.id, 'vga', (e.target as HTMLSelectElement).value)}>
+												<option value="virtio">Virtio GPU</option>
+												<option value="qxl">QXL (SPICE)</option>
+												<option value="std">Standard VGA</option>
+												<option value="none">None</option>
+											</select>
+										</div>
+										<div>
+											<label class="text-xs text-muted-foreground">Extra QEMU Args</label>
+											<input type="text" value={vm.extra_args?.join(' ') ?? ''} placeholder="-device usb-tablet"
+												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs font-mono"
+												onchange={(e) => {
+													const val = (e.target as HTMLInputElement).value.trim();
+													updateVmField(vm.id, 'extra_args', val ? val.split(/\s+/) : []);
+												}} />
+										</div>
+									</div>
+								{/if}
+
+								<!-- Storage tab -->
+								{:else if editTab === 'storage'}
+								<div class="mb-3">
+									<div class="grid grid-cols-2 gap-4 text-sm mb-3">
+										<div>
+											<label class="text-xs text-muted-foreground">Boot Order</label>
+											{#if !vm.running}
 												<select value={vm.boot_order}
 													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 													onchange={(e) => updateVmField(vm.id, 'boot_order', (e.target as HTMLSelectElement).value)}>
@@ -1093,76 +1163,28 @@
 													<option value="cdrom">CD-ROM (ISO)</option>
 													<option value="network">Network (PXE)</option>
 												</select>
-											</div>
-											<div>
-												<label class="text-xs text-muted-foreground">Boot ISO</label>
-												<div class="mt-0.5 flex gap-1">
-													<select value={vm.boot_iso ?? ''}
-														class="h-8 flex-1 rounded-md border border-input bg-transparent px-2 text-xs"
-														onchange={(e) => updateVmField(vm.id, 'boot_iso', (e.target as HTMLSelectElement).value)}>
-														<option value="">None (no ISO)</option>
-														{#each imageFiles as iso}
-															<option value={iso.path}>{iso.name}</option>
-														{/each}
-													</select>
-												</div>
-												{#if vm.boot_iso}
-													<span class="text-[0.65rem] text-muted-foreground">{vm.boot_iso}</span>
-												{/if}
-											</div>
-											<div>
-												<label class="text-xs text-muted-foreground">Description</label>
-												<input type="text" value={vm.description ?? ''} placeholder="Optional"
-													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-													onchange={(e) => updateVmField(vm.id, 'description', (e.target as HTMLInputElement).value)} />
-											</div>
+											{:else}
+												<div class="mt-0.5 text-sm">{vm.boot_order}</div>
+											{/if}
 										</div>
-										<details class="mt-3">
-											<summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Advanced options</summary>
-											<div class="mt-2 grid grid-cols-2 gap-4 text-sm">
-												<div>
-													<label class="text-xs text-muted-foreground">CPU Model</label>
-													<select value={vm.cpu_model ?? 'host'}
-														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-														onchange={(e) => updateVmField(vm.id, 'cpu_model', (e.target as HTMLSelectElement).value)}>
-														<option value="host">host (passthrough)</option>
-														<option value="max">max (all features)</option>
-														<option value="qemu64">qemu64 (generic)</option>
-													</select>
-												</div>
-												<div>
-													<label class="text-xs text-muted-foreground">Machine Type</label>
-													<select value={vm.machine_type ?? 'q35'}
-														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-														onchange={(e) => updateVmField(vm.id, 'machine_type', (e.target as HTMLSelectElement).value)}>
-														<option value="q35">Q35 (modern, PCIe)</option>
-														<option value="i440fx">i440FX (legacy PCI)</option>
-													</select>
-												</div>
-												<div>
-													<label class="text-xs text-muted-foreground">VGA Type</label>
-													<select value={vm.vga ?? 'virtio'}
-														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
-														onchange={(e) => updateVmField(vm.id, 'vga', (e.target as HTMLSelectElement).value)}>
-														<option value="virtio">Virtio GPU</option>
-														<option value="qxl">QXL (SPICE)</option>
-														<option value="std">Standard VGA</option>
-														<option value="none">None</option>
-													</select>
-												</div>
-												<div>
-													<label class="text-xs text-muted-foreground">Extra QEMU Args</label>
-													<input type="text" value={vm.extra_args?.join(' ') ?? ''} placeholder="-device usb-tablet"
-														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs font-mono"
-														onchange={(e) => {
-															const val = (e.target as HTMLInputElement).value.trim();
-															updateVmField(vm.id, 'extra_args', val ? val.split(/\s+/) : []);
-														}} />
-												</div>
-											</div>
-										</details>
-									{/if}
+										<div>
+											<label class="text-xs text-muted-foreground">Boot ISO</label>
+											{#if !vm.running}
+												<select value={vm.boot_iso ?? ''}
+													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
+													onchange={(e) => updateVmField(vm.id, 'boot_iso', (e.target as HTMLSelectElement).value)}>
+													<option value="">None (no ISO)</option>
+													{#each imageFiles as iso}
+														<option value={iso.path}>{iso.name}</option>
+													{/each}
+												</select>
+											{:else}
+												<div class="mt-0.5 text-xs font-mono">{vm.boot_iso || 'None'}</div>
+											{/if}
+										</div>
+									</div>
 								</div>
+								<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Disks</h4>
 
 								<!-- Disks -->
 								<div>
@@ -1226,7 +1248,8 @@
 									{/if}
 								</div>
 
-								<!-- Networks -->
+								<!-- Network tab -->
+								{:else if editTab === 'network'}
 								<div>
 									<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Networks</h4>
 									{#if vm.networks.length === 0}
@@ -1249,7 +1272,8 @@
 									{/if}
 								</div>
 
-								<!-- Passthrough -->
+								<!-- Passthrough tab -->
+								{:else if editTab === 'passthrough'}
 								<div>
 									<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">PCI Passthrough</h4>
 									{#if vm.passthrough_devices.length === 0}
@@ -1287,22 +1311,7 @@
 									{/if}
 								</div>
 
-								<!-- Actions -->
-								<div class="flex flex-wrap gap-2 pt-2">
-									<Button size="xs" variant="outline" onclick={() => toggleAutostart(vm)}>
-										{vm.autostart ? 'Disable Autostart' : 'Enable Autostart'}
-									</Button>
-									{#if vm.disks.length > 0}
-										<Button size="xs" variant="outline" onclick={() => { snapshotVm = vm.id; snapshotName = ''; }}>
-											Snapshot
-										</Button>
-									{/if}
-									{#if !vm.running && vm.disks.length > 0}
-										<Button size="xs" variant="outline" onclick={() => { cloneVm = vm.id; cloneName = ''; }}>
-											Clone
-										</Button>
-									{/if}
-								</div>
+								{/if}
 
 								<!-- Inline snapshot form -->
 								{#if snapshotVm === vm.id}
