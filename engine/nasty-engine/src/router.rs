@@ -1834,6 +1834,11 @@ async fn vm_clone(
             path: cloned.block_device.unwrap_or_default(),
             interface: "virtio".to_string(),
             readonly: false,
+            cache: None,
+            aio: None,
+            discard: None,
+            iops_rd: None,
+            iops_wr: None,
         });
     }
 
