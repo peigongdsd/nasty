@@ -875,6 +875,16 @@ in {
       };
     };
 
+    # ── Log rotation ──────────────────────────────────────────
+    services.logrotate.settings.nasty = {
+      files = "/var/lib/nasty/audit.log";
+      rotate = 10;
+      size = "10M";
+      compress = true;
+      missingok = true;
+      copytruncate = true;  # don't rename — engine holds the file open
+    };
+
     # ── Firewall ───────────────────────────────────────────────
 
     networking.firewall.allowedTCPPorts = lib.flatten [

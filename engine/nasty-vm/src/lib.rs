@@ -525,8 +525,13 @@ impl VmService {
             validate_vm_path(iso)?;
         }
 
-        // Ensure runtime directory exists
+        // Ensure runtime directory exists with restrictive permissions (owner-only)
         tokio::fs::create_dir_all(QMP_DIR).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = tokio::fs::set_permissions(QMP_DIR, std::fs::Permissions::from_mode(0o700)).await;
+        }
 
         // Copy OVMF_VARS template for this VM if it doesn't exist yet
         if config.uefi {
