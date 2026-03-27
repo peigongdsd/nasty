@@ -193,15 +193,13 @@ pub async fn list_timezones() -> Result<Vec<String>, String> {
 }
 
 async fn apply_hostname(name: &str) -> Result<(), String> {
-    let output = tokio::process::Command::new("hostnamectl")
-        .args(["set-hostname", name])
-        .output()
+    // NixOS blocks hostnamectl — set hostname directly via kernel and /etc/hostname
+    tokio::fs::write("/proc/sys/kernel/hostname", name.as_bytes())
         .await
-        .map_err(|e| format!("hostnamectl: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("failed to set hostname: {stderr}"));
-    }
+        .map_err(|e| format!("failed to set kernel hostname: {e}"))?;
+    tokio::fs::write("/etc/hostname", format!("{name}\n").as_bytes())
+        .await
+        .map_err(|e| format!("failed to write /etc/hostname: {e}"))?;
     Ok(())
 }
 
