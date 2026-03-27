@@ -803,14 +803,18 @@ impl FilesystemService {
             write_opt(&base, "erasure_code", if ec { "1" } else { "0" }).await?;
         }
 
-        // Mount options require a remount to take effect
-        let has_mount_changes = req.version_upgrade.is_some()
-            || req.degraded.is_some()
-            || req.verbose.is_some()
-            || req.fsck.is_some()
-            || req.journal_flush_disabled.is_some();
+        // Mount options require a remount to take effect — but only if they actually changed.
+        let state = load_fs_state().await;
+        let current = state.get(&req.name).cloned().unwrap_or_default();
+        let mount_changed =
+            (req.version_upgrade.is_some() && req.version_upgrade != current.version_upgrade)
+            || (req.degraded.is_some() && req.degraded != current.degraded)
+            || (req.verbose.is_some() && req.verbose != current.verbose)
+            || (req.fsck.is_some() && req.fsck != current.fsck)
+            || (req.journal_flush_disabled.is_some() && req.journal_flush_disabled != current.journal_flush_disabled);
+        drop(state);
 
-        if has_mount_changes {
+        if mount_changed {
             let mut state = load_fs_state().await;
             let opts = state.entry(req.name.clone()).or_default();
             if let Some(ref v) = req.version_upgrade { opts.version_upgrade = Some(v.clone()); }
@@ -820,9 +824,12 @@ impl FilesystemService {
             if let Some(v) = req.journal_flush_disabled { opts.journal_flush_disabled = Some(v); }
             let _ = save_fs_state(&state).await;
 
-            // Remount with new options
-            self.unmount(&req.name).await?;
-            self.mount(&req.name).await?;
+            // Remount in-place (no unmount needed, works even when busy)
+            let mount_point = format!("{NASTY_MOUNT_BASE}/{}", req.name);
+            let mount_opt_str = build_mount_opts(opts);
+            cmd::run_ok("mount", &["-o", &format!("remount,{mount_opt_str}"), &mount_point])
+                .await
+                .map_err(FilesystemError::CommandFailed)?;
             return self.get(&req.name).await;
         }
 
