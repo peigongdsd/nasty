@@ -672,7 +672,7 @@
 </div>
 
 {#if wizardStep !== 0}
-	<Card class="mb-6 max-w-2xl">
+	<Card class="mb-6 max-w-4xl">
 		<CardContent class="pt-6">
 			<!-- Step indicator -->
 			<div class="mb-6 flex items-center gap-0">
@@ -759,9 +759,6 @@
 			</div>
 
 			<!-- Step 3: Storage -->
-			{:else if wizardStep === 3}
-			<h3 class="mb-4 text-lg font-semibold">New VM</h3>
-			<!-- Step 3: Storage (disk, ISO, boot order) -->
 			{:else if wizardStep === 3}
 			<div class="mb-4">
 				<div class="flex items-center justify-between">
