@@ -816,17 +816,19 @@ impl FilesystemService {
 
         if mount_changed {
             let mut state = load_fs_state().await;
-            let opts = state.entry(req.name.clone()).or_default();
-            if let Some(ref v) = req.version_upgrade { opts.version_upgrade = Some(v.clone()); }
-            if let Some(v) = req.degraded { opts.degraded = Some(v); }
-            if let Some(v) = req.verbose { opts.verbose = Some(v); }
-            if let Some(v) = req.fsck { opts.fsck = Some(v); }
-            if let Some(v) = req.journal_flush_disabled { opts.journal_flush_disabled = Some(v); }
+            {
+                let opts = state.entry(req.name.clone()).or_default();
+                if let Some(ref v) = req.version_upgrade { opts.version_upgrade = Some(v.clone()); }
+                if let Some(v) = req.degraded { opts.degraded = Some(v); }
+                if let Some(v) = req.verbose { opts.verbose = Some(v); }
+                if let Some(v) = req.fsck { opts.fsck = Some(v); }
+                if let Some(v) = req.journal_flush_disabled { opts.journal_flush_disabled = Some(v); }
+            }
             let _ = save_fs_state(&state).await;
 
             // Remount in-place (no unmount needed, works even when busy)
             let mount_point = format!("{NASTY_MOUNT_BASE}/{}", req.name);
-            let mount_opt_str = build_mount_opts(opts);
+            let mount_opt_str = build_mount_opts(state.get(&req.name).unwrap_or(&FsMountOptions::default()));
             cmd::run_ok("mount", &["-o", &format!("remount,{mount_opt_str}"), &mount_point])
                 .await
                 .map_err(FilesystemError::CommandFailed)?;
