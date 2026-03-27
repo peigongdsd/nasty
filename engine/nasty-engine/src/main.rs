@@ -82,7 +82,10 @@ async fn main() -> anyhow::Result<()> {
         auth: AuthService::new().await,
         events: event_tx,
         log_reload: reload_handle,
-        system: nasty_system::SystemService::new(),
+        system: nasty_system::SystemService::new(
+            Some(commit.to_string()),
+            Some(built.to_string()),
+        ),
         settings: nasty_system::settings::SettingsService::new().await,
         alerts: nasty_system::alerts::AlertService::new().await,
         network: nasty_system::network::NetworkService::new(),

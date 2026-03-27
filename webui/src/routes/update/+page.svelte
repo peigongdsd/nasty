@@ -39,6 +39,7 @@
 
 	let info: UpdateInfo | null = $state(null);
 	let status: UpdateStatus | null = $state(null);
+	let engineCommit: string | null = $state(null);
 	let loading = $state(true);
 	let checking = $state(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
@@ -156,7 +157,9 @@
 
 	onMount(() => {
 		const t0 = performance.now();
-		Promise.all([loadVersion(), loadStatus(), loadBcachefsInfo(), loadBcachefsStatus()]).then(() => {
+		Promise.all([loadVersion(), loadStatus(), loadBcachefsInfo(), loadBcachefsStatus(),
+			client.call('system.info').then((si: any) => { engineCommit = si.engine_commit ?? null; }).catch(() => {}),
+		]).then(() => {
 			if (localStorage.getItem('nasty-debug') === '1') {
 				console.debug(`[page] update: ${(performance.now() - t0).toFixed(0)}ms total`);
 			}
@@ -490,6 +493,9 @@
 							<div>
 								<div class="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed</div>
 								<div class="font-mono text-xl font-semibold">{info?.current_version ?? 'unknown'}</div>
+								{#if engineCommit && engineCommit !== info?.current_version}
+									<div class="text-xs text-muted-foreground">engine: <span class="font-mono">{engineCommit}</span></div>
+								{/if}
 							</div>
 							{#if info?.latest_version}
 								<div class="text-lg text-muted-foreground/30">→</div>

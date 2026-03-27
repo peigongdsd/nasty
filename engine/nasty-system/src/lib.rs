@@ -31,6 +31,8 @@ struct CachedInfo {
 
 pub struct SystemService {
     cached: Arc<RwLock<Option<CachedInfo>>>,
+    engine_commit: Option<String>,
+    engine_built: Option<String>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -39,6 +41,10 @@ pub struct SystemInfo {
     pub hostname: String,
     /// NASty engine version string.
     pub version: String,
+    /// Git commit the engine binary was compiled from.
+    pub engine_commit: Option<String>,
+    /// Build timestamp of the engine binary.
+    pub engine_built: Option<String>,
     /// System uptime in seconds.
     pub uptime_seconds: u64,
     /// Running Linux kernel version string.
@@ -97,8 +103,8 @@ pub struct ServiceStatus {
 // and re-exported via `pub use` at the top of this file.
 
 impl SystemService {
-    pub fn new() -> Self {
-        Self { cached: Arc::new(RwLock::new(None)) }
+    pub fn new(engine_commit: Option<String>, engine_built: Option<String>) -> Self {
+        Self { cached: Arc::new(RwLock::new(None)), engine_commit, engine_built }
     }
 
     /// Invalidate cached bcachefs info — call after bcachefs switch or reboot.
@@ -161,6 +167,8 @@ impl SystemService {
         SystemInfo {
             hostname: hostname(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            engine_commit: self.engine_commit.clone(),
+            engine_built: self.engine_built.clone(),
             uptime_seconds: uptime_seconds(),
             kernel: kernel_version(),
             bcachefs_version: cached.bcachefs_version,
