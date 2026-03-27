@@ -383,6 +383,14 @@
 		await refresh();
 	}
 
+	async function updateVmField(vmId: string, field: string, value: unknown) {
+		await withToast(
+			() => client.call('vm.update', { id: vmId, [field]: value }),
+			'VM updated'
+		);
+		await refresh();
+	}
+
 	async function detachDisk(vm: VmStatus, index: number) {
 		const disks = vm.disks.filter((_, i) => i !== index);
 		await withToast(
@@ -861,15 +869,97 @@
 								<!-- Configuration -->
 								<div>
 									<h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Configuration</h4>
-									<div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
-										<div><span class="text-muted-foreground">CPU:</span> {vm.cpus} core{vm.cpus !== 1 ? 's' : ''}</div>
-										<div><span class="text-muted-foreground">Memory:</span> {formatMemory(vm.memory_mib)}</div>
-										<div><span class="text-muted-foreground">Boot:</span> {vm.boot_order}</div>
-										<div><span class="text-muted-foreground">UEFI:</span> {vm.uefi ? 'Yes' : 'No (Legacy BIOS)'}</div>
-										{#if vm.boot_iso}
-											<div class="col-span-2"><span class="text-muted-foreground">ISO:</span> <code class="text-xs">{vm.boot_iso}</code></div>
-										{/if}
-									</div>
+									{#if vm.running}
+										<div class="grid grid-cols-2 gap-x-8 gap-y-1 text-sm">
+											<div><span class="text-muted-foreground">CPU:</span> {vm.cpus} core{vm.cpus !== 1 ? 's' : ''}{vm.cpu_model ? ` (${vm.cpu_model})` : ''}</div>
+											<div><span class="text-muted-foreground">Memory:</span> {formatMemory(vm.memory_mib)}</div>
+											<div><span class="text-muted-foreground">Boot:</span> {vm.boot_order}</div>
+											<div><span class="text-muted-foreground">UEFI:</span> {vm.uefi ? 'Yes' : 'No'}</div>
+											{#if vm.vga}<div><span class="text-muted-foreground">VGA:</span> {vm.vga}</div>{/if}
+											{#if vm.machine_type}<div><span class="text-muted-foreground">Machine:</span> {vm.machine_type}</div>{/if}
+											{#if vm.boot_iso}
+												<div class="col-span-2"><span class="text-muted-foreground">ISO:</span> <code class="text-xs">{vm.boot_iso}</code></div>
+											{/if}
+											{#if vm.description}
+												<div class="col-span-2"><span class="text-muted-foreground">Description:</span> {vm.description}</div>
+											{/if}
+										</div>
+									{:else}
+										<div class="grid grid-cols-2 gap-4 text-sm">
+											<div>
+												<label class="text-xs text-muted-foreground">CPU Cores</label>
+												<input type="number" value={vm.cpus} min={1} max={64}
+													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+													onchange={(e) => updateVmField(vm.id, 'cpus', parseInt((e.target as HTMLInputElement).value))} />
+											</div>
+											<div>
+												<label class="text-xs text-muted-foreground">Memory (MiB)</label>
+												<input type="number" value={vm.memory_mib} min={128} step={128}
+													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+													onchange={(e) => updateVmField(vm.id, 'memory_mib', parseInt((e.target as HTMLInputElement).value))} />
+											</div>
+											<div>
+												<label class="text-xs text-muted-foreground">Boot Order</label>
+												<select value={vm.boot_order}
+													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+													onchange={(e) => updateVmField(vm.id, 'boot_order', (e.target as HTMLSelectElement).value)}>
+													<option value="disk">Disk</option>
+													<option value="cdrom">CD-ROM (ISO)</option>
+													<option value="network">Network (PXE)</option>
+												</select>
+											</div>
+											<div>
+												<label class="text-xs text-muted-foreground">Description</label>
+												<input type="text" value={vm.description ?? ''} placeholder="Optional"
+													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+													onchange={(e) => updateVmField(vm.id, 'description', (e.target as HTMLInputElement).value)} />
+											</div>
+										</div>
+										<details class="mt-3">
+											<summary class="cursor-pointer text-xs text-muted-foreground hover:text-foreground">Advanced options</summary>
+											<div class="mt-2 grid grid-cols-2 gap-4 text-sm">
+												<div>
+													<label class="text-xs text-muted-foreground">CPU Model</label>
+													<select value={vm.cpu_model ?? 'host'}
+														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+														onchange={(e) => updateVmField(vm.id, 'cpu_model', (e.target as HTMLSelectElement).value)}>
+														<option value="host">host (passthrough)</option>
+														<option value="max">max (all features)</option>
+														<option value="qemu64">qemu64 (generic)</option>
+													</select>
+												</div>
+												<div>
+													<label class="text-xs text-muted-foreground">Machine Type</label>
+													<select value={vm.machine_type ?? 'q35'}
+														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+														onchange={(e) => updateVmField(vm.id, 'machine_type', (e.target as HTMLSelectElement).value)}>
+														<option value="q35">Q35 (modern, PCIe)</option>
+														<option value="i440fx">i440FX (legacy PCI)</option>
+													</select>
+												</div>
+												<div>
+													<label class="text-xs text-muted-foreground">VGA Type</label>
+													<select value={vm.vga ?? 'virtio'}
+														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+														onchange={(e) => updateVmField(vm.id, 'vga', (e.target as HTMLSelectElement).value)}>
+														<option value="virtio">Virtio GPU</option>
+														<option value="qxl">QXL (SPICE)</option>
+														<option value="std">Standard VGA</option>
+														<option value="none">None</option>
+													</select>
+												</div>
+												<div>
+													<label class="text-xs text-muted-foreground">Extra QEMU Args</label>
+													<input type="text" value={vm.extra_args?.join(' ') ?? ''} placeholder="-device usb-tablet"
+														class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs font-mono"
+														onchange={(e) => {
+															const val = (e.target as HTMLInputElement).value.trim();
+															updateVmField(vm.id, 'extra_args', val ? val.split(/\s+/) : []);
+														}} />
+												</div>
+											</div>
+										</details>
+									{/if}
 								</div>
 
 								<!-- Disks -->

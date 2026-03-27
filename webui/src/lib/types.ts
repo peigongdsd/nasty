@@ -487,6 +487,10 @@ export interface VmConfig {
 	uefi: boolean;
 	description?: string;
 	autostart: boolean;
+	cpu_model?: string;
+	machine_type?: string;
+	vga?: string;
+	extra_args?: string[];
 }
 
 export interface VmStatus extends VmConfig {

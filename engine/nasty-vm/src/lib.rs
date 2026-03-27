@@ -89,6 +89,18 @@ pub struct VmConfig {
     /// Whether the VM should auto-start on NASty boot.
     #[serde(default)]
     pub autostart: bool,
+    /// CPU model: "host" (default), "max", "qemu64", etc.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_model: Option<String>,
+    /// Machine type: "q35" (default for x86), "i440fx".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine_type: Option<String>,
+    /// VGA device type: "virtio" (default), "qxl", "std", "none".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vga: Option<String>,
+    /// Extra raw QEMU arguments for advanced users.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_args: Option<Vec<String>>,
 }
 
 fn default_boot_order() -> String { "disk".to_string() }
@@ -222,6 +234,14 @@ pub struct UpdateVmRequest {
     pub description: Option<String>,
     /// Auto-start.
     pub autostart: Option<bool>,
+    /// CPU model.
+    pub cpu_model: Option<String>,
+    /// Machine type.
+    pub machine_type: Option<String>,
+    /// VGA device type.
+    pub vga: Option<String>,
+    /// Extra raw QEMU arguments.
+    pub extra_args: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -464,6 +484,8 @@ impl VmService {
             if req.cpus.is_some() || req.memory_mib.is_some() || req.disks.is_some()
                 || req.networks.is_some() || req.passthrough_devices.is_some()
                 || req.boot_iso.is_some() || req.boot_order.is_some() || req.uefi.is_some()
+                || req.cpu_model.is_some() || req.machine_type.is_some()
+                || req.vga.is_some() || req.extra_args.is_some()
             {
                 return Err(VmError::AlreadyRunning(
                     "stop the VM before changing hardware settings".to_string(),
@@ -478,6 +500,10 @@ impl VmService {
             if let Some(iso) = req.boot_iso { config.boot_iso = Some(iso); }
             if let Some(bo) = req.boot_order { config.boot_order = bo; }
             if let Some(uefi) = req.uefi { config.uefi = uefi; }
+            if req.cpu_model.is_some() { config.cpu_model = req.cpu_model; }
+            if req.machine_type.is_some() { config.machine_type = req.machine_type; }
+            if req.vga.is_some() { config.vga = req.vga; }
+            if req.extra_args.is_some() { config.extra_args = req.extra_args; }
         }
 
         state_dir().save(&config.id, &config).await?;
@@ -684,13 +710,14 @@ fn build_qemu_args(config: &VmConfig) -> Vec<String> {
     args.push("-daemonize".to_string());
 
     // Machine type
+    let cpu_model = config.cpu_model.as_deref().unwrap_or("host");
     if std::env::consts::ARCH == "aarch64" {
         args.extend_from_slice(&["-machine".to_string(), "virt,gic-version=3".to_string()]);
-        args.extend_from_slice(&["-cpu".to_string(), "host".to_string()]);
     } else {
-        args.extend_from_slice(&["-machine".to_string(), "q35,accel=kvm".to_string()]);
-        args.extend_from_slice(&["-cpu".to_string(), "host".to_string()]);
+        let machine = config.machine_type.as_deref().unwrap_or("q35");
+        args.extend_from_slice(&["-machine".to_string(), format!("{machine},accel=kvm")]);
     }
+    args.extend_from_slice(&["-cpu".to_string(), cpu_model.to_string()]);
 
     // Enable KVM
     args.push("-enable-kvm".to_string());
@@ -808,9 +835,20 @@ fn build_qemu_args(config: &VmConfig) -> Vec<String> {
         format!("unix:{},server,nowait", serial_socket_path(&config.id)),
     ]);
 
-    // No default display
+    // VGA device (for VNC console)
+    let vga = config.vga.as_deref().unwrap_or("virtio");
+    if vga != "none" {
+        args.extend_from_slice(&["-vga".to_string(), vga.to_string()]);
+    }
+
+    // No local display (VNC over unix socket handles console)
     args.push("-display".to_string());
     args.push("none".to_string());
+
+    // Extra raw QEMU args for advanced users
+    if let Some(ref extra) = config.extra_args {
+        args.extend(extra.iter().cloned());
+    }
 
     args
 }
