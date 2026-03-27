@@ -189,7 +189,9 @@ impl SystemService {
 }
 
 fn hostname() -> String {
-    std::fs::read_to_string("/etc/hostname")
+    // Read from kernel (set via /proc/sys/kernel/hostname), not /etc/hostname which is
+    // read-only on NixOS and may be stale.
+    std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
 }
