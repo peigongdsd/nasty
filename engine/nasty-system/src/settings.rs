@@ -193,13 +193,11 @@ pub async fn list_timezones() -> Result<Vec<String>, String> {
 }
 
 async fn apply_hostname(name: &str) -> Result<(), String> {
-    // NixOS blocks hostnamectl — set hostname directly via kernel and /etc/hostname
+    // NixOS has /etc as read-only — set hostname via kernel proc only.
+    // Persistence is via /var/lib/nasty/settings.json, read at boot.
     tokio::fs::write("/proc/sys/kernel/hostname", name.as_bytes())
         .await
         .map_err(|e| format!("failed to set kernel hostname: {e}"))?;
-    tokio::fs::write("/etc/hostname", format!("{name}\n").as_bytes())
-        .await
-        .map_err(|e| format!("failed to write /etc/hostname: {e}"))?;
     Ok(())
 }
 

@@ -216,10 +216,7 @@ in {
           SETTINGS=/var/lib/nasty/settings.json
           if [ -f "$SETTINGS" ]; then
             NAME=$(${pkgs.jq}/bin/jq -r '.hostname // ""' "$SETTINGS" 2>/dev/null)
-            if [ -n "$NAME" ]; then
-              echo "$NAME" > /proc/sys/kernel/hostname
-              echo "$NAME" > /etc/hostname
-            fi
+            [ -n "$NAME" ] && echo "$NAME" > /proc/sys/kernel/hostname || true
           fi
         '';
       };
