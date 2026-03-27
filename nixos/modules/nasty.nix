@@ -756,6 +756,9 @@ in {
 
     systemd.services.nfs-server.wantedBy = mkIf cfg.nfs.enable (lib.mkForce []);
 
+    # Disable rpcbind — not needed for NFSv4-only
+    services.rpcbind.enable = lib.mkForce false;
+
     # ── Samba ──────────────────────────────────────────────────
     # Same approach: declare config but don't auto-start.
 
