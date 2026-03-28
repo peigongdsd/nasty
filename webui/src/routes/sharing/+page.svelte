@@ -14,6 +14,101 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import SortTh from '$lib/components/SortTh.svelte';
 
+	// ── Share creation wizard ────────────────────────────
+	let shareWizardStep: 0 | 1 | 2 | 3 | 4 = $state(0);
+	let shareProtocol: Tab = $state('nfs');
+	let shareSubvolume = $state('');
+	// NFS access
+	let shareNfsHost = $state('');
+	let shareNfsOptions = $state('rw,sync,no_subtree_check');
+	// SMB access
+	let shareSmbName = $state('');
+	let shareSmbGuestOk = $state(false);
+	let shareSmbReadOnly = $state(false);
+	// iSCSI access
+	let shareIscsiName = $state('');
+	// NVMe-oF access
+	let shareNvmeofName = $state('');
+	let shareNvmeofAddr = $state('0.0.0.0');
+	let shareNvmeofPort = $state('4420');
+
+	let shareSubvolumes: Subvolume[] = $state([]);
+
+	function openShareWizard() {
+		shareWizardStep = 1;
+		shareProtocol = activeTab;
+		shareSubvolume = '';
+		shareNfsHost = ''; shareNfsOptions = 'rw,sync,no_subtree_check';
+		shareSmbName = ''; shareSmbGuestOk = false; shareSmbReadOnly = false;
+		shareIscsiName = ''; shareNvmeofName = '';
+		shareNvmeofAddr = '0.0.0.0'; shareNvmeofPort = '4420';
+	}
+
+	async function loadShareSubvolumes() {
+		try {
+			const all = await client.call<Subvolume[]>('subvolume.list_all');
+			shareSubvolumes = all;
+		} catch { shareSubvolumes = []; }
+	}
+
+	$effect(() => { if (shareWizardStep > 0) loadShareSubvolumes(); });
+
+	const filteredShareSubvolumes = $derived.by(() => {
+		const isBlock = shareProtocol === 'iscsi' || shareProtocol === 'nvmeof';
+		return shareSubvolumes.filter(sv =>
+			isBlock ? (sv.subvolume_type === 'block' && sv.block_device) : sv.subvolume_type === 'filesystem'
+		);
+	});
+
+	async function createShare() {
+		if (!shareSubvolume) return;
+		const sv = shareSubvolumes.find(s => s.path === shareSubvolume || s.block_device === shareSubvolume);
+		if (!sv) return;
+
+		let ok;
+		if (shareProtocol === 'nfs') {
+			ok = await withToast(
+				() => client.call('share.nfs.create', {
+					path: sv.path,
+					clients: [{ host: shareNfsHost || '*', options: shareNfsOptions }],
+				}),
+				'NFS share created'
+			);
+		} else if (shareProtocol === 'smb') {
+			ok = await withToast(
+				() => client.call('share.smb.create', {
+					name: shareSmbName || sv.name,
+					path: sv.path,
+					guest_ok: shareSmbGuestOk,
+					read_only: shareSmbReadOnly,
+				}),
+				'SMB share created'
+			);
+		} else if (shareProtocol === 'iscsi') {
+			ok = await withToast(
+				() => client.call('share.iscsi.create', {
+					name: shareIscsiName || sv.name,
+					device_path: sv.block_device,
+				}),
+				'iSCSI target created'
+			);
+		} else if (shareProtocol === 'nvmeof') {
+			ok = await withToast(
+				() => client.call('share.nvmeof.create', {
+					name: shareNvmeofName || sv.name,
+					device_path: sv.block_device,
+					addr: shareNvmeofAddr,
+					port: parseInt(shareNvmeofPort) || 4420,
+				}),
+				'NVMe-oF subsystem created'
+			);
+		}
+		if (ok !== undefined) {
+			shareWizardStep = 0;
+			nfsRefresh(); smbRefresh(); iscsiRefresh(); nvmeRefresh();
+		}
+	}
+
 	// ── Tab state ────────────────────────────────────────
 	type Tab = 'nfs' | 'smb' | 'iscsi' | 'nvmeof';
 	const TABS: { key: Tab; label: string; hash: string }[] = [
@@ -577,6 +672,174 @@
 	onDestroy(() => client.offEvent(handleEvent));
 </script>
 
+<!-- Create Share button + wizard -->
+<div class="mb-4">
+	<Button size="sm" onclick={() => shareWizardStep === 0 ? openShareWizard() : (shareWizardStep = 0)}>
+		{shareWizardStep !== 0 ? 'Cancel' : 'Create Share'}
+	</Button>
+</div>
+
+{#if shareWizardStep !== 0}
+	<Card class="mb-6 max-w-2xl">
+		<CardContent class="pt-6">
+			<div class="mb-6 flex items-center gap-0">
+				{#each [['1', 'Protocol'], ['2', 'Source'], ['3', 'Access'], ['4', 'Review']] as [num, label], i}
+					<div class="flex items-center">
+						<div class="flex items-center gap-2">
+							<div class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold
+								{shareWizardStep > i + 1 ? 'bg-primary text-primary-foreground' :
+								 shareWizardStep === i + 1 ? 'bg-primary text-primary-foreground' :
+								 'bg-secondary text-muted-foreground'}">
+								{num}
+							</div>
+							<span class="text-xs {shareWizardStep === i + 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}">{label}</span>
+						</div>
+						{#if i < 3}
+							<div class="mx-3 h-px w-8 bg-border"></div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+
+			<!-- Step 1: Protocol -->
+			{#if shareWizardStep === 1}
+			<div class="mb-4">
+				<Label>Protocol</Label>
+				<select bind:value={shareProtocol} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="nfs">NFS — Network File System</option>
+					<option value="smb">SMB — Windows/Samba File Sharing</option>
+					<option value="iscsi">iSCSI — Block Storage over TCP</option>
+					<option value="nvmeof">NVMe-oF — NVMe over Fabrics (TCP)</option>
+				</select>
+			</div>
+			<div class="flex gap-2">
+				<Button size="sm" onclick={() => shareWizardStep = 2}>Next: Source →</Button>
+			</div>
+
+			<!-- Step 2: Source -->
+			{:else if shareWizardStep === 2}
+			<div class="mb-4">
+				<Label>Subvolume</Label>
+				<select bind:value={shareSubvolume} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+					<option value="">Select a subvolume...</option>
+					{#each filteredShareSubvolumes as sv}
+						{#if shareProtocol === 'iscsi' || shareProtocol === 'nvmeof'}
+							<option value={sv.block_device}>{sv.filesystem}/{sv.name} ({sv.block_device})</option>
+						{:else}
+							<option value={sv.path}>{sv.filesystem}/{sv.name} ({sv.path})</option>
+						{/if}
+					{/each}
+				</select>
+				{#if filteredShareSubvolumes.length === 0}
+					<p class="mt-1 text-xs text-muted-foreground">
+						No {shareProtocol === 'iscsi' || shareProtocol === 'nvmeof' ? 'block' : 'filesystem'} subvolumes available. Create one first.
+					</p>
+				{/if}
+			</div>
+			<div class="flex gap-2">
+				<Button variant="secondary" size="sm" onclick={() => shareWizardStep = 1}>← Back</Button>
+				<Button size="sm" onclick={() => {
+					// Auto-fill names from subvolume
+					const sv = shareSubvolumes.find(s => s.path === shareSubvolume || s.block_device === shareSubvolume);
+					if (sv) {
+						if (shareProtocol === 'smb' && !shareSmbName) shareSmbName = sv.name;
+						if (shareProtocol === 'iscsi' && !shareIscsiName) shareIscsiName = sv.name;
+						if (shareProtocol === 'nvmeof' && !shareNvmeofName) shareNvmeofName = sv.name;
+					}
+					shareWizardStep = 3;
+				}} disabled={!shareSubvolume}>Next: Access →</Button>
+			</div>
+
+			<!-- Step 3: Access (protocol-specific) -->
+			{:else if shareWizardStep === 3}
+			{#if shareProtocol === 'nfs'}
+				<div class="mb-4">
+					<Label>Allowed Network</Label>
+					<Input bind:value={shareNfsHost} placeholder="192.168.1.0/24 or * for any" class="mt-1" />
+				</div>
+				<div class="mb-4">
+					<Label>Export Options</Label>
+					<Input bind:value={shareNfsOptions} class="mt-1" />
+				</div>
+			{:else if shareProtocol === 'smb'}
+				<div class="mb-4">
+					<Label>Share Name</Label>
+					<Input bind:value={shareSmbName} placeholder="documents" class="mt-1" />
+				</div>
+				<div class="mb-4 flex gap-4">
+					<label class="flex items-center gap-2 text-sm cursor-pointer">
+						<input type="checkbox" bind:checked={shareSmbGuestOk} class="rounded border-input" />
+						Allow guests
+					</label>
+					<label class="flex items-center gap-2 text-sm cursor-pointer">
+						<input type="checkbox" bind:checked={shareSmbReadOnly} class="rounded border-input" />
+						Read-only
+					</label>
+				</div>
+			{:else if shareProtocol === 'iscsi'}
+				<div class="mb-4">
+					<Label>Target Name</Label>
+					<Input bind:value={shareIscsiName} placeholder="dbserver" class="mt-1" />
+					<p class="mt-1 text-xs text-muted-foreground">IQN: iqn.2137-01.com.nasty:{shareIscsiName || '...'}</p>
+				</div>
+			{:else if shareProtocol === 'nvmeof'}
+				<div class="mb-4">
+					<Label>Subsystem Name</Label>
+					<Input bind:value={shareNvmeofName} placeholder="storage-vol" class="mt-1" />
+				</div>
+				<div class="grid grid-cols-2 gap-4 mb-4">
+					<div>
+						<Label>Listen Address</Label>
+						<Input bind:value={shareNvmeofAddr} placeholder="0.0.0.0" class="mt-1" />
+					</div>
+					<div>
+						<Label>Port</Label>
+						<Input bind:value={shareNvmeofPort} placeholder="4420" class="mt-1" />
+					</div>
+				</div>
+			{/if}
+			<div class="flex gap-2">
+				<Button variant="secondary" size="sm" onclick={() => shareWizardStep = 2}>← Back</Button>
+				<Button size="sm" onclick={() => shareWizardStep = 4}>Next: Review →</Button>
+			</div>
+
+			<!-- Step 4: Review -->
+			{:else if shareWizardStep === 4}
+			{@const sv = shareSubvolumes.find(s => s.path === shareSubvolume || s.block_device === shareSubvolume)}
+			<div class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+				<span class="text-muted-foreground">Protocol</span>
+				<span class="uppercase">{shareProtocol}</span>
+				<span class="text-muted-foreground">Source</span>
+				<span class="font-mono text-xs">{sv ? `${sv.filesystem}/${sv.name}` : shareSubvolume}</span>
+				{#if shareProtocol === 'nfs'}
+					<span class="text-muted-foreground">Allowed</span>
+					<span>{shareNfsHost || '*'}</span>
+					<span class="text-muted-foreground">Options</span>
+					<span class="text-xs">{shareNfsOptions}</span>
+				{:else if shareProtocol === 'smb'}
+					<span class="text-muted-foreground">Share Name</span>
+					<span>{shareSmbName || sv?.name}</span>
+					{#if shareSmbGuestOk}<span class="text-muted-foreground">Guests</span><span>Allowed</span>{/if}
+					{#if shareSmbReadOnly}<span class="text-muted-foreground">Access</span><span>Read-only</span>{/if}
+				{:else if shareProtocol === 'iscsi'}
+					<span class="text-muted-foreground">Target</span>
+					<span class="font-mono text-xs">iqn.2137-01.com.nasty:{shareIscsiName || sv?.name}</span>
+				{:else if shareProtocol === 'nvmeof'}
+					<span class="text-muted-foreground">Subsystem</span>
+					<span>{shareNvmeofName || sv?.name}</span>
+					<span class="text-muted-foreground">Listen</span>
+					<span>{shareNvmeofAddr}:{shareNvmeofPort}</span>
+				{/if}
+			</div>
+			<div class="flex gap-2">
+				<Button variant="secondary" size="sm" onclick={() => shareWizardStep = 3}>← Back</Button>
+				<Button size="sm" onclick={createShare}>Create Share</Button>
+			</div>
+			{/if}
+		</CardContent>
+	</Card>
+{/if}
+
 <!-- Tab bar with inline status -->
 <div class="mb-6 flex items-center border-b border-border">
 	{#each TABS as tab}
@@ -604,47 +867,9 @@
 {#if activeTab === 'nfs'}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button size="sm" onclick={() => nfsShowCreate = !nfsShowCreate}>
-		{nfsShowCreate ? 'Cancel' : 'Create Share'}
-	</Button>
 	<Input bind:value={nfsSearch} placeholder="Search..." class="h-9 w-48" />
 </div>
 
-{#if nfsShowCreate}
-	<Card class="mb-6 max-w-2xl">
-		<CardContent class="pt-6">
-			<h3 class="mb-4 text-lg font-semibold">New Share</h3>
-			<div class="mb-4">
-				<Label for="nfs-path">Subvolume</Label>
-				<select id="nfs-path" bind:value={nfsNewSubvolume} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-					<option value="">Select a subvolume...</option>
-					{#each nfsSubvolumes as sv}
-						<option value={sv.path}>{sv.filesystem}/{sv.name} ({sv.path})</option>
-					{/each}
-				</select>
-				{#if nfsSubvolumes.length === 0}
-					<span class="mt-1 block text-xs text-muted-foreground">No filesystem subvolumes found. Create one first.</span>
-				{/if}
-			</div>
-			<div class="mb-4">
-				<Label for="nfs-comment">Comment</Label>
-				<Input id="nfs-comment" bind:value={nfsNewComment} placeholder="Optional description" class="mt-1" />
-			</div>
-			<div class="mb-4">
-				<Label for="nfs-host">Allowed Network</Label>
-				<Input id="nfs-host" bind:value={nfsNewHost} placeholder="192.168.1.0/24" class="mt-1" />
-			</div>
-			<div class="mb-4">
-				<Label for="nfs-opts">Options</Label>
-				<Input id="nfs-opts" bind:value={nfsNewOptions} class="mt-1" />
-				{#if nfsNewOptions.includes('no_root_squash')}
-					<p class="mt-1 text-xs text-yellow-500">Warning: <code>no_root_squash</code> disables quota enforcement for root NFS clients.</p>
-				{/if}
-			</div>
-			<Button onclick={nfsCreate} disabled={!nfsNewSubvolume || !nfsNewHost}>Create</Button>
-		</CardContent>
-	</Card>
-{/if}
 
 {#if nfsLoading}
 	<p class="text-muted-foreground">Loading...</p>
@@ -745,9 +970,6 @@
 
 
 <div class="mb-4 flex items-center gap-3">
-	<Button size="sm" onclick={() => smbShowCreate = !smbShowCreate}>
-		{smbShowCreate ? 'Cancel' : 'Create Share'}
-	</Button>
 	<Input bind:value={smbSearch} placeholder="Search..." class="h-9 w-48" />
 </div>
 
@@ -903,9 +1125,6 @@
 {:else if activeTab === 'iscsi'}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button size="sm" onclick={() => iscsiShowCreate = !iscsiShowCreate}>
-		{iscsiShowCreate ? 'Cancel' : 'Create Target'}
-	</Button>
 	<Input bind:value={iscsiSearch} placeholder="Search..." class="h-9 w-48" />
 </div>
 
@@ -1092,9 +1311,6 @@
 {:else if activeTab === 'nvmeof'}
 
 <div class="mb-4 flex items-center gap-3">
-	<Button size="sm" onclick={() => nvmeShowCreate = !nvmeShowCreate}>
-		{nvmeShowCreate ? 'Cancel' : 'Create Share'}
-	</Button>
 	<Input bind:value={nvmeSearch} placeholder="Search..." class="h-9 w-48" />
 </div>
 
