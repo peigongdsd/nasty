@@ -404,13 +404,32 @@ async fn run_lego(settings: &Settings) -> Result<(), String> {
     tokio::fs::copy(&lego_key, TLS_KEY_PATH).await
         .map_err(|e| { let m = format!("failed to copy key: {e}"); set_acme_status("error", &m, Some(domain)); m })?;
 
-    // Set restrictive permissions on key
+    // Set permissions so nginx (running as nginx user) can read the cert
+    let _ = tokio::fs::set_permissions(TLS_CERT_PATH, std::fs::Permissions::from_mode(0o644)).await;
     let _ = tokio::fs::set_permissions(TLS_KEY_PATH, std::fs::Permissions::from_mode(0o640)).await;
-
-    // Reload nginx to pick up new cert
-    let _ = tokio::process::Command::new("systemctl")
-        .args(["reload", "nginx"])
+    // Set key group to nginx so it can read it
+    let _ = tokio::process::Command::new("chown")
+        .args(["root:nginx", TLS_KEY_PATH])
         .output().await;
+
+    // Validate nginx config before reloading — don't break a running server
+    let test = tokio::process::Command::new("nginx")
+        .args(["-t"])
+        .output().await;
+    match test {
+        Ok(t) if t.status.success() => {
+            let _ = tokio::process::Command::new("systemctl")
+                .args(["reload", "nginx"])
+                .output().await;
+        }
+        Ok(t) => {
+            let stderr = String::from_utf8_lossy(&t.stderr);
+            warn!("nginx config test failed after cert install — NOT reloading: {stderr}");
+            set_acme_status("error", &format!("Cert installed but nginx config invalid: {stderr}"), Some(domain));
+            return Err(format!("nginx config test failed: {stderr}"));
+        }
+        Err(e) => warn!("Failed to test nginx config: {e}"),
+    }
 
     set_acme_status("success", &format!("Certificate installed for {domain}"), Some(domain));
     info!("ACME certificate installed for {domain}");
