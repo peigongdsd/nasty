@@ -728,10 +728,7 @@
 					</p>
 				{/if}
 
-				<p class="mb-3 text-xs text-amber-500">
-					A system rebuild is required to apply TLS changes. Use Update after saving.
-				</p>
-			{/if}
+				{/if}
 
 			<Button size="sm" onclick={saveTls} disabled={savingTls || !tlsChanged}>
 				{savingTls ? 'Saving…' : 'Save'}
