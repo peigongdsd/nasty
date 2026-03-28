@@ -164,7 +164,7 @@ in {
     boot.kernelParams = [ "quiet" "intel_iommu=on" "amd_iommu=on" "iommu=pt" ];
 
     # VFIO modules for PCI passthrough (loaded on demand, not at boot).
-    boot.kernelModules = [ "vfio-pci" "vfio" "vfio_iommu_type1" "dm-crypt" ];
+    boot.kernelModules = [ "vfio-pci" "vfio" "vfio_iommu_type1" ];
     boot.initrd.verbose = false;
     # Systemd in initrd: required for Plymouth to start early enough to
     # intercept boot messages. Without this Plymouth starts after systemd
@@ -411,7 +411,6 @@ in {
       k3s               # lightweight Kubernetes for app runtime (optional)
       kubernetes-helm   # Helm chart manager for app deployment
       kubectl           # Kubernetes CLI (also available via k3s kubectl)
-      cryptsetup        # LUKS encryption for per-volume encryption at rest
       lego              # ACME client for Let's Encrypt certificates
 
       (writeShellScriptBin "nasty-report" ''
@@ -714,7 +713,6 @@ in {
         config.services.k3s.package  # k3s for apps runtime
         kubernetes-helm              # Helm for app deployment
         lego                         # ACME client for Let's Encrypt
-        cryptsetup                   # LUKS encryption
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
         ++ lib.optionals cfg.smb.enable [ samba shadow.out ]
         ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
