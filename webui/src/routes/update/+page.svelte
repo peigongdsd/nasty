@@ -278,10 +278,17 @@
 				if (status && (status.state === 'success' || status.state === 'failed')) {
 					stopPolling();
 					await loadVersion();
+					// Refresh engine commit display
+					try { engineCommit = (await client.call<any>('system.info')).engine_commit ?? null; } catch {}
 					if (status.state === 'success') {
+						// Mark as up-to-date since we just applied the update
+						if (info) {
+							info.current_version = info.latest_version ?? info.current_version;
+							info.update_available = false;
+						}
 						if (status.webui_changed) refreshState.set();
 						if (status.reboot_required) rebootState.set();
-						setTimeout(() => { logCollapsed = true; }, 5000);
+						setTimeout(() => { logCollapsed = true; }, 3000);
 					}
 				}
 			} catch {
