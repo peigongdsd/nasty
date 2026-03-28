@@ -578,11 +578,10 @@
 </script>
 
 <!-- Tab bar with inline status -->
-{@const protocolInfo = { nfs: nfsProtocol, smb: smbProtocol, iscsi: iscsiProtocol, nvmeof: nvmeProtocol }}
-{@const shareCounts = { nfs: nfsShares.length, smb: smbShares.length, iscsi: iscsiTargets.length, nvmeof: nvmeSubsystems.length }}
 <div class="mb-6 flex items-center border-b border-border">
 	{#each TABS as tab}
-		{@const proto = protocolInfo[tab.key]}
+		{@const proto = ({ nfs: nfsProtocol, smb: smbProtocol, iscsi: iscsiProtocol, nvmeof: nvmeProtocol })[tab.key]}
+		{@const count = ({ nfs: nfsShares.length, smb: smbShares.length, iscsi: iscsiTargets.length, nvmeof: nvmeSubsystems.length })[tab.key]}
 		<button
 			onclick={() => switchTab(tab.key)}
 			class="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors {activeTab === tab.key
@@ -593,8 +592,8 @@
 			{#if proto}
 				<span class="inline-block h-1.5 w-1.5 rounded-full {proto.running ? 'bg-green-500' : 'bg-muted-foreground/40'}"></span>
 			{/if}
-			{#if shareCounts[tab.key] > 0}
-				<span class="text-[0.65rem] text-muted-foreground">{shareCounts[tab.key]}</span>
+			{#if count > 0}
+				<span class="text-[0.65rem] text-muted-foreground">{count}</span>
 			{/if}
 		</button>
 	{/each}
