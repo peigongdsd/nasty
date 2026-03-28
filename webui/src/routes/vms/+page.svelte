@@ -18,7 +18,7 @@
 	let vms: VmStatus[] = $state([]);
 	let capabilities: VmCapabilities | null = $state(null);
 	let blockSubvolumes: Subvolume[] = $state([]);
-	let wizardStep: 0 | 1 | 2 | 3 | 4 | 5 | 6 = $state(0); // 0=hidden
+	let wizardStep: -1 | 0 | 1 | 2 | 3 | 4 | 5 | 6 = $state(0); // 0=hidden, -1=prerequisites
 	let loading = $state(true);
 	let editTab: 'general' | 'system' | 'storage' | 'network' | 'passthrough' = $state('general');
 
@@ -84,7 +84,7 @@
 	});
 
 	function openWizard() {
-		wizardStep = 1;
+		wizardStep = canCreateVm ? 1 : -1; // -1 = prerequisites
 		newName = ''; newCpus = 1; newMemory = 1024; newDisk = ''; newDiskCreate = false;
 		newDiskFs = ''; newDiskSize = 10; newIso = ''; newDescription = '';
 		newBootOrder = 'disk'; newAutostart = false; newPassthrough = [];
@@ -556,92 +556,7 @@
 	);
 </script>
 
-{#if capabilities && !envFullyReady}
-	<Card class="mb-4 max-w-2xl">
-		<CardContent class="pt-6 pb-4">
-			<h3 class="mb-1 text-lg font-semibold">VM Environment Setup</h3>
-			<p class="mb-4 text-sm text-muted-foreground">Complete these steps before creating VMs.</p>
-
-			<div class="space-y-2">
-				{#if envReady}
-					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-						{#if envReady.kvm}
-							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
-						{:else}
-							<CircleX size={18} class="mt-0.5 shrink-0 text-destructive" />
-						{/if}
-						<div class="flex-1 min-w-0">
-							<div class="text-sm font-medium">KVM Virtualization</div>
-							<div class="text-xs text-muted-foreground">
-								{envReady.kvm ? 'Hardware virtualization available' : 'Not available — requires bare-metal host with CPU virtualization enabled'}
-							</div>
-						</div>
-					</div>
-
-					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-						{#if envReady.uefi}
-							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
-						{:else}
-							<CircleX size={18} class="mt-0.5 shrink-0 text-destructive" />
-						{/if}
-						<div class="flex-1 min-w-0">
-							<div class="text-sm font-medium">UEFI Firmware</div>
-							<div class="text-xs text-muted-foreground">
-								{envReady.uefi ? 'Boot firmware ready' : 'OVMF firmware not found'}
-							</div>
-						</div>
-					</div>
-
-					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-						{#if envReady.filesystem}
-							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
-						{:else}
-							<Circle size={18} class="mt-0.5 shrink-0 text-muted-foreground" />
-						{/if}
-						<div class="flex-1 min-w-0">
-							<div class="text-sm font-medium">Storage Filesystem</div>
-							<div class="text-xs text-muted-foreground">
-								{envReady.filesystem
-									? `${filesystems.length} filesystem${filesystems.length !== 1 ? 's' : ''} available`
-									: 'No filesystem found — create one in Storage first'}
-							</div>
-						</div>
-						{#if !envReady.filesystem}
-							<Button size="xs" variant="outline" onclick={() => window.location.href = '/filesystems'}>
-								Go to Storage
-							</Button>
-						{/if}
-					</div>
-
-					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
-						{#if envReady.imageStorage}
-							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
-						{:else}
-							<Circle size={18} class="mt-0.5 shrink-0 text-muted-foreground" />
-						{/if}
-						<div class="flex-1 min-w-0">
-							<div class="text-sm font-medium">Image Storage</div>
-							<div class="text-xs text-muted-foreground">
-								{envReady.imageStorage
-									? 'Images subvolume ready'
-									: envReady.filesystem
-										? 'Create an images subvolume to store ISOs and disk images'
-										: 'Requires a filesystem first'}
-							</div>
-						</div>
-						{#if !envReady.imageStorage && envReady.filesystem}
-							{#each filesystems as fs}
-								<Button size="xs" variant="outline" onclick={() => createImagesSubvolume(fs.name)}>
-									Create on {fs.name}
-								</Button>
-							{/each}
-						{/if}
-					</div>
-				{/if}
-			</div>
-		</CardContent>
-	</Card>
-{:else if capabilities}
+{#if capabilities}
 	<Card class="mb-4">
 		<CardContent class="flex items-center gap-4 py-3">
 			<Badge variant={capabilities.kvm_available ? 'default' : 'destructive'}>
@@ -664,8 +579,7 @@
 
 <div class="mb-4 flex items-center gap-3">
 	<Button size="sm" onclick={() => wizardStep === 0 ? openWizard() : (wizardStep = 0)}
-		disabled={!canCreateVm}
-		title={!canCreateVm ? 'Complete VM environment setup first' : ''}>
+>
 		{wizardStep !== 0 ? 'Cancel' : 'Create VM'}
 	</Button>
 	<Input bind:value={search} placeholder="Search..." class="h-9 w-48" />
@@ -694,8 +608,88 @@
 				{/each}
 			</div>
 
+			<!-- Prerequisites -->
+			{#if wizardStep === -1}
+			<h3 class="mb-1 text-lg font-semibold">VM Environment Setup</h3>
+			<p class="mb-4 text-sm text-muted-foreground">Complete these steps before creating VMs.</p>
+			<div class="space-y-2">
+				{#if envReady}
+					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+						{#if envReady.kvm}
+							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
+						{:else}
+							<CircleX size={18} class="mt-0.5 shrink-0 text-destructive" />
+						{/if}
+						<div class="flex-1 min-w-0">
+							<div class="text-sm font-medium">KVM Virtualization</div>
+							<div class="text-xs text-muted-foreground">
+								{envReady.kvm ? 'Hardware virtualization available' : 'Not available — requires bare-metal host with CPU virtualization enabled'}
+							</div>
+						</div>
+					</div>
+					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+						{#if envReady.uefi}
+							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
+						{:else}
+							<CircleX size={18} class="mt-0.5 shrink-0 text-destructive" />
+						{/if}
+						<div class="flex-1 min-w-0">
+							<div class="text-sm font-medium">UEFI Firmware</div>
+							<div class="text-xs text-muted-foreground">
+								{envReady.uefi ? 'Boot firmware ready' : 'OVMF firmware not found'}
+							</div>
+						</div>
+					</div>
+					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+						{#if envReady.filesystem}
+							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
+						{:else}
+							<Circle size={18} class="mt-0.5 shrink-0 text-muted-foreground" />
+						{/if}
+						<div class="flex-1 min-w-0">
+							<div class="text-sm font-medium">Storage Filesystem</div>
+							<div class="text-xs text-muted-foreground">
+								{envReady.filesystem
+									? `${filesystems.length} filesystem${filesystems.length !== 1 ? 's' : ''} available`
+									: 'No filesystem found — create one in Storage first'}
+							</div>
+						</div>
+						{#if !envReady.filesystem}
+							<Button size="xs" variant="outline" onclick={() => window.location.href = '/filesystems'}>Go to Storage</Button>
+						{/if}
+					</div>
+					<div class="flex items-start gap-3 rounded-lg border border-border px-3 py-2.5">
+						{#if envReady.imageStorage}
+							<CircleCheck size={18} class="mt-0.5 shrink-0 text-green-500" />
+						{:else}
+							<Circle size={18} class="mt-0.5 shrink-0 text-muted-foreground" />
+						{/if}
+						<div class="flex-1 min-w-0">
+							<div class="text-sm font-medium">Image Storage</div>
+							<div class="text-xs text-muted-foreground">
+								{envReady.imageStorage
+									? 'Images subvolume ready'
+									: envReady.filesystem
+										? 'Create an images subvolume to store ISOs and disk images'
+										: 'Requires a filesystem first'}
+							</div>
+						</div>
+						{#if !envReady.imageStorage && envReady.filesystem}
+							{#each filesystems as fs}
+								<Button size="xs" variant="outline" onclick={() => createImagesSubvolume(fs.name)}>Create on {fs.name}</Button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
+			<div class="mt-4">
+				<Button size="sm" onclick={() => wizardStep = 1} disabled={!canCreateVm}>
+					{canCreateVm ? 'Next: General →' : 'Complete prerequisites first'}
+				</Button>
+			</div>
+
 			<!-- Step 1: General -->
-			{#if wizardStep === 1}
+			{:else if wizardStep === 1}
 			<div class="mb-4">
 				<Label for="vm-name">Name</Label>
 				<Input id="vm-name" bind:value={newName} placeholder="my-vm" class="mt-1" />
