@@ -111,6 +111,7 @@ impl Default for Settings {
             tls_challenge_type: default_challenge_type(),
             tls_dns_provider: None,
             tls_dns_credentials: None,
+            tls_acme_staging: false,
         }
     }
 }
