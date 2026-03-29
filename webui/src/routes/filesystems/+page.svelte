@@ -866,12 +866,9 @@
 					{#if profile.promote_target}
 						<span class="text-muted-foreground">Promote Target</span><span>{profile.promote_target}</span>
 					{/if}
-					{#if erasureCode}
-						<span class="text-muted-foreground">Erasure Coding</span><span class="text-amber-400">Enabled</span>
-					{/if}
-				</div>
+					</div>
 
-				<div class="mb-5 grid grid-cols-3 gap-4">
+				<div class="mb-5 grid grid-cols-2 gap-4">
 					<div>
 						<Label for="replicas">Replicas</Label>
 						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1}
@@ -894,23 +891,24 @@
 							<option value="gzip">Gzip</option>
 						</select>
 					</div>
-					<div>
-						<Label>Erasure Coding</Label>
-						<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-							<input type="checkbox" bind:checked={erasureCode} disabled={replicas < 2 || selectedPaths.length < replicas + 1} class="h-4 w-4" />
-							Enable
-						</label>
-						{#if replicas < 2}
-							<p class="mt-1 text-xs text-muted-foreground">Requires replicas >= 2.</p>
-						{:else if erasureCode && selectedPaths.length < replicas + 1}
-							<p class="mt-1 text-xs text-destructive">Needs {replicas + 1}+ devices (have {selectedPaths.length}).</p>
-						{:else if erasureCode}
-							<p class="mt-1 text-xs text-amber-400">{replicas === 2 ? 'RAID-5' : 'RAID-6'}. Min {replicas + 1} devices.</p>
-						{:else}
-							<p class="mt-1 text-xs text-muted-foreground">Reed-Solomon parity. Min {replicas + 1} devices.</p>
-						{/if}
-					</div>
 				</div>
+
+				{#if selectedPaths.length >= 3 && replicas >= 2}
+				<div class="mb-5">
+					<label class="flex cursor-pointer items-center gap-2 text-sm">
+						<input type="checkbox" bind:checked={erasureCode} disabled={selectedPaths.length < replicas + 1} class="h-4 w-4" />
+						<span class="font-medium">Erasure Coding</span>
+						{#if erasureCode}
+							<span class="text-xs text-amber-400">({replicas === 2 ? 'RAID-5' : 'RAID-6'}, min {replicas + 1} devices)</span>
+						{:else}
+							<span class="text-xs text-muted-foreground">(Reed-Solomon parity, min {replicas + 1} devices)</span>
+						{/if}
+					</label>
+					{#if erasureCode && selectedPaths.length < replicas + 1}
+						<p class="mt-1 ml-6 text-xs text-destructive">Needs at least {replicas + 1} devices (currently {selectedPaths.length}).</p>
+					{/if}
+				</div>
+				{/if}
 
 				<!-- Encryption -->
 				<div class="mb-5 rounded-lg border border-border p-4">
@@ -956,6 +954,7 @@
 				<!-- Advanced format options -->
 				<details class="mb-5">
 					<summary class="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Advanced options</summary>
+					<p class="mt-2 text-xs text-amber-400">Defaults are recommended for most setups. Only change these if you understand their impact.</p>
 					<div class="mt-3 flex flex-wrap gap-4">
 						<div class="flex-1 min-w-[140px]">
 							<Label for="version-upgrade">Version Upgrade</Label>

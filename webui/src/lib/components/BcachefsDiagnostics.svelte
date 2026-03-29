@@ -145,7 +145,7 @@
 		if (!selectedFs) return;
 		scrubLoading = true;
 		try {
-			const result = await getClient().call('fs.scrub.status', { name: selectedFs });
+			const result = await getClient().call<{ raw: string; running: boolean }>('fs.scrub.status', { name: selectedFs });
 			scrubOutput = result.raw || 'No scrub data available.';
 			scrubRunning = result.running ?? false;
 		} catch (e) {
@@ -172,7 +172,7 @@
 		if (!selectedFs) return;
 		reconcileLoading = true;
 		try {
-			const result = await getClient().call('fs.reconcile.status', { name: selectedFs });
+			const result = await getClient().call<{ raw: string }>('fs.reconcile.status', { name: selectedFs });
 			reconcileOutput = result.raw || 'No reconcile data available.';
 		} catch (e) {
 			reconcileOutput = e instanceof Error ? e.message : String(e);
