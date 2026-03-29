@@ -672,13 +672,6 @@
 	onDestroy(() => client.offEvent(handleEvent));
 </script>
 
-<!-- Create Share button + wizard -->
-<div class="mb-4">
-	<Button size="sm" onclick={() => shareWizardStep === 0 ? openShareWizard() : (shareWizardStep = 0)}>
-		{shareWizardStep !== 0 ? 'Cancel' : 'Create Share'}
-	</Button>
-</div>
-
 {#if shareWizardStep !== 0}
 	<Card class="mb-6 max-w-2xl">
 		<CardContent class="pt-6">
@@ -862,6 +855,12 @@
 	{/each}
 </div>
 
+<!-- Create Share button + wizard -->
+<div class="mb-4">
+	<Button size="sm" onclick={() => shareWizardStep === 0 ? openShareWizard() : (shareWizardStep = 0)}>
+		{shareWizardStep !== 0 ? 'Cancel' : 'Create Share'}
+	</Button>
+</div>
 
 <!-- ════════════════════════════════════════════════════ NFS ════════════════════════════════════════════════════ -->
 {#if activeTab === 'nfs'}
