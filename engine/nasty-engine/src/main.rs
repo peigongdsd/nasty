@@ -10,7 +10,7 @@ use axum::{
     },
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde::Deserialize;
@@ -153,6 +153,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/login", post(login_handler))
         .route("/api/upload/vm-image", post(upload_vm_image_handler).layer(DefaultBodyLimit::max(10_737_418_240)))
         .route("/api/files/browse", get(files_browse_handler))
+        .route("/api/files", delete(files_delete_handler))
+        .route("/api/files/upload", post(files_upload_handler).layer(DefaultBodyLimit::max(10_737_418_240)))
+        .route("/api/files/mkdir", post(files_mkdir_handler))
         .route("/health", get(health))
         .with_state(state);
 
@@ -345,6 +348,26 @@ async fn upload_vm_image_handler(
 // ── File Browser endpoints ──────────────────────────────────────
 
 const FILES_ROOT: &str = "/fs";
+const BLOCK_FILE_NAME: &str = "vol.img";
+
+/// Check if any ancestor (or the path itself) is a block subvolume directory
+/// (contains vol.img). Protects block device backing files from accidental
+/// deletion or overwrites via the file browser.
+fn is_inside_block_subvolume(path: &std::path::Path) -> bool {
+    let mut p = path;
+    loop {
+        if p.join(BLOCK_FILE_NAME).exists() {
+            return true;
+        }
+        match p.parent() {
+            Some(parent) if parent.starts_with(FILES_ROOT) && parent != std::path::Path::new(FILES_ROOT) => {
+                p = parent;
+            }
+            _ => break,
+        }
+    }
+    false
+}
 
 /// Validate that a path is under /fs and doesn't escape via traversal.
 fn safe_path(requested: &str) -> Result<std::path::PathBuf, StatusCode> {
@@ -431,6 +454,208 @@ async fn files_browse_handler(
         "path": display_path,
         "entries": entries,
     }))).into_response()
+}
+
+/// Validate bearer token from request headers. Returns client_ip on success.
+async fn validate_bearer(
+    headers: &axum::http::HeaderMap,
+    auth: &AuthService,
+) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
+    let token = headers.get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string());
+    let token = match token {
+        Some(t) => t,
+        None => return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Missing token"})))),
+    };
+    let client_ip = headers.get("x-real-ip").and_then(|v| v.to_str().ok()).unwrap_or("unknown").to_string();
+    if auth.validate(&token, &client_ip).await.is_err() {
+        return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid token"}))));
+    }
+    Ok(client_ip)
+}
+
+/// Delete a file or directory.  DELETE /api/files?path=first/subdir/file.txt
+async fn files_delete_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if let Err(e) = validate_bearer(&headers, &state.auth).await {
+        return e.into_response();
+    }
+
+    let req_path = match params.get("path") {
+        Some(p) if !p.is_empty() => p.as_str(),
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path is required"}))).into_response(),
+    };
+
+    let target = match safe_path(req_path) {
+        Ok(p) => p,
+        Err(status) => return (status, Json(serde_json::json!({"error": "Invalid path"}))).into_response(),
+    };
+
+    // Refuse to delete filesystem/subvolume roots (depth 1 under /fs, e.g. /fs/mypool)
+    let rel = target.strip_prefix(FILES_ROOT).unwrap_or(&target);
+    if rel.components().count() <= 1 {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Cannot delete filesystem root directories — use the Subvolumes page"}))).into_response();
+    }
+
+    // Protect block subvolume backing files (vol.img and anything in the subvolume dir)
+    if is_inside_block_subvolume(&target) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Cannot modify block subvolume contents — manage via the Subvolumes page"}))).into_response();
+    }
+
+    let meta = match tokio::fs::metadata(&target).await {
+        Ok(m) => m,
+        Err(_) => return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "Not found"}))).into_response(),
+    };
+
+    let result = if meta.is_dir() {
+        tokio::fs::remove_dir_all(&target).await
+    } else {
+        tokio::fs::remove_file(&target).await
+    };
+
+    match result {
+        Ok(()) => {
+            info!("Deleted {}", target.display());
+            (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    }
+}
+
+/// Upload a file to a directory.  POST /api/files/upload?path=first/subdir
+async fn files_upload_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    if let Err(e) = validate_bearer(&headers, &state.auth).await {
+        return e.into_response();
+    }
+
+    let req_path = params.get("path").map(|s| s.as_str()).unwrap_or("");
+    let dir = match safe_path(req_path) {
+        Ok(p) => p,
+        Err(status) => return (status, Json(serde_json::json!({"error": "Invalid path"}))).into_response(),
+    };
+
+    if !dir.is_dir() {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Target is not a directory"}))).into_response();
+    }
+
+    // Protect block subvolume directories
+    if is_inside_block_subvolume(&dir) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Cannot upload into block subvolume — manage via the Subvolumes page"}))).into_response();
+    }
+
+    // Read multipart field
+    let field = match multipart.next_field().await {
+        Ok(Some(f)) => f,
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "No file in request"}))).into_response(),
+    };
+
+    let file_name = field.file_name().unwrap_or("upload").to_string();
+    // Strip path components to prevent traversal via filename
+    let file_name = std::path::Path::new(&file_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("upload")
+        .to_string();
+
+    if file_name.is_empty() || file_name == "." || file_name == ".." {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "Invalid filename"}))).into_response();
+    }
+
+    let dest = dir.join(&file_name);
+
+    let mut file = match tokio::fs::File::create(&dest).await {
+        Ok(f) => f,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    };
+
+    let mut total: u64 = 0;
+    let t0 = std::time::Instant::now();
+    let mut field = field;
+    loop {
+        match field.chunk().await {
+            Ok(Some(chunk)) => {
+                total += chunk.len() as u64;
+                if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await {
+                    let _ = tokio::fs::remove_file(&dest).await;
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response();
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&dest).await;
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response();
+            }
+        }
+    }
+
+    if let Err(e) = file.sync_all().await {
+        let _ = tokio::fs::remove_file(&dest).await;
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response();
+    }
+
+    let elapsed = t0.elapsed();
+    let speed_mb = (total as f64 / (1024.0 * 1024.0)) / elapsed.as_secs_f64();
+    info!("Uploaded {} ({} bytes, {:.1} MB/s)", file_name, total, speed_mb);
+
+    (StatusCode::OK, Json(serde_json::json!({
+        "name": file_name,
+        "path": dest.to_string_lossy(),
+        "size": total,
+    }))).into_response()
+}
+
+/// Create a directory.  POST /api/files/mkdir?path=first/subdir/newdir
+async fn files_mkdir_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    if let Err(e) = validate_bearer(&headers, &state.auth).await {
+        return e.into_response();
+    }
+
+    let req_path = match params.get("path") {
+        Some(p) if !p.is_empty() => p.as_str(),
+        _ => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path is required"}))).into_response(),
+    };
+
+    // Validate parent is under /fs
+    let parent = match req_path.rsplit_once('/') {
+        Some((p, _)) => p,
+        None => "",
+    };
+    if safe_path(parent.is_empty().then_some("").unwrap_or(parent)).is_err() && !parent.is_empty() {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Invalid path"}))).into_response();
+    }
+
+    let full = std::path::Path::new(FILES_ROOT).join(req_path.trim_start_matches('/'));
+
+    // Protect block subvolume directories
+    if is_inside_block_subvolume(&full) || is_inside_block_subvolume(full.parent().unwrap_or(&full)) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "Cannot create directories inside block subvolumes"}))).into_response();
+    }
+
+    if full.exists() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error": "Already exists"}))).into_response();
+    }
+
+    match tokio::fs::create_dir(&full).await {
+        Ok(()) => {
+            info!("Created directory {}", full.display());
+            (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+    }
 }
 
 // ── Login endpoint ──────────────────────────────────────────────
