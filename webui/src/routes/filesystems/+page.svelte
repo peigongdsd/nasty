@@ -8,7 +8,7 @@
 		typeof window !== 'undefined' && window.location.hash === '#diagnostics' ? 'diagnostics' : 'manage'
 	);
 	import { confirm } from '$lib/confirm.svelte';
-	import type { Filesystem, FilesystemDevice, BlockDevice, DeviceState, FsUsage, ScrubStatus, ReconcileStatus, TieringProfile, TieringProfileId } from '$lib/types';
+	import type { Filesystem, FilesystemDevice, BlockDevice, DeviceState, ScrubStatus, ReconcileStatus, TieringProfile, TieringProfileId } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -89,7 +89,6 @@
 	}
 
 	let healthFs: string | null = $state(null);
-	let fsUsage: FsUsage | null = $state(null);
 	let scrubStatus: ScrubStatus | null = $state(null);
 	let reconcileStatus: ReconcileStatus | null = $state(null);
 	let healthLoading = $state(false);
@@ -527,7 +526,6 @@
 			refreshHealth(fs);
 		} else {
 			healthFs = null;
-			fsUsage = null;
 			scrubStatus = null;
 			reconcileStatus = null;
 		}
@@ -536,8 +534,7 @@
 	async function refreshHealth(fsName: string) {
 		healthLoading = true;
 		try {
-			[fsUsage, scrubStatus, reconcileStatus] = await Promise.all([
-				client.call<FsUsage>('fs.usage', { name: fsName }),
+			[scrubStatus, reconcileStatus] = await Promise.all([
 				client.call<ScrubStatus>('fs.scrub.status', { name: fsName }),
 				client.call<ReconcileStatus>('fs.reconcile.status', { name: fsName }),
 			]);
@@ -1187,13 +1184,8 @@
 				{#if expandedFs === fs.name}
 					<div class="mt-4 border-t border-border pt-4">
 						<!-- Health summary -->
-						{#if fsUsage || scrubStatus}
+						{#if scrubStatus || reconcileStatus}
 							<div class="mb-4 flex flex-wrap items-center gap-3 text-xs">
-								{#if fsUsage}
-									<span class="text-muted-foreground">Data: <strong class="text-foreground">{formatBytes(fsUsage.data_bytes)}</strong></span>
-									<span class="text-muted-foreground">Metadata: <strong class="text-foreground">{formatBytes(fsUsage.metadata_bytes)}</strong></span>
-									<span class="text-muted-foreground">Reserved: <strong class="text-foreground">{formatBytes(fsUsage.reserved_bytes)}</strong></span>
-								{/if}
 								{#if scrubStatus}
 									<Badge variant={scrubStatus.running ? 'destructive' : 'secondary'} class="text-[0.6rem]">
 										Scrub: {scrubStatus.running ? 'Running' : 'Idle'}
