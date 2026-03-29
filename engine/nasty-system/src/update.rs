@@ -478,14 +478,22 @@ if [ -n "$BOOTED_NUM" ]; then
     fi
 fi
 if [ "$GENS" -gt "$KEEP" ]; then
-    if [ "$MAX_AGE" -gt 0 ]; then
-        echo "==> Cleaning generations older than ${{MAX_AGE}}d (keeping at least $KEEP)..."
-        nix-env --profile /nix/var/nix/profiles/system --delete-generations "+$KEEP" --delete-older-than "${{MAX_AGE}}d" 2>/dev/null || true
-    else
-        echo "==> Cleaning up old generations ($GENS found, keeping $KEEP)..."
-        nix-env --profile /nix/var/nix/profiles/system --delete-generations "+$KEEP" 2>/dev/null || true
+    echo "==> Cleaning up old generations ($GENS found, keeping $KEEP)..."
+    # Collect all generation numbers, sorted numerically
+    ALL_NUMS=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null \
+        | grep -o 'system-[0-9]*-link' | grep -o '[0-9]*' | sort -n)
+    # Keep the last $KEEP generations
+    TO_DELETE=$(echo "$ALL_NUMS" | head -n -"$KEEP")
+    # Remove booted generation from the delete list
+    if [ -n "$BOOTED_NUM" ]; then
+        TO_DELETE=$(echo "$TO_DELETE" | grep -v "^${{BOOTED_NUM}}$")
     fi
-    nix-collect-garbage 2>/dev/null || true
+    if [ -n "$TO_DELETE" ]; then
+        # nix-env --delete-generations accepts space-separated generation numbers
+        # shellcheck disable=SC2086
+        nix-env --profile /nix/var/nix/profiles/system --delete-generations $TO_DELETE 2>&1 || true
+        nix-collect-garbage 2>&1 || true
+    fi
 fi
 
 echo "==> Rebuilding system..."
