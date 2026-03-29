@@ -1429,7 +1429,35 @@ fn parse_device_usage_line(line: &str) -> Option<DeviceUsage> {
 /// Extract the first number (byte count) from a summary line.
 fn extract_first_bytes(line: &str) -> Option<u64> {
     let after_colon = line.split_once(':')?.1.trim();
-    after_colon.split_whitespace().next()?.parse().ok()
+    let token = after_colon.split_whitespace().next()?;
+    parse_human_bytes(token)
+}
+
+/// Parse human-readable byte strings like "109.8M", "2.3G", "512K", "1024".
+fn parse_human_bytes(s: &str) -> Option<u64> {
+    // Try plain integer first
+    if let Ok(n) = s.parse::<u64>() {
+        return Some(n);
+    }
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    // Split into numeric part and suffix
+    let (num_str, suffix) = match s.find(|c: char| c.is_alphabetic()) {
+        Some(i) => (&s[..i], &s[i..]),
+        None => return s.parse::<f64>().ok().map(|n| n as u64),
+    };
+    let num: f64 = num_str.parse().ok()?;
+    let multiplier: f64 = match suffix.to_uppercase().as_str() {
+        "B" => 1.0,
+        "K" | "KIB" | "KB" => 1024.0,
+        "M" | "MIB" | "MB" => 1024.0 * 1024.0,
+        "G" | "GIB" | "GB" => 1024.0 * 1024.0 * 1024.0,
+        "T" | "TIB" | "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((num * multiplier) as u64)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
