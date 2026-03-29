@@ -1074,19 +1074,19 @@
 								{:else}
 									<div class="grid grid-cols-2 gap-4 text-sm">
 										<div>
-											<label class="text-xs text-muted-foreground">CPU Cores</label>
+											<span class="text-xs text-muted-foreground">CPU Cores</span>
 											<input type="number" value={vm.cpus} min={1} max={64}
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 												onchange={(e) => updateVmField(vm.id, 'cpus', parseInt((e.target as HTMLInputElement).value))} />
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">Memory (MiB)</label>
+											<span class="text-xs text-muted-foreground">Memory (MiB)</span>
 											<input type="number" value={vm.memory_mib} min={128} step={128}
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 												onchange={(e) => updateVmField(vm.id, 'memory_mib', parseInt((e.target as HTMLInputElement).value))} />
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">CPU Model</label>
+											<span class="text-xs text-muted-foreground">CPU Model</span>
 											<select value={vm.cpu_model ?? 'host'}
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 												onchange={(e) => updateVmField(vm.id, 'cpu_model', (e.target as HTMLSelectElement).value)}>
@@ -1096,7 +1096,7 @@
 											</select>
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">Machine Type</label>
+											<span class="text-xs text-muted-foreground">Machine Type</span>
 											<select value={vm.machine_type ?? 'q35'}
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 												onchange={(e) => updateVmField(vm.id, 'machine_type', (e.target as HTMLSelectElement).value)}>
@@ -1105,7 +1105,7 @@
 											</select>
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">VGA Type</label>
+											<span class="text-xs text-muted-foreground">VGA Type</span>
 											<select value={vm.vga ?? 'virtio'}
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
 												onchange={(e) => updateVmField(vm.id, 'vga', (e.target as HTMLSelectElement).value)}>
@@ -1116,7 +1116,7 @@
 											</select>
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">Extra QEMU Args</label>
+											<span class="text-xs text-muted-foreground">Extra QEMU Args</span>
 											<input type="text" value={vm.extra_args?.join(' ') ?? ''} placeholder="-device usb-tablet"
 												class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs font-mono"
 												onchange={(e) => {
@@ -1132,7 +1132,7 @@
 								<div class="mb-3">
 									<div class="grid grid-cols-2 gap-4 text-sm mb-3">
 										<div>
-											<label class="text-xs text-muted-foreground">Boot Order</label>
+											<span class="text-xs text-muted-foreground">Boot Order</span>
 											{#if !vm.running}
 												<select value={vm.boot_order}
 													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm"
@@ -1146,7 +1146,7 @@
 											{/if}
 										</div>
 										<div>
-											<label class="text-xs text-muted-foreground">Boot ISO</label>
+											<span class="text-xs text-muted-foreground">Boot ISO</span>
 											{#if !vm.running}
 												<select value={vm.boot_iso ?? ''}
 													class="mt-0.5 h-8 w-full rounded-md border border-input bg-transparent px-2 text-xs"
