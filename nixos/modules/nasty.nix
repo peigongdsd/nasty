@@ -402,6 +402,9 @@ in {
 
     environment.systemPackages = with pkgs; [
       util-linux        # lsblk, blkid, wipefs
+      parted            # partition management (parted, partprobe)
+      gptfdisk          # GPT partition tools (sgdisk)
+      cloud-utils       # growpart for expanding partitions
       smartmontools     # smartctl for disk health
       jq                # JSON parsing (used by engine scripts)
       htop
