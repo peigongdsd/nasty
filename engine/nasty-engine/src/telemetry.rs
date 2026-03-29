@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::AppState;
 
-const TELEMETRY_URL: &str = "https://nasty-telemetry.bartosz-625.workers.dev/api/report";
+const TELEMETRY_URL: &str = "https://nasty-telemetry.nasty-project.workers.dev/api/report";
 const TELEMETRY_ID_PATH: &str = "/var/lib/nasty/telemetry-id";
 const TELEMETRY_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60); // 24 hours
 
