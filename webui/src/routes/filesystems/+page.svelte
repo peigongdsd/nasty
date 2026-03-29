@@ -871,8 +871,8 @@
 					{/if}
 				</div>
 
-				<div class="mb-5 flex flex-wrap gap-4">
-					<div class="flex-1">
+				<div class="mb-5 grid grid-cols-3 gap-4">
+					<div>
 						<Label for="replicas">Replicas</Label>
 						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1}
 							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
@@ -884,7 +884,7 @@
 							<span class="text-xs text-muted-foreground">Requires multiple devices</span>
 						{/if}
 					</div>
-					<div class="flex-1">
+					<div>
 						<Label for="compression">Compression</Label>
 						<select id="compression" bind:value={compression}
 							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
@@ -901,24 +901,14 @@
 							Enable
 						</label>
 						{#if replicas < 2}
-							<p class="mt-1 text-xs text-muted-foreground">Requires replicas >= 2. Replicas=1 disables erasure coding.</p>
+							<p class="mt-1 text-xs text-muted-foreground">Requires replicas >= 2.</p>
 						{:else if erasureCode && selectedPaths.length < replicas + 1}
-							<p class="mt-1 text-xs text-destructive">Needs at least {replicas + 1} devices for replicas={replicas} (currently {selectedPaths.length}).</p>
+							<p class="mt-1 text-xs text-destructive">Needs {replicas + 1}+ devices (have {selectedPaths.length}).</p>
 						{:else if erasureCode}
-							<p class="mt-1 text-xs text-amber-400">{replicas === 2 ? 'RAID-5 (1 parity block)' : 'RAID-6 (2 parity blocks)'}. Min {replicas + 1} devices. Metadata is not erasure coded.</p>
+							<p class="mt-1 text-xs text-amber-400">{replicas === 2 ? 'RAID-5' : 'RAID-6'}. Min {replicas + 1} devices.</p>
 						{:else}
-							<p class="mt-1 text-xs text-muted-foreground">Reed-Solomon: replicas=2 for RAID-5, replicas=3 for RAID-6. Min {replicas + 1} devices.</p>
+							<p class="mt-1 text-xs text-muted-foreground">Reed-Solomon parity. Min {replicas + 1} devices.</p>
 						{/if}
-					</div>
-					<div>
-						<Label for="version-upgrade">Version Upgrade</Label>
-						<select id="version-upgrade" bind:value={versionUpgrade}
-							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-							<option value="">None (don't upgrade)</option>
-							<option value="compatible">Compatible (allow new features)</option>
-							<option value="incompatible">Incompatible (upgrade to latest)</option>
-						</select>
-						<p class="mt-1 text-xs text-muted-foreground">Controls metadata version upgrade behavior at mount time.</p>
 					</div>
 				</div>
 
@@ -967,6 +957,15 @@
 				<details class="mb-5">
 					<summary class="cursor-pointer text-sm text-muted-foreground hover:text-foreground">Advanced options</summary>
 					<div class="mt-3 flex flex-wrap gap-4">
+						<div class="flex-1 min-w-[140px]">
+							<Label for="version-upgrade">Version Upgrade</Label>
+							<select id="version-upgrade" bind:value={versionUpgrade}
+								class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
+								<option value="">None (don't upgrade)</option>
+								<option value="compatible">Compatible</option>
+								<option value="incompatible">Incompatible (latest)</option>
+							</select>
+						</div>
 						<div class="flex-1 min-w-[140px]">
 							<Label for="data-checksum">Data Checksum</Label>
 							<select id="data-checksum" bind:value={dataChecksum}
