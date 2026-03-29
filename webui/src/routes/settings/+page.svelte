@@ -48,6 +48,9 @@
 	let savingTls = $state(false);
 	let tlsChanged = $state(false);
 
+	// Telemetry
+	let sendingTelemetry = $state(false);
+
 	// GC config
 	let gcKeep = $state(20);
 	let gcMaxAge = $state(0);
@@ -210,6 +213,24 @@
 			() => client.call('system.settings.update', { clock_24h: val }),
 			val ? '24-hour clock enabled' : '12-hour clock enabled'
 		);
+	}
+
+	async function saveTelemetry(enabled: boolean) {
+		if (!settings) return;
+		settings.telemetry_enabled = enabled;
+		await withToast(
+			() => client.call('system.settings.update', { telemetry_enabled: enabled }),
+			enabled ? 'Telemetry enabled' : 'Telemetry disabled'
+		);
+	}
+
+	async function sendTelemetry() {
+		sendingTelemetry = true;
+		await withToast(
+			() => client.call<{ sent: boolean }>('telemetry.send'),
+			'Telemetry report sent'
+		);
+		sendingTelemetry = false;
 	}
 
 	async function applyLogLevel() {
@@ -571,6 +592,31 @@
 				</Button>
 			</section>
 			{/if}
+
+		<!-- Telemetry -->
+		<section class="rounded-lg border border-border p-5">
+			<h2 class="mb-2 text-base font-semibold">Anonymous Telemetry</h2>
+			<p class="mb-4 text-sm text-muted-foreground">
+				Help improve NASty by sharing anonymous usage data: number of drives and storage capacity.
+				No personal information is collected.
+			</p>
+
+			<div class="mb-4">
+				<label class="flex items-center gap-2 text-sm cursor-pointer">
+					<input
+						type="checkbox"
+						checked={settings.telemetry_enabled}
+						onchange={(e) => saveTelemetry(e.currentTarget.checked)}
+						class="rounded border-input"
+					/>
+					<span class="font-medium">Enable telemetry</span>
+				</label>
+			</div>
+
+			<Button size="sm" onclick={sendTelemetry} disabled={sendingTelemetry || !settings.telemetry_enabled}>
+				{sendingTelemetry ? 'Sending…' : 'Send Now'}
+			</Button>
+		</section>
 
 		</div>
 	{/if}

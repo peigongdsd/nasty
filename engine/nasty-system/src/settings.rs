@@ -85,6 +85,9 @@ pub struct Settings {
     /// Use Let's Encrypt staging environment (for testing, avoids rate limits).
     #[serde(default)]
     pub tls_acme_staging: bool,
+    /// Whether anonymous telemetry is enabled (drive count, storage capacity).
+    #[serde(default = "default_telemetry_enabled")]
+    pub telemetry_enabled: bool,
 }
 
 fn default_challenge_type() -> String {
@@ -96,6 +99,10 @@ fn default_timezone() -> String {
 }
 
 fn default_clock_24h() -> bool {
+    true
+}
+
+fn default_telemetry_enabled() -> bool {
     true
 }
 
@@ -112,6 +119,7 @@ impl Default for Settings {
             tls_dns_provider: None,
             tls_dns_credentials: None,
             tls_acme_staging: false,
+            telemetry_enabled: default_telemetry_enabled(),
         }
     }
 }
@@ -138,6 +146,8 @@ pub struct SettingsUpdate {
     pub tls_dns_credentials: Option<String>,
     /// Use staging environment.
     pub tls_acme_staging: Option<bool>,
+    /// Enable/disable anonymous telemetry.
+    pub telemetry_enabled: Option<bool>,
 }
 
 pub struct SettingsService {
@@ -227,6 +237,9 @@ impl SettingsService {
                 settings.tls_acme_staging = staging;
                 tls_changed = true;
             }
+        }
+        if let Some(telemetry) = update.telemetry_enabled {
+            settings.telemetry_enabled = telemetry;
         }
         save(&settings).await.map_err(|e| e.to_string())?;
         if tls_changed {

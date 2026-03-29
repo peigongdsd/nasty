@@ -76,6 +76,11 @@ async fn collect_report(state: &AppState) -> Option<Report> {
 
 /// Send a telemetry report. Returns true on success.
 pub async fn send_report(state: &AppState) -> bool {
+    if !state.settings.get().await.telemetry_enabled {
+        debug!("Telemetry disabled, skipping report");
+        return false;
+    }
+
     let report = match collect_report(state).await {
         Some(r) => r,
         None => return false,

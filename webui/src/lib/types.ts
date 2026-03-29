@@ -413,6 +413,7 @@ export interface Settings {
 	tls_challenge_type: 'tls-alpn' | 'dns';
 	tls_dns_provider: string | null;
 	tls_dns_credentials: string | null;
+	telemetry_enabled: boolean;
 }
 
 export interface NetworkConfig {
