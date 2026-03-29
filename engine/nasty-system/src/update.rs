@@ -456,7 +456,7 @@ git -c user.email="nasty@localhost" -c user.name="NASty" \
 # The booted generation is always protected — even if it's older than KEEP.
 KEEP={gc_keep}
 MAX_AGE={gc_max_age}
-GENS=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null | wc -l)
+GENS=$(ls -1 /nix/var/nix/profiles/system-*-link 2>/dev/null | grep -c 'system-[0-9]*-link')
 # Find which generation we actually booted from (may differ from current profile)
 BOOTED_GEN=$(readlink /run/booted-system 2>/dev/null || true)
 BOOTED_NUM=""
