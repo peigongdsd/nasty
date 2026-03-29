@@ -406,6 +406,15 @@ in {
       gptfdisk          # GPT partition tools (sgdisk)
       cloud-utils       # growpart for expanding partitions
       smartmontools     # smartctl for disk health
+      nvme-cli          # NVMe drive health, SMART, firmware
+      hdparm            # HDD spin-down, drive parameters
+      lm_sensors        # CPU/drive temperature monitoring
+      lsof              # open file debugging ("device busy")
+      iotop             # per-process I/O monitoring
+      ethtool           # NIC speed, duplex, ring buffer tuning
+      iperf3            # network throughput testing
+      tcpdump           # packet capture for protocol debugging
+      rsync             # file transfer and sync
       jq                # JSON parsing (used by engine scripts)
       htop
       qemu              # QEMU/KVM for virtual machines
