@@ -1628,6 +1628,9 @@ async fn ensure_images_subvolume(state: &AppState, filesystem: &str) -> Result<S
         compression: Some("zstd".to_string()),
         comments: Some("VM images (ISO, qcow2, img, raw)".to_string()),
         direct_io: None,
+        foreground_target: None,
+        background_target: None,
+        promote_target: None,
     };
 
     let sv = state.subvolumes.create(req, None::<String>).await
