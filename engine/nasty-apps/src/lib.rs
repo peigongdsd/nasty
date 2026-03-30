@@ -1206,32 +1206,22 @@ async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
 
     let subvol_path = format!("/fs/{fs_name}/.nasty/apps-data");
 
-    if std::path::Path::new(&subvol_path).exists() {
-        info!("Apps storage subvolume already exists at {subvol_path}");
-        return Some(subvol_path);
+    let apps_path = subvol_path;
+    if std::path::Path::new(&apps_path).exists() {
+        info!("Apps storage already exists at {apps_path}");
+        return Some(apps_path);
     }
 
-    // Ensure .nasty parent directory exists
+    // Create as regular directory under .nasty/
     let nasty_dir = format!("/fs/{fs_name}/.nasty");
-    let _ = tokio::fs::create_dir_all(&nasty_dir).await;
-
-    // Create bcachefs subvolume
-    let output = Command::new("bcachefs")
-        .args(["subvolume", "create", &subvol_path])
-        .output()
-        .await;
-
-    match output {
-        Ok(o) if o.status.success() => {
-            info!("Created apps storage subvolume at {subvol_path}");
-            Some(subvol_path)
-        }
-        Ok(o) => {
-            error!("Failed to create apps subvolume: {}", String::from_utf8_lossy(&o.stderr));
-            None
+    match tokio::fs::create_dir_all(&apps_path).await {
+        Ok(()) => {
+            info!("Created apps storage directory at {apps_path}");
+            Some(apps_path)
         }
         Err(e) => {
-            error!("Failed to run bcachefs subvolume create: {e}");
+            error!("Failed to create apps storage at {apps_path}: {e}");
+            let _ = tokio::fs::create_dir_all(&nasty_dir).await;
             None
         }
     }

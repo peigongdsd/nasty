@@ -325,10 +325,7 @@
 		}
 	}
 
-	const SYSTEM_SUBVOLUMES: Record<string, string> = {
-		'.nasty/images': 'VM boot images',
-		'.nasty/apps-data': 'Apps runtime storage (k3s)',
-	};
+	const SYSTEM_SUBVOLUMES: Record<string, string> = {};
 
 	async function deleteSubvolume(name: string) {
 		const systemUse = SYSTEM_SUBVOLUMES[name];

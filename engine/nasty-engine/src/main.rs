@@ -239,34 +239,20 @@ async fn upload_vm_image_handler(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No filesystems available" }))).into_response();
     }
 
-    let subvolume = match state.subvolumes.get(&fs_name, ".nasty/images", None).await {
-        Ok(sv) => sv,
-        Err(_) => {
-            // Ensure .nasty parent directory exists
-            if let Ok(fs) = state.filesystems.get(&fs_name).await {
-                if let Some(ref mp) = fs.mount_point {
-                    let _ = tokio::fs::create_dir_all(format!("{mp}/.nasty")).await;
-                }
-            }
-            let req = nasty_storage::subvolume::CreateSubvolumeRequest {
-                filesystem: fs_name.clone(),
-                name: ".nasty/images".to_string(),
-                subvolume_type: nasty_storage::subvolume::SubvolumeType::Filesystem,
-                volsize_bytes: None,
-                compression: Some("zstd".to_string()),
-                comments: Some("VM images (ISO, qcow2, img, raw)".to_string()),
-                direct_io: None,
-                foreground_target: None,
-                background_target: None,
-                promote_target: None,
-            };
-            match state.subvolumes.create(req, None::<String>).await {
-                Ok(sv) => sv,
-                Err(e) => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create .nasty/images subvolume: {}", e) }))).into_response();
-                }
-            }
+    let images_path = {
+        let fs = match state.filesystems.get(&fs_name).await {
+            Ok(f) => f,
+            Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+        };
+        let mp = match fs.mount_point {
+            Some(ref p) => p.clone(),
+            None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Filesystem not mounted" }))).into_response(),
+        };
+        let path = format!("{mp}/.nasty/images");
+        if let Err(e) = tokio::fs::create_dir_all(&path).await {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create .nasty/images: {e}") }))).into_response();
         }
+        path
     };
 
     // Process the uploaded file
@@ -287,7 +273,7 @@ async fn upload_vm_image_handler(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No file provided" }))).into_response();
     }
 
-    info!("User '{}' uploading VM image: '{}' to {}", session.username, file_name, subvolume.path);
+    info!("User '{}' uploading VM image: '{}' to {}", session.username, file_name, images_path);
 
     let extensions = ["iso", "qcow2", "img", "raw"];
     let ext = std::path::Path::new(&file_name)
@@ -300,7 +286,7 @@ async fn upload_vm_image_handler(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Invalid file type. Supported: {:?}", extensions) }))).into_response();
     }
 
-    let dest_path = std::path::Path::new(&subvolume.path).join(&file_name);
+    let dest_path = std::path::Path::new(&images_path).join(&file_name);
 
     if dest_path.exists() {
         return (StatusCode::CONFLICT, Json(serde_json::json!({ "error": format!("Image '{}' already exists", file_name) }))).into_response();

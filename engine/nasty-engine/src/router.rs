@@ -1583,38 +1583,40 @@ struct VmImageListResult {
     images: Vec<serde_json::Value>,
 }
 
-/// List all VM images from "images" subvolumes across all filesystems.
+/// List all VM images from `.nasty/images` directories across all filesystems.
 async fn list_vm_images(state: &AppState) -> VmImageListResult {
-    let subvols = state.subvolumes.list_all(None, None).await.unwrap_or_default();
+    let filesystems = state.filesystems.list().await.unwrap_or_default();
     let mut images = Vec::new();
     let mut subvolume_exists = false;
 
-    for sv in &subvols {
-        if sv.name == "images" {
-            subvolume_exists = true;
-            let dir = &sv.path;
-            if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
-                while let Ok(Some(entry)) = entries.next_entry().await {
-                    let path = entry.path();
-                    let is_image = path.extension()
-                        .and_then(|e| e.to_str())
-                        .map(|e| VM_IMAGE_EXTENSIONS.iter().any(|ext| e.eq_ignore_ascii_case(ext)))
-                        .unwrap_or(false);
+    for fs in &filesystems {
+        if !fs.mounted { continue; }
+        let Some(ref mp) = fs.mount_point else { continue };
+        let dir = format!("{mp}/.nasty/images");
+        if !std::path::Path::new(&dir).is_dir() { continue; }
+        subvolume_exists = true;
 
-                    if is_image {
-                        let name = path.file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_default();
-                        let size = tokio::fs::metadata(&path).await
-                            .map(|m| m.len())
-                            .unwrap_or(0);
-                        images.push(serde_json::json!({
-                            "name": name,
-                            "path": path.to_string_lossy(),
-                            "filesystem": sv.filesystem,
-                            "size_bytes": size,
-                        }));
-                    }
+        if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let path = entry.path();
+                let is_image = path.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| VM_IMAGE_EXTENSIONS.iter().any(|ext| e.eq_ignore_ascii_case(ext)))
+                    .unwrap_or(false);
+
+                if is_image {
+                    let name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let size = tokio::fs::metadata(&path).await
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    images.push(serde_json::json!({
+                        "name": name,
+                        "path": path.to_string_lossy(),
+                        "filesystem": fs.name,
+                        "size_bytes": size,
+                    }));
                 }
             }
         }
@@ -1623,36 +1625,17 @@ async fn list_vm_images(state: &AppState) -> VmImageListResult {
     VmImageListResult { subvolume_exists, images }
 }
 
-/// Ensure the `.nasty/images` subvolume exists on a filesystem. Creates it if missing.
+/// Ensure the `.nasty/images` directory exists on a filesystem. Creates it if missing.
 async fn ensure_images_subvolume(state: &AppState, filesystem: &str) -> Result<String, String> {
-    if let Ok(sv) = state.subvolumes.get(filesystem, ".nasty/images", None).await {
-        return Ok(sv.path);
-    }
-
-    // Ensure .nasty parent directory exists
     let mount_point = state.filesystems.get(filesystem).await
         .map_err(|e| e.to_string())?
         .mount_point.ok_or_else(|| "filesystem not mounted".to_string())?;
-    let nasty_dir = format!("{mount_point}/.nasty");
-    let _ = tokio::fs::create_dir_all(&nasty_dir).await;
 
-    let req = nasty_storage::subvolume::CreateSubvolumeRequest {
-        filesystem: filesystem.to_string(),
-        name: ".nasty/images".to_string(),
-        subvolume_type: nasty_storage::subvolume::SubvolumeType::Filesystem,
-        volsize_bytes: None,
-        compression: Some("zstd".to_string()),
-        comments: Some("VM images (ISO, qcow2, img, raw)".to_string()),
-        direct_io: None,
-        foreground_target: None,
-        background_target: None,
-        promote_target: None,
-    };
+    let images_path = format!("{mount_point}/.nasty/images");
+    tokio::fs::create_dir_all(&images_path).await
+        .map_err(|e| format!("failed to create .nasty/images: {e}"))?;
 
-    let sv = state.subvolumes.create(req, None::<String>).await
-        .map_err(|e| format!("failed to create .nasty/images subvolume: {e}"))?;
-
-    Ok(sv.path)
+    Ok(images_path)
 }
 
 // ── Subvolume in-use check ───────────────────────────────────────
@@ -1733,28 +1716,6 @@ async fn check_subvolume_in_use(state: &AppState, filesystem: &str, name: &str) 
                     "subvolume is shared via SMB as '{}'. Delete the SMB share first.",
                     share.name
                 ));
-            }
-        }
-    }
-
-    // ── System subvolume checks (apps-data, images) ──
-
-    if name == ".nasty/apps-data" && state.apps.is_enabled() {
-        return Some("subvolume is used by the Apps runtime for storage. Disable Apps first.".to_string());
-    }
-
-    if name == ".nasty/images" {
-        // Check if any VM references an ISO from this subvolume
-        if let Ok(vms) = state.vms.list().await {
-            for vm in &vms {
-                if let Some(ref iso) = vm.config.boot_iso {
-                    if iso.starts_with(subvol_path) {
-                        return Some(format!(
-                            "subvolume contains VM boot image used by '{}'. Remove the ISO reference first.",
-                            vm.config.name
-                        ));
-                    }
-                }
             }
         }
     }
