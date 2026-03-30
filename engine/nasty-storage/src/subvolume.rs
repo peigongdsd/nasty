@@ -433,9 +433,8 @@ impl SubvolumeService {
         // Ask bcachefs which paths are real subvolumes (filters out plain dirs)
         let info = bcachefs_list_all(&mount_point).await;
 
-        // Subvolumes sit directly at the filesystem root — no subdirectory prefix.
-        // Exclude anything with '/' (nested) or '@' (snapshot).
-        for name in info.subvol_paths.iter().filter(|p| !p.is_empty() && !p.contains('/') && !p.contains('@')) {
+        // List all subvolumes except snapshots (@) and internal .nasty/* ones.
+        for name in info.subvol_paths.iter().filter(|p| !p.is_empty() && !p.contains('@') && !p.starts_with(".nasty/") && *p != ".nasty") {
             let path_str = subvol_path(&mount_point, name);
             let path = Path::new(&path_str);
 
