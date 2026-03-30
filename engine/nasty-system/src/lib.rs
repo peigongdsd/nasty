@@ -1,4 +1,5 @@
 pub mod alerts;
+pub mod backup;
 pub mod firmware;
 pub mod network;
 pub mod protocol;

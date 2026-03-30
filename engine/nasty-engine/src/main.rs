@@ -142,6 +142,9 @@ async fn main() -> anyhow::Result<()> {
     // Start daily anonymous telemetry (if not opted out)
     telemetry::spawn_daily(state.clone());
 
+    // Periodic config backup to bcachefs
+    nasty_system::backup::spawn_periodic();
+
     // Signal systemd that startup is complete
     sd_notify_ready();
 
