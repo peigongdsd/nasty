@@ -405,7 +405,16 @@ impl NvmeofService {
             .await
             .ok_or_else(|| NvmeofError::NotFound(req.id.clone()))?;
 
-        // Unlink from ports first
+        // 1. Disable all namespaces first — stops new I/O from clients
+        let ns_dir = format!("{NVMET_BASE}/subsystems/{}/namespaces", subsys.nqn);
+        if let Ok(mut entries) = tokio::fs::read_dir(&ns_dir).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let enable_path = entry.path().join("enable");
+                let _ = configfs_write(&enable_path.to_string_lossy(), "0").await;
+            }
+        }
+
+        // 2. Unlink from ports — triggers client-side disconnect
         for port in &subsys.ports {
             let link = format!(
                 "{NVMET_BASE}/ports/{}/subsystems/{}",
@@ -414,30 +423,18 @@ impl NvmeofService {
             let _ = configfs_unlink(&link).await;
         }
 
-        // Remove port directories if they were created solely for this subsystem
-        for port in &subsys.ports {
-            let port_dir = format!("{NVMET_BASE}/ports/{}", port.port_id);
-            // Only remove if the subsystems/ dir is empty
-            let subsys_dir = format!("{port_dir}/subsystems");
-            if dir_is_empty(&subsys_dir).await {
-                let _ = configfs_rmdir(&port_dir).await;
-            }
-        }
+        // 3. Brief settle for clients to process disconnect
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        // Disable and remove all namespaces — scan configfs directly so we catch
-        // any entries that weren't in the state file (e.g. restore skipped them
-        // because the device was missing, but they still exist in configfs).
-        let ns_dir = format!("{NVMET_BASE}/subsystems/{}/namespaces", subsys.nqn);
+        // 4. Remove namespaces
         if let Ok(mut entries) = tokio::fs::read_dir(&ns_dir).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let ns_path = entry.path();
-                let ns_path_str = ns_path.to_string_lossy();
-                // No need to disable before removal — rmdir handles it
-                let _ = configfs_rmdir(&ns_path_str).await;
+                let _ = configfs_rmdir(&ns_path.to_string_lossy()).await;
             }
         }
 
-        // Remove allowed hosts — scan configfs directly for the same reason.
+        // 5. Remove allowed hosts
         let hosts_dir = format!("{NVMET_BASE}/subsystems/{}/allowed_hosts", subsys.nqn);
         if let Ok(mut entries) = tokio::fs::read_dir(&hosts_dir).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
@@ -446,7 +443,16 @@ impl NvmeofService {
             }
         }
 
-        // Remove subsystem
+        // 6. Remove port directories if empty
+        for port in &subsys.ports {
+            let port_dir = format!("{NVMET_BASE}/ports/{}", port.port_id);
+            let subsys_dir = format!("{port_dir}/subsystems");
+            if dir_is_empty(&subsys_dir).await {
+                let _ = configfs_rmdir(&port_dir).await;
+            }
+        }
+
+        // 7. Remove subsystem
         let subsys_path = format!("{NVMET_BASE}/subsystems/{}", subsys.nqn);
         configfs_rmdir(&subsys_path).await?;
 
