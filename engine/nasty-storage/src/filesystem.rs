@@ -450,9 +450,18 @@ impl FilesystemService {
     }
 
     /// Create a new bcachefs filesystem: format devices, create mount point, mount
-    pub async fn create(&self, req: CreateFilesystemRequest) -> Result<Filesystem, FilesystemError> {
+    pub async fn create(&self, mut req: CreateFilesystemRequest) -> Result<Filesystem, FilesystemError> {
         if req.devices.is_empty() {
             return Err(FilesystemError::NoDevices);
+        }
+
+        // Resolve ":free" virtual devices — create a new partition in free space
+        for dev in &mut req.devices {
+            if let Some(disk_path) = dev.path.strip_suffix(":free") {
+                let new_part = create_partition_on_free_space(disk_path).await?;
+                info!("Resolved {}:free -> {}", disk_path, new_part);
+                dev.path = new_part;
+            }
         }
 
         // Validate devices exist
@@ -930,7 +939,6 @@ impl FilesystemService {
         }
 
         // Mark parent disks as in_use if any of their partitions are in_use.
-        // e.g. /dev/sdc shows "Free" even though /dev/sdc1 and /dev/sdc2 are mounted.
         let in_use_paths: std::collections::HashSet<String> = devices.iter()
             .filter(|d| d.in_use && d.dev_type == "part")
             .map(|d| d.path.clone())
@@ -939,6 +947,47 @@ impl FilesystemService {
             if dev.dev_type == "disk" && !dev.in_use {
                 if in_use_paths.iter().any(|p| p.starts_with(&dev.path)) {
                     dev.in_use = true;
+                }
+            }
+        }
+
+        // Detect unpartitioned free space on disks with existing partitions.
+        // Use sgdisk to find the largest free gap; if > 1 GiB, add a virtual "free" entry.
+        let partitioned_disks: Vec<String> = devices.iter()
+            .filter(|d| d.dev_type == "part")
+            .filter_map(|d| {
+                // /dev/sda1 -> /dev/sda, /dev/nvme0n1p1 -> /dev/nvme0n1
+                let name = d.path.trim_start_matches("/dev/");
+                // Strip trailing partition number
+                if name.contains("nvme") || name.contains("loop") {
+                    name.rsplit_once('p').map(|(base, _)| format!("/dev/{base}"))
+                } else {
+                    let base = name.trim_end_matches(|c: char| c.is_ascii_digit());
+                    Some(format!("/dev/{base}"))
+                }
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        const MIN_FREE_BYTES: u64 = 1_073_741_824; // 1 GiB
+        for disk_path in &partitioned_disks {
+            if let Ok(free_bytes) = get_disk_free_space(disk_path).await {
+                if free_bytes >= MIN_FREE_BYTES {
+                    let disk = devices.iter().find(|d| &d.path == disk_path);
+                    let (rotational, device_class) = disk
+                        .map(|d| (d.rotational, d.device_class.clone()))
+                        .unwrap_or((false, "ssd".to_string()));
+                    devices.push(BlockDevice {
+                        path: format!("{disk_path}:free"),
+                        size_bytes: free_bytes,
+                        dev_type: "free".to_string(),
+                        mount_point: None,
+                        fs_type: None,
+                        in_use: false,
+                        rotational,
+                        device_class,
+                    });
                 }
             }
         }
@@ -1502,6 +1551,80 @@ pub struct BlockDevice {
     pub rotational: bool,
     /// Device speed class: "nvme", "ssd", or "hdd".
     pub device_class: String,
+}
+
+/// Get the largest contiguous free space on a partitioned disk using sgdisk.
+async fn get_disk_free_space(disk_path: &str) -> Result<u64, String> {
+    // sgdisk --print outputs a table with partition info and a summary line:
+    // "Total free space is X sectors (Y GiB)"
+    // Alternatively, use parted for a cleaner parse.
+    let output = cmd::run_ok("sgdisk", &["--print", disk_path])
+        .await
+        .map_err(|e| format!("sgdisk failed: {e}"))?;
+
+    // Parse "Total free space is NNNN sectors" line
+    for line in output.lines() {
+        let trimmed = line.trim().to_lowercase();
+        if trimmed.starts_with("total free space is") {
+            // "Total free space is 195126272 sectors (93.0 GiB)"
+            let sectors_str = trimmed
+                .strip_prefix("total free space is ")
+                .and_then(|s| s.split_whitespace().next());
+            if let Some(s) = sectors_str {
+                if let Ok(sectors) = s.parse::<u64>() {
+                    // Sectors are typically 512 bytes; sgdisk uses logical sector size.
+                    // Parse sector size from sgdisk output: "Sector size (logical): NNN bytes"
+                    let sector_size = output.lines()
+                        .find(|l| l.to_lowercase().contains("sector size (logical)"))
+                        .and_then(|l| l.split_whitespace().filter_map(|w| w.parse::<u64>().ok()).last())
+                        .unwrap_or(512);
+                    return Ok(sectors * sector_size);
+                }
+            }
+        }
+    }
+    Ok(0)
+}
+
+/// Create a new GPT partition in the free space of a disk.
+/// Returns the path of the new partition (e.g. `/dev/sda3`).
+pub async fn create_partition_on_free_space(disk_path: &str) -> Result<String, FilesystemError> {
+    // Use sgdisk to create a new partition using the largest available block
+    cmd::run_ok("sgdisk", &["--largest-new=0", disk_path])
+        .await
+        .map_err(FilesystemError::CommandFailed)?;
+
+    // Re-read partition table
+    let _ = cmd::run_ok("partprobe", &[disk_path]).await;
+    // Brief settle time for the kernel to create the device node
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Find the new partition — it's the highest-numbered one
+    let output = cmd::run_ok("lsblk", &["-Jno", "NAME,TYPE", disk_path])
+        .await
+        .map_err(FilesystemError::CommandFailed)?;
+    let parsed: serde_json::Value = serde_json::from_str(&output).unwrap_or_default();
+    let mut last_part = String::new();
+    if let Some(devs) = parsed.get("blockdevices").and_then(|v| v.as_array()) {
+        for dev in devs {
+            if let Some(children) = dev.get("children").and_then(|v| v.as_array()) {
+                for child in children {
+                    if child.get("type").and_then(|v| v.as_str()) == Some("part") {
+                        if let Some(name) = child.get("name").and_then(|v| v.as_str()) {
+                            last_part = format!("/dev/{name}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if last_part.is_empty() {
+        return Err(FilesystemError::CommandFailed("failed to find new partition after creation".to_string()));
+    }
+
+    info!("Created partition {last_part} on {disk_path}");
+    Ok(last_part)
 }
 
 /// Read per-device info (labels, durability) for a mounted bcachefs filesystem.
