@@ -1191,13 +1191,22 @@ async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
         }
     };
 
-    let subvol_path = format!("/fs/{fs_name}/apps-data");
+    let subvol_path = format!("/fs/{fs_name}/.nasty/apps-data");
 
-    // Check if subvolume already exists
+    // Check new location first, then legacy
+    let legacy_path = format!("/fs/{fs_name}/apps-data");
     if std::path::Path::new(&subvol_path).exists() {
         info!("Apps storage subvolume already exists at {subvol_path}");
         return Some(subvol_path);
     }
+    if std::path::Path::new(&legacy_path).exists() {
+        info!("Apps storage subvolume found at legacy path {legacy_path}");
+        return Some(legacy_path);
+    }
+
+    // Ensure .nasty parent directory exists
+    let nasty_dir = format!("/fs/{fs_name}/.nasty");
+    let _ = tokio::fs::create_dir_all(&nasty_dir).await;
 
     // Create bcachefs subvolume
     let output = Command::new("bcachefs")

@@ -1614,15 +1614,28 @@ async fn list_vm_images(state: &AppState) -> VmImageListResult {
     VmImageListResult { subvolume_exists, images }
 }
 
-/// Ensure an "images" subvolume exists on a filesystem. Creates it if missing.
+/// Ensure the `.nasty/images` subvolume exists on a filesystem. Creates it if missing.
+/// Also checks legacy "images" name for backward compatibility.
 async fn ensure_images_subvolume(state: &AppState, filesystem: &str) -> Result<String, String> {
+    // Check new location first
+    if let Ok(sv) = state.subvolumes.get(filesystem, ".nasty/images", None).await {
+        return Ok(sv.path);
+    }
+    // Fall back to legacy name
     if let Ok(sv) = state.subvolumes.get(filesystem, "images", None).await {
         return Ok(sv.path);
     }
 
+    // Ensure .nasty parent directory exists
+    let mount_point = state.filesystems.get(filesystem).await
+        .map_err(|e| e.to_string())?
+        .mount_point.ok_or_else(|| "filesystem not mounted".to_string())?;
+    let nasty_dir = format!("{mount_point}/.nasty");
+    let _ = tokio::fs::create_dir_all(&nasty_dir).await;
+
     let req = nasty_storage::subvolume::CreateSubvolumeRequest {
         filesystem: filesystem.to_string(),
-        name: "images".to_string(),
+        name: ".nasty/images".to_string(),
         subvolume_type: nasty_storage::subvolume::SubvolumeType::Filesystem,
         volsize_bytes: None,
         compression: Some("zstd".to_string()),
@@ -1634,7 +1647,7 @@ async fn ensure_images_subvolume(state: &AppState, filesystem: &str) -> Result<S
     };
 
     let sv = state.subvolumes.create(req, None::<String>).await
-        .map_err(|e| format!("failed to create images subvolume: {e}"))?;
+        .map_err(|e| format!("failed to create .nasty/images subvolume: {e}"))?;
 
     Ok(sv.path)
 }
@@ -1723,11 +1736,11 @@ async fn check_subvolume_in_use(state: &AppState, filesystem: &str, name: &str) 
 
     // ── System subvolume checks (apps-data, images) ──
 
-    if name == "apps-data" && state.apps.is_enabled() {
+    if (name == "apps-data" || name == ".nasty/apps-data") && state.apps.is_enabled() {
         return Some("subvolume is used by the Apps runtime for storage. Disable Apps first.".to_string());
     }
 
-    if name == "images" {
+    if name == "images" || name == ".nasty/images" {
         // Check if any VM references an ISO from this subvolume
         if let Ok(vms) = state.vms.list().await {
             for vm in &vms {

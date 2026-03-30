@@ -236,13 +236,20 @@ async fn upload_vm_image_handler(
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "No filesystems available" }))).into_response();
     }
 
-    let subvolume = match state.subvolumes.get(&fs_name, "images", None).await {
+    // Check .nasty/images first, then legacy "images"
+    let subvolume = match state.subvolumes.get(&fs_name, ".nasty/images", None).await
+        .or(state.subvolumes.get(&fs_name, "images", None).await) {
         Ok(sv) => sv,
         Err(_) => {
-            // Create the images subvolume if it doesn't exist
+            // Ensure .nasty parent directory exists
+            if let Ok(fs) = state.filesystems.get(&fs_name).await {
+                if let Some(ref mp) = fs.mount_point {
+                    let _ = tokio::fs::create_dir_all(format!("{mp}/.nasty")).await;
+                }
+            }
             let req = nasty_storage::subvolume::CreateSubvolumeRequest {
                 filesystem: fs_name.clone(),
-                name: "images".to_string(),
+                name: ".nasty/images".to_string(),
                 subvolume_type: nasty_storage::subvolume::SubvolumeType::Filesystem,
                 volsize_bytes: None,
                 compression: Some("zstd".to_string()),
@@ -255,7 +262,7 @@ async fn upload_vm_image_handler(
             match state.subvolumes.create(req, None::<String>).await {
                 Ok(sv) => sv,
                 Err(e) => {
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create images subvolume: {}", e) }))).into_response();
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": format!("Failed to create .nasty/images subvolume: {}", e) }))).into_response();
                 }
             }
         }

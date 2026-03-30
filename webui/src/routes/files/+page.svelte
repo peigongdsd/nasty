@@ -15,6 +15,11 @@
 	let currentPath = $state('');
 	let entries: FileEntry[] = $state([]);
 	let loading = $state(true);
+	let showHidden = $state(false);
+
+	const visibleEntries = $derived(
+		showHidden ? entries : entries.filter(e => !e.name.startsWith('.'))
+	);
 
 	// Upload state
 	let uploading = $state(false);
@@ -193,6 +198,10 @@
 				<FolderPlus size={14} class="mr-1" /> New Folder
 			</Button>
 		{/if}
+		<label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+			<input type="checkbox" bind:checked={showHidden} class="h-3.5 w-3.5" />
+			Show hidden
+		</label>
 	</div>
 </div>
 
@@ -223,7 +232,7 @@
 <!-- File listing -->
 {#if loading}
 	<p class="text-muted-foreground">Loading...</p>
-{:else if entries.length === 0}
+{:else if visibleEntries.length === 0}
 	<Card>
 		<CardContent class="py-8 text-center text-muted-foreground">
 			{currentPath ? 'Empty directory' : 'No filesystems mounted'}
@@ -242,7 +251,7 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each entries as entry}
+			{#each visibleEntries as entry}
 				<tr class="border-b border-border hover:bg-muted/30 transition-colors group">
 					<td class="p-3">
 						{#if entry.is_dir}
