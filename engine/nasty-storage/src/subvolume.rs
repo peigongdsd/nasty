@@ -566,6 +566,13 @@ impl SubvolumeService {
             return Err(SubvolumeError::VolsizeRequired);
         }
 
+        // Ensure parent directories exist for nested subvolumes (e.g. "projects/web")
+        if let Some(parent) = Path::new(&subvol_path).parent() {
+            if !parent.exists() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+        }
+
         // Create the bcachefs subvolume
         info!("Creating subvolume '{}' in filesystem '{}'", req.name, req.filesystem);
         cmd::run_ok("bcachefs", &["subvolume", "create", &subvol_path])

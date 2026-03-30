@@ -548,7 +548,8 @@
 			{#if wizardStep === 1}
 			<div class="mb-4">
 				<Label for="sv-name">Name</Label>
-				<Input id="sv-name" bind:value={newName} placeholder="documents" class="mt-1" />
+				<Input id="sv-name" bind:value={newName} placeholder="documents or projects/web" class="mt-1" />
+				<p class="mt-1 text-xs text-muted-foreground">Use <span class="font-mono">/</span> for nested subvolumes (e.g. projects/web)</p>
 			</div>
 			<div class="mb-4">
 				<Label for="sv-type">Type</Label>
@@ -702,10 +703,13 @@
 		<tbody>
 			{#each sorted as sv}
 				<tr class="border-b border-border">
-					<td class="p-3">
+					<td class="p-3" style="padding-left: {(sv.name.split('/').length - 1) * 1.5 + 0.75}rem">
 						<button class="text-left hover:text-blue-400 transition-colors" onclick={() => openDetail(sv)}>
-							<strong>{sv.name}</strong>
+							<strong>{sv.name.includes('/') ? sv.name.split('/').pop() : sv.name}</strong>
 						</button>
+						{#if sv.name.includes('/')}
+							<span class="block font-mono text-xs text-muted-foreground/40">{sv.name}</span>
+						{/if}
 						<span class="block font-mono text-xs text-muted-foreground">{sv.path}</span>
 						{#if sv.comments}
 							<span class="mt-0.5 block text-xs italic text-muted-foreground">{sv.comments}</span>
