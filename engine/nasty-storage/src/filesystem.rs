@@ -970,25 +970,30 @@ impl FilesystemService {
             .into_iter()
             .collect();
 
+        info!("Free-space detection: found {} partitioned disks: {:?}", partitioned_disks.len(), partitioned_disks);
         const MIN_FREE_BYTES: u64 = 1_073_741_824; // 1 GiB
         for disk_path in &partitioned_disks {
-            if let Ok(free_bytes) = get_disk_free_space(disk_path).await {
-                if free_bytes >= MIN_FREE_BYTES {
-                    let disk = devices.iter().find(|d| &d.path == disk_path);
-                    let (rotational, device_class) = disk
-                        .map(|d| (d.rotational, d.device_class.clone()))
-                        .unwrap_or((false, "ssd".to_string()));
-                    devices.push(BlockDevice {
-                        path: format!("{disk_path}:free"),
-                        size_bytes: free_bytes,
-                        dev_type: "free".to_string(),
-                        mount_point: None,
-                        fs_type: None,
-                        in_use: false,
-                        rotational,
-                        device_class,
-                    });
+            match get_disk_free_space(disk_path).await {
+                Ok(free_bytes) => {
+                    info!("Free space on {disk_path}: {free_bytes} bytes");
+                    if free_bytes >= MIN_FREE_BYTES {
+                        let disk = devices.iter().find(|d| &d.path == disk_path);
+                        let (rotational, device_class) = disk
+                            .map(|d| (d.rotational, d.device_class.clone()))
+                            .unwrap_or((false, "ssd".to_string()));
+                        devices.push(BlockDevice {
+                            path: format!("{disk_path}:free"),
+                            size_bytes: free_bytes,
+                            dev_type: "free".to_string(),
+                            mount_point: None,
+                            fs_type: None,
+                            in_use: false,
+                            rotational,
+                            device_class,
+                        });
+                    }
                 }
+                Err(e) => warn!("Failed to get free space for {disk_path}: {e}"),
             }
         }
 
