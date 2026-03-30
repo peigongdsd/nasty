@@ -665,25 +665,48 @@
 					{:else}
 						<div class="space-y-1.5">
 							{#each availableDevices() as dev}
-								<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm
-									{selectedPaths.includes(dev.path) ? 'border-primary bg-primary/5' : 'hover:bg-secondary/50'}">
-									<input type="checkbox" checked={selectedPaths.includes(dev.path)}
-										onchange={() => toggleDevice(dev.path)} class="h-4 w-4 shrink-0" />
-									{#if dev.dev_type === 'free'}
-										<span class="font-mono text-xs shrink-0">{dev.path.replace(':free', '')}</span>
-										<span class="rounded bg-green-900 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-300">free space</span>
-										<span class="text-xs text-muted-foreground">(new partition will be created)</span>
-									{:else}
+								{#if dev.dev_type === 'free'}
+									{@const diskPath = dev.path.replace(':free', '')}
+									{@const existingParts = devices.filter(d => d.dev_type === 'part' && d.path.startsWith(diskPath))}
+									<div class="rounded-lg border border-border overflow-hidden">
+										<label class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm
+											{selectedPaths.includes(dev.path) ? 'border-primary bg-primary/5' : 'hover:bg-secondary/50'}">
+											<input type="checkbox" checked={selectedPaths.includes(dev.path)}
+												onchange={() => toggleDevice(dev.path)} class="h-4 w-4 shrink-0" />
+											<span class="font-mono text-xs shrink-0">{diskPath}</span>
+											<span class="rounded bg-green-900 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-300">free space</span>
+											<span class="text-muted-foreground">{formatBytes(dev.size_bytes)}</span>
+											<span class="text-xs text-muted-foreground">(new partition will be created)</span>
+										</label>
+										{#if existingParts.length > 0}
+											<div class="border-t border-border bg-muted/20 px-3 py-1.5">
+												{#each existingParts as part}
+													<div class="flex items-center gap-2 text-xs text-muted-foreground/60 py-0.5">
+														<span class="font-mono">{part.path}</span>
+														<span>{formatBytes(part.size_bytes)}</span>
+														{#if part.mount_point}<span>mounted at {part.mount_point}</span>{/if}
+														{#if part.fs_type}<span class="font-mono">{part.fs_type}</span>{/if}
+														<span class="italic">not touched</span>
+													</div>
+												{/each}
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm
+										{selectedPaths.includes(dev.path) ? 'border-primary bg-primary/5' : 'hover:bg-secondary/50'}">
+										<input type="checkbox" checked={selectedPaths.includes(dev.path)}
+											onchange={() => toggleDevice(dev.path)} class="h-4 w-4 shrink-0" />
 										<span class="font-mono text-xs shrink-0">{dev.path}</span>
 										<span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">
 											{dev.device_class}
 										</span>
-									{/if}
-									<span class="text-muted-foreground">{formatBytes(dev.size_bytes)}</span>
-									{#if dev.fs_type}
-										<span class="rounded border border-amber-700 px-1.5 py-0.5 text-[10px] text-amber-400">has signatures · wipe first</span>
-									{/if}
-								</label>
+										<span class="text-muted-foreground">{formatBytes(dev.size_bytes)}</span>
+										{#if dev.fs_type}
+											<span class="rounded border border-amber-700 px-1.5 py-0.5 text-[10px] text-amber-400">has signatures · wipe first</span>
+										{/if}
+									</label>
+								{/if}
 							{/each}
 						</div>
 					{/if}
