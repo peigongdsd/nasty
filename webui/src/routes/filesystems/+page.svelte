@@ -672,6 +672,7 @@
 									{#if dev.dev_type === 'free'}
 										<span class="font-mono text-xs shrink-0">{dev.path.replace(':free', '')}</span>
 										<span class="rounded bg-green-900 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-300">free space</span>
+										<span class="text-xs text-muted-foreground">(new partition will be created)</span>
 									{:else}
 										<span class="font-mono text-xs shrink-0">{dev.path}</span>
 										<span class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">
@@ -849,8 +850,13 @@
 					<div class="flex flex-wrap gap-1.5">
 						{#each selectedDeviceObjects() as dev}
 							<span class="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs">
-								<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
-								<span class="font-mono">{dev.path}</span>
+								{#if dev.dev_type === 'free'}
+									<span class="rounded bg-green-900 px-1 py-0.5 text-[10px] font-semibold uppercase text-green-300">free</span>
+									<span class="font-mono">{dev.path.replace(':free', '')} (new partition)</span>
+								{:else}
+									<span class="rounded px-1 py-0.5 text-[10px] font-semibold uppercase {classColor(dev.device_class)}">{dev.device_class}</span>
+									<span class="font-mono">{dev.path}</span>
+								{/if}
 								{#if profile.device_labels[dev.path]}
 									<span class="text-muted-foreground">→ {profile.device_labels[dev.path]}</span>
 								{/if}
