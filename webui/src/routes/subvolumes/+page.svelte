@@ -120,6 +120,7 @@
 	let expandedName = $state<string | null>(null);
 	let detailSv = $state<Subvolume | null>(null);
 	let detailSnapshots = $state<Snapshot[]>([]);
+	let nestedSubvolumes = $state<string[]>([]);
 	let detailTab = $state<'info' | 'snapshots' | 'shares' | 'browse' | 'properties'>('info');
 
 	// Inline editing
@@ -212,15 +213,17 @@
 		detailSv = sv;
 		detailTab = 'info';
 		detailSnapshots = [];
+		nestedSubvolumes = [];
 		detailShares = { nfs: [], smb: [], iscsi: [], nvmeof: [] };
 
-		// Load snapshots and shares in parallel
-		const [snapResult, nfsResult, smbResult, iscsiResult, nvmeofResult] = await Promise.allSettled([
+		// Load snapshots, shares, and children in parallel
+		const [snapResult, nfsResult, smbResult, iscsiResult, nvmeofResult, childrenResult] = await Promise.allSettled([
 			client.call<Snapshot[]>('snapshot.list', { filesystem: selectedFs }),
 			client.call<NfsShare[]>('share.nfs.list'),
 			client.call<SmbShare[]>('share.smb.list'),
 			client.call<IscsiTarget[]>('share.iscsi.list'),
 			client.call<NvmeofSubsystem[]>('share.nvmeof.list'),
+			client.call<string[]>('subvolume.children', { filesystem: selectedFs, name: sv.name }),
 		]);
 
 		if (snapResult.status === 'fulfilled') {
@@ -242,6 +245,10 @@
 				? nvmeofResult.value.filter(sub =>
 					blockDev != null && sub.namespaces.some(ns => ns.device_path === blockDev)) : [],
 		};
+
+		if (childrenResult.status === 'fulfilled') {
+			nestedSubvolumes = childrenResult.value;
+		}
 	}
 
 	function closeDetail() {
@@ -325,9 +332,17 @@
 
 	async function deleteSubvolume(name: string) {
 		const systemUse = SYSTEM_SUBVOLUMES[name];
-		const warning = systemUse
-			? `This subvolume is used by the system for: ${systemUse}. Deleting it may break functionality. All snapshots will also be deleted.`
-			: 'All snapshots will also be deleted.';
+		// Check for child subvolumes
+		let children: string[] = [];
+		try { children = await client.call<string[]>('subvolume.children', { filesystem: selectedFs, name }); } catch {}
+		let warning = '';
+		if (systemUse) {
+			warning += `This subvolume is used by the system for: ${systemUse}. Deleting it may break functionality. `;
+		}
+		if (children.length > 0) {
+			warning += `This will also delete ${children.length} nested subvolume${children.length > 1 ? 's' : ''}: ${children.join(', ')}. `;
+		}
+		warning += 'All snapshots will also be deleted.';
 		if (!await confirm(`Delete "${name}"?`, warning)) return;
 		await withToast(
 			() => client.call('subvolume.delete', { filesystem: selectedFs, name }),
@@ -835,6 +850,14 @@
 										{#if detailSv.parent}
 											<span class="text-muted-foreground">Parent</span>
 											<button class="font-mono text-xs text-blue-400 hover:text-blue-300 text-left" onclick={() => { const p = subvolumes.find(s => s.name === detailSv!.parent); if (p) openDetail(p); }}>{detailSv.parent}</button>
+										{/if}
+										{#if nestedSubvolumes.length > 0}
+											<span class="text-muted-foreground">Nested Subvolumes</span>
+											<div class="flex flex-col gap-0.5">
+												{#each nestedSubvolumes as child}
+													<span class="font-mono text-xs">{child}</span>
+												{/each}
+											</div>
 										{/if}
 										<span class="text-muted-foreground">Comments</span>
 										<span>

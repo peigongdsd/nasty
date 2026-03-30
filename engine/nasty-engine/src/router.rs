@@ -65,7 +65,7 @@ fn is_read_only(method: &str) -> bool {
             | "device.list" | "auth.me" | "auth.list_users" | "auth.token.list"
             | "fs.usage" | "fs.scrub.status" | "fs.reconcile.status"
             | "bcachefs.usage"
-            | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property" | "smb.user.list"
+            | "service.protocol.list" | "subvolume.list_all" | "subvolume.find_by_property" | "subvolume.children" | "smb.user.list"
             | "system.update.version" | "system.update.status" | "system.reboot_required" | "system.generations.list"
             | "system.log.level"
             | "system.settings.timezones"
@@ -822,6 +822,15 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                         Ok(v) => ok(req, v),
                         Err(e) => err(req, e),
                     }
+                }
+            }
+            (Err(r), _) | (_, Err(r)) => r,
+        },
+        "subvolume.children" => match (require_str(req, "filesystem"), require_str(req, "name")) {
+            (Ok(fs_name), Ok(name)) => {
+                match state.subvolumes.list_children(fs_name, name).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
                 }
             }
             (Err(r), _) | (_, Err(r)) => r,

@@ -656,6 +656,12 @@ impl SubvolumeService {
         self.get(&req.filesystem, &req.name, None).await
     }
 
+    /// List child subvolumes nested under a given parent.
+    pub async fn list_children(&self, filesystem: &str, name: &str) -> Result<Vec<String>, SubvolumeError> {
+        let mount_point = self.fs_mount_point(filesystem).await?;
+        Ok(find_child_subvolumes(&mount_point, name).await)
+    }
+
     /// Delete a subvolume.
     /// `owner_filter`: if Some, returns `AccessDenied` if the subvolume has a different owner.
     pub async fn delete(&self, req: DeleteSubvolumeRequest, owner_filter: Option<&str>) -> Result<(), SubvolumeError> {
