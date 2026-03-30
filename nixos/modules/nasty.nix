@@ -396,6 +396,7 @@ in {
         "--disable=metrics-server"  # Not needed for app workloads
         "--write-kubeconfig-mode=644"
         "--flannel-backend=host-gw" # host-gw avoids VXLAN overlay that hijacks default route
+        "--node-name=nasty-node"    # Fixed name so hostname changes don't break k3s
       ];
     };
     # Prevent k3s from starting on boot — engine manages this.
