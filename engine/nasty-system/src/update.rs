@@ -413,6 +413,7 @@ GIT_TERMINAL_PROMPT=0 git -c credential.helper= {git_insteadof} fetch origin
 git sparse-checkout disable 2>/dev/null || true
 
 # Mild and Spicy use tags on main. Nasty tracks HEAD of main.
+LATEST_TAG=""
 case "$FLAVOR" in
     mild)
         LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
