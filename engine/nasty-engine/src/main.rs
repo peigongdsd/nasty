@@ -65,6 +65,12 @@ async fn main() -> anyhow::Result<()> {
     let commit = env!("NASTY_GIT_COMMIT");
     let built = env!("NASTY_BUILD_DATE");
 
+    // --version flag
+    if std::env::args().any(|a| a == "--version" || a == "-V") {
+        println!("nasty-engine {version} (commit: {commit}, built: {built})");
+        return Ok(());
+    }
+
     let default_filter = "nasty_engine=debug,nasty_storage=debug,nasty_sharing=debug,nasty_snapshot=debug,nasty_system=info,tower_http=debug";
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| default_filter.into());
