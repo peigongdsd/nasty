@@ -49,16 +49,28 @@ jobs:
           echo "ISO: $ISO_FILE"
           ls -lh "$ISO_FILE"
 
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          DEST="nasty-x86_64-${SHORT_SHA}.iso"
+          # Use version tag if present (v0.0.1), otherwise commit-based
+          VERSION=$(git describe --tags --exact-match 2>/dev/null | grep '^v' || echo "")
+          if [ -n "$VERSION" ]; then
+            DEST="nasty-${VERSION}-x86_64.iso"
+          else
+            SHORT_SHA=$(git rev-parse --short HEAD)
+            VERSION="dev-${SHORT_SHA}"
+            DEST="nasty-${VERSION}-x86_64.iso"
+          fi
           cp "$ISO_FILE" "$DEST"
           echo "iso_dest=$DEST" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_ENV"
 
       - name: Upload as release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="iso-$(date +%Y%m%d)-$(git rev-parse --short HEAD)"
-          gh release create "$TAG" "${{ env.iso_dest }}" \
-            --title "NASty ISO $TAG" \
-            --notes "Automated ISO build from commit $(git rev-parse --short HEAD)"
+          TAG="${{ env.version }}"
+          if gh release view "$TAG" &>/dev/null; then
+            gh release upload "$TAG" "${{ env.iso_dest }}" --clobber
+          else
+            gh release create "$TAG" "${{ env.iso_dest }}" \
+              --title "NASty $TAG" \
+              --notes "NASty ISO build — $(git rev-parse --short HEAD)"
+          fi
