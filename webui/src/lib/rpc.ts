@@ -164,8 +164,18 @@ export class NastyClient {
 		this._readyPromise = new Promise((res) => { this._readyResolve = res; });
 		this.reconnectTimer = setTimeout(() => {
 			this.reconnectTimer = null;
-			this.connect(token).catch(() => {
-				// Connection failed — schedule another attempt
+			this.connect(token).catch((err) => {
+				// Auth failure after reboot (token invalidated) — force page reload.
+				// The new page will show the login form with a fresh token.
+				if (err instanceof Error && (
+					err.message.includes('Invalid') ||
+					err.message.includes('Unauthorized') ||
+					err.message.includes('expired')
+				)) {
+					location.reload();
+					return;
+				}
+				// Connection failed (server still down) — schedule another attempt
 				if (this._shouldReconnect) {
 					this._scheduleReconnect(token);
 				}
