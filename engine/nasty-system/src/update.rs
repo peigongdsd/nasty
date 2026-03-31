@@ -80,9 +80,18 @@ impl ReleaseChannel {
     /// Git ref to track for this channel.
     pub fn git_ref(&self) -> &'static str {
         match self {
-            Self::Mild => "stable",
-            Self::Spicy => "beta",
-            Self::Nasty => "main",
+            Self::Mild => "main",  // uses v* tags on main
+            Self::Spicy => "main", // uses s* tags on main
+            Self::Nasty => "main", // HEAD of main
+        }
+    }
+
+    /// Tag glob pattern for tag-based channels.
+    pub fn tag_pattern(&self) -> Option<&'static str> {
+        match self {
+            Self::Mild => Some("v*"),
+            Self::Spicy => Some("s*"),
+            Self::Nasty => None, // no tags, always HEAD
         }
     }
 
@@ -288,25 +297,24 @@ impl UpdateService {
         let current = read_current_version().await;
         let channel = read_channel().await;
 
-        // For stable channel, check latest GitHub release tag.
-        // For beta/edge, check the branch commit.
+        // Tag-based channels (Mild, Spicy) check for latest matching tag.
+        // Nasty tracks HEAD of main.
         let latest = match channel {
-            ReleaseChannel::Mild => {
+            ReleaseChannel::Mild | ReleaseChannel::Spicy => {
                 match check_latest_release().await {
                     Ok(tag) => tag,
                     Err(_) => {
                         let token = read_github_token().await;
-                        check_via_git_ls_remote(token.as_deref(), "refs/heads/stable").await?
+                        check_via_git_ls_remote(token.as_deref(), "refs/heads/main").await?
                     }
                 }
             }
-            _ => {
-                let git_ref = format!("refs/heads/{}", channel.git_ref());
-                match check_via_github_api_branch(channel.git_ref()).await {
+            ReleaseChannel::Nasty => {
+                match check_via_github_api_branch("main").await {
                     Ok(sha) => sha,
                     Err(_) => {
                         let token = read_github_token().await;
-                        check_via_git_ls_remote(token.as_deref(), &git_ref).await?
+                        check_via_git_ls_remote(token.as_deref(), "refs/heads/main").await?
                     }
                 }
             }
@@ -358,6 +366,7 @@ impl UpdateService {
         // 2. Rebuild from local flake (which has hardware-configuration.nix)
         let channel = read_channel().await;
         let branch = channel.git_ref();
+        let flavor = channel.to_string(); // "mild", "spicy", "nasty"
         let token = read_github_token().await;
 
         // TODO: Remove token env var once repo is public.
@@ -396,27 +405,40 @@ HW_CFG="nixos/hardware-configuration.nix"
 
 git remote set-url origin "{REPO_URL}" 2>/dev/null || git remote add origin "{REPO_URL}"
 CHANNEL={branch}
-echo "==> Channel: $CHANNEL"
+FLAVOR={flavor}
+echo "==> Flavor: $FLAVOR (branch: $CHANNEL)"
 GIT_TERMINAL_PROMPT=0 git -c credential.helper= {git_insteadof} fetch origin
 
 # Disable sparse checkout — Nix treats missing tracked files as dirty,
 # which causes every build to get a "-dirty" version suffix.
 git sparse-checkout disable 2>/dev/null || true
 
-# For stable channel, checkout the latest tag on the stable branch.
-# For beta/edge, track the branch head.
-if [ "$CHANNEL" = "stable" ]; then
-    LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
-    if [ -n "$LATEST_TAG" ]; then
-        echo "==> Checking out release $LATEST_TAG"
-        git checkout "$LATEST_TAG" --detach
-    else
-        echo "==> No release tags found, falling back to origin/stable"
-        git reset --hard origin/stable
-    fi
-else
-    git reset --hard origin/$CHANNEL
-fi
+# Mild and Spicy use tags on main. Nasty tracks HEAD of main.
+case "$FLAVOR" in
+    mild)
+        LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+        if [ -n "$LATEST_TAG" ]; then
+            echo "==> Checking out release $LATEST_TAG"
+            git checkout "$LATEST_TAG" --detach
+        else
+            echo "==> No v* tags found, using origin/main"
+            git reset --hard origin/main
+        fi
+        ;;
+    spicy)
+        LATEST_TAG=$(git tag -l 's*' --sort=-v:refname | head -1)
+        if [ -n "$LATEST_TAG" ]; then
+            echo "==> Checking out spicy release $LATEST_TAG"
+            git checkout "$LATEST_TAG" --detach
+        else
+            echo "==> No s* tags found, using origin/main"
+            git reset --hard origin/main
+        fi
+        ;;
+    nasty)
+        git reset --hard origin/main
+        ;;
+esac
 
 # Remove dev-only files not needed on the appliance.
 # These stay in the repo for CI/dev but shouldn't ship to users.
@@ -469,10 +491,10 @@ fi
 # The flake bakes the local hw-config commit SHA into /etc/nasty-version, which
 # never matches origin/main. Writing the real upstream SHA to /var/lib/nasty/version
 # lets the engine report the correct version and stop showing false update prompts.
-if [ "$CHANNEL" = "stable" ] && [ -n "$LATEST_TAG" ]; then
+if [ -n "$LATEST_TAG" ]; then
     echo "$LATEST_TAG" > {VERSION_PATH}
 else
-    git rev-parse --short origin/$CHANNEL > {VERSION_PATH}
+    git rev-parse --short origin/main > {VERSION_PATH}
 fi
 
 echo "==> Update complete!"
