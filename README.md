@@ -32,8 +32,6 @@ NASty is a self-contained NAS operating system that turns commodity hardware int
 
 Download the latest ISO from [Releases](../../releases) and boot it on your hardware. The installer walks you through disk selection and initial setup.
 
-Pre-built QCOW2 cloud images (x86_64 and aarch64) are available in Releases for VM-based testing.
-
 Default credentials: **admin** / **admin**
 
 ## Architecture
