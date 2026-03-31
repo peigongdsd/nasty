@@ -113,6 +113,25 @@
         ];
       };
 
+      # Alternative ISO with systemd-boot for hardware where GRUB EFI fails
+      # (e.g. ODROID H3 with JSL firmware)
+      # Build: nix build .#nixosConfigurations.nasty-iso-sd.config.system.build.isoImage
+      nasty-iso-sd = nixpkgs.lib.nixosSystem {
+        inherit system;
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
+        modules = [
+          ./modules/bcachefs.nix
+          ./modules/linuxquota.nix
+          "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+          ./iso.nix
+          ({ lib, ... }: {
+            # Use systemd-boot instead of GRUB for EFI
+            boot.loader.grub.enable = lib.mkForce false;
+            boot.loader.systemd-boot.enable = lib.mkForce true;
+          })
+        ];
+      };
+
       # QEMU VM for testing
       nasty-vm = nixpkgs.lib.nixosSystem {
         inherit system;
