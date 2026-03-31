@@ -2,6 +2,11 @@ name: Build NASty ISO
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (tag like v0.0.1, branch, or leave empty for HEAD)'
+        required: false
+        default: ''
 
 jobs:
   build-iso:
@@ -10,6 +15,9 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-tags: true
 
       - uses: cachix/install-nix-action@v31
         with:
