@@ -297,16 +297,15 @@ impl UpdateService {
         let current = read_current_version().await;
         let channel = read_channel().await;
 
-        // Tag-based channels (Mild, Spicy) check for latest matching tag.
-        // Nasty tracks HEAD of main.
+        // Mild/Spicy: find latest matching tag (v* or s*) via git ls-remote.
+        // Nasty: track HEAD of main.
         let latest = match channel {
             ReleaseChannel::Mild | ReleaseChannel::Spicy => {
-                match check_latest_release().await {
+                let pattern = channel.tag_pattern().unwrap(); // "v*" or "s*"
+                let token = read_github_token().await;
+                match check_latest_tag(token.as_deref(), pattern).await {
                     Ok(tag) => tag,
-                    Err(_) => {
-                        let token = read_github_token().await;
-                        check_via_git_ls_remote(token.as_deref(), "refs/heads/main").await?
-                    }
+                    Err(_) => "unknown".to_string(),
                 }
             }
             ReleaseChannel::Nasty => {
@@ -1212,6 +1211,40 @@ fn strip_pool_mounts(content: &str) -> String {
 
 /// TODO: Remove once repo is public — only needed for private repo access.
 /// Check latest release tag via GitHub API (for stable channel).
+/// Find the latest tag matching a glob pattern (e.g. "v*", "s*") via git ls-remote.
+async fn check_latest_tag(token: Option<&str>, pattern: &str) -> Result<String, UpdateError> {
+    let ref_pattern = format!("refs/tags/{pattern}");
+    let mut args = vec!["ls-remote", "--tags", "--sort=-v:refname"];
+    let url = match token {
+        Some(t) => format!("https://x-access-token:{t}@github.com/nasty-project/nasty.git"),
+        None => "https://github.com/nasty-project/nasty.git".to_string(),
+    };
+    args.push(&url);
+    args.push(&ref_pattern);
+
+    let output = tokio::process::Command::new("git")
+        .args(&args)
+        .output()
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("git ls-remote: {e}")))?;
+
+    if !output.status.success() {
+        return Err(UpdateError::CommandFailed("git ls-remote failed".into()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // First line is the latest tag (sorted by version descending)
+    // Format: "sha\trefs/tags/v0.0.1"
+    if let Some(line) = stdout.lines().next() {
+        if let Some(tag_ref) = line.split('\t').nth(1) {
+            let tag = tag_ref.strip_prefix("refs/tags/").unwrap_or(tag_ref);
+            return Ok(tag.to_string());
+        }
+    }
+
+    Err(UpdateError::CommandFailed(format!("no tags matching '{pattern}' found")))
+}
+
 async fn check_latest_release() -> Result<String, UpdateError> {
     let token = read_github_token().await;
     let mut req = reqwest::Client::new()
