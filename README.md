@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A vibecoded NAS appliance built on bcachefs.</strong><br>
-  One developer, one AI, zero regrets.
+  Released on April 1st. Not a joke. Probably.
 </p>
 
 ---
@@ -74,7 +74,7 @@ See [FAQ.md](FAQ.md) — answers to questions like "are you insane?" and "is bca
 
 ## Telemetry
 
-We spy on you. Just kidding. We count drives and storage usage. That's literally it. We just want to know if anyone actually uses this thing. Disable anytime from **Settings → Telemetry**. Full disclosure at [nasty-telemetry](https://github.com/nasty-project/nasty-telemetry).
+I spy on you. Just kidding. I count drives and storage usage. That's literally it. I just want to know if anyone actually uses this thing. Disable anytime from **Settings → Telemetry**. Full disclosure at [nasty-telemetry](https://github.com/nasty-project/nasty-telemetry).
 
 ## License
 
