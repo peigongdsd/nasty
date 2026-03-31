@@ -222,16 +222,21 @@
 		if (channel === info?.channel) return;
 		const descriptions: Record<string, string> = {
 			mild: 'Tagged releases only. Safe, tested, boring.',
-			spicy: 'Pre-release branch. New features, occasional heartburn.',
-			nasty: 'Latest development branch. Bleeding edge — you asked for it.',
+			spicy: 'Pre-release builds. New features, occasional heartburn.',
+			nasty: 'Latest commit on main. Bleeding edge — you asked for it.',
 		};
+		const flavorOrder: Record<string, number> = { mild: 0, spicy: 1, nasty: 2 };
+		const isDowngrade = (flavorOrder[channel] ?? 0) < (flavorOrder[info?.channel ?? 'nasty'] ?? 0);
+		const warning = isDowngrade
+			? ' This may downgrade your system to an older version.'
+			: '';
 		if (!await confirm(
-			`Switch to ${channel} channel?`,
-			`${descriptions[channel] ?? ''} You should check for updates after switching.`
+			`Switch to ${channel} flavor?`,
+			`${descriptions[channel] ?? ''}${warning} You should check for updates after switching.`
 		)) return;
 		const result = await withToast(
 			() => client.call('system.update.channel.set', { channel }),
-			`Switched to ${channel} channel`
+			`Switched to ${channel} flavor`
 		);
 		if (result !== undefined && info) {
 			info = { ...info, channel: channel as any };
