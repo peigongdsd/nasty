@@ -327,7 +327,7 @@ impl IscsiService {
         let _ = configfs_write(&format!("{tpg_path}/enable"), "0").await;
 
         // Brief settle for initiators to process disconnect
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         // Remove ACL dirs first (must be empty before TPG removal)
         for acl in &target.acls {

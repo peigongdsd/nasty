@@ -424,7 +424,7 @@ impl NvmeofService {
         }
 
         // 3. Brief settle for clients to process disconnect
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         // 4. Remove namespaces
         if let Ok(mut entries) = tokio::fs::read_dir(&ns_dir).await {
