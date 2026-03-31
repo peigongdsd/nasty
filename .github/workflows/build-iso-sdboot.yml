@@ -1,0 +1,52 @@
+name: Build NASty ISO (systemd-boot)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-tags: true
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Inject GitHub token for updates
+        run: |
+          echo "${{ secrets.NASTY_GITHUB_TOKEN }}" > nixos/github-token
+          git add nixos/github-token
+
+      - name: Compute npm deps hash
+        run: |
+          HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)
+          sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
+          git add nixos/flake.nix
+
+      - name: Build x86_64 ISO (systemd-boot)
+        run: |
+          set -o pipefail
+          cd nixos
+          nix build .#nixosConfigurations.nasty-iso-sd.config.system.build.isoImage \
+            --no-link --print-out-paths -L 2>&1 | tee /tmp/build.log
+          grep '^/nix/store' /tmp/build.log | tail -1 > /tmp/iso-path.txt
+
+      - name: Upload ISO
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ISO_DIR=$(cat /tmp/iso-path.txt)
+          ISO_FILE=$(find "$ISO_DIR" -name "*.iso" -type f | head -1)
+          DEST="nasty-sdboot-$(git rev-parse --short HEAD)-x86_64.iso"
+          cp "$ISO_FILE" "$DEST"
+          TAG="sdboot-$(git rev-parse --short HEAD)"
+          gh release create "$TAG" "$DEST" \
+            --title "NASty ISO (systemd-boot) $TAG" \
+            --notes "Alternative ISO with systemd-boot for hardware where GRUB EFI fails (e.g. ODROID H3)"
