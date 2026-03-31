@@ -468,6 +468,7 @@
 							<CircleHelp size={15} />
 						</button>
 						{#if helpOpen}
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="absolute right-0 top-full mt-2 z-50 w-64 rounded-md border border-border bg-popover p-2 shadow-lg"
 								onmouseleave={() => helpOpen = false}>
 								<a href="https://github.com/nasty-project" target="_blank" rel="noopener noreferrer"
