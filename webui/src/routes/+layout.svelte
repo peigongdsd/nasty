@@ -44,7 +44,7 @@
 		CircleHelp,
 		ExternalLink,
 		MessageCircle,
-		Github,
+		Code2,
 	} from '@lucide/svelte';
 	import { refreshState } from '$lib/refresh.svelte';
 	import { rebootState } from '$lib/reboot.svelte';
@@ -472,7 +472,7 @@
 								onmouseleave={() => helpOpen = false}>
 								<a href="https://github.com/nasty-project" target="_blank" rel="noopener noreferrer"
 									class="flex items-center gap-2 rounded px-3 py-2 text-sm text-popover-foreground no-underline hover:bg-accent transition-colors">
-									<Github size={15} />
+									<Code2 size={15} />
 									GitHub
 									<ExternalLink size={12} class="ml-auto text-muted-foreground" />
 								</a>
