@@ -462,7 +462,7 @@
 					<div class="relative">
 						<button
 							onclick={() => { helpOpen = !helpOpen; profileOpen = false; powerOpen = false; }}
-							class="flex items-center rounded-md border-2 border-blue-500/50 p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
+							class="flex items-center rounded-md border-2 border-blue-500/50 px-2.5 py-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
 							title="Help & Community"
 						>
 							<CircleHelp size={15} />
@@ -495,7 +495,7 @@
 					<!-- Theme toggle -->
 					<button
 						onclick={() => theme.toggle()}
-						class="flex items-center rounded-md border-2 border-blue-500/50 p-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
+						class="flex items-center rounded-md border-2 border-blue-500/50 px-2.5 py-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:border-blue-400/80 hover:shadow-[0_0_12px_rgba(96,165,250,0.4)] active:shadow-none"
 						title={theme.isDark ? 'Switch to light mode' : 'Switch to dark mode'}
 					>
 						{#if theme.isDark}
