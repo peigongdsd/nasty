@@ -84,7 +84,7 @@ Switch flavors from **Settings → Update → Flavor** in the WebUI.
 
 | Component | Technology | Why |
 |-----------|------------|-----|
-| Engine | Rust | Because segfaults are for people with free time |
+| Engine | Rust | Fast, safe, and the compiler yells at you so users don't have to |
 | Web UI | SvelteKit + TypeScript | React was too mainstream |
 | OS | NixOS | Because normal package managers are too predictable |
 | Filesystem | bcachefs | See "yes, you read that right" above |
