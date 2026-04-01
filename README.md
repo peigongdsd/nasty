@@ -25,6 +25,7 @@ NASty is a self-contained NAS operating system built entirely through vibecoding
 - **Virtual machines** — QEMU/KVM with VNC console *(here be dragons)*
 - **Apps** — k3s-based container runtime *(here be bigger dragons)*
 - **Alerts** — configurable rules for filesystem usage, disk health, temperatures
+- **Let's Encrypt** — automatic TLS certificates so your browser stops complaining
 - **Kubernetes integration** — CSI driver for dynamic volume provisioning across all 4 protocols
 - **Atomic updates** — NixOS-based, with one-click rollback to any previous generation
 - **File browser** — browse and manage files on your filesystems from the web UI
