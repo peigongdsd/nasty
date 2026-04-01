@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A vibecoded NAS appliance built on bcachefs.</strong><br>
-  Released on April 1st. Not a joke. Probably.
+  Not a joke. Probably.
 </p>
 
 ---
