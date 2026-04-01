@@ -29,6 +29,38 @@ NASty is a self-contained NAS operating system built entirely through vibecoding
 - **Atomic updates** — NixOS-based, with one-click rollback to any previous generation
 - **File browser** — browse and manage files on your filesystems from the web UI
 
+## Screenshots
+
+<p align="center">
+  <img src="images/dashboard.jpg" width="800" alt="Dashboard — system overview with CPU, memory, storage, and network stats" />
+</p>
+<p align="center"><em>Dashboard</em></p>
+
+<p align="center">
+  <img src="images/filesystems.jpg" width="800" alt="Filesystems — bcachefs filesystem with 3 devices, scrub status, and per-device actions" />
+</p>
+<p align="center"><em>Filesystems</em></p>
+
+<p align="center">
+  <img src="images/subvolumes.jpg" width="800" alt="Subvolumes — list with snapshots, block devices, and clone relationships" />
+</p>
+<p align="center"><em>Subvolumes</em></p>
+
+<p align="center">
+  <img src="images/sharing.jpg" width="800" alt="Sharing — iSCSI targets with portals, LUNs, and ACLs" />
+</p>
+<p align="center"><em>Sharing</em></p>
+
+<p align="center">
+  <img src="images/update.jpg" width="800" alt="Update — NixOS atomic updates with flavor selection and build progress" />
+</p>
+<p align="center"><em>Updates</em></p>
+
+<p align="center">
+  <img src="images/terminal.jpg" width="800" alt="Terminal — built-in web shell with bcachefs tools" />
+</p>
+<p align="center"><em>Terminal</em></p>
+
 ## Getting Started
 
 1. Download the latest ISO from [Releases](../../releases)
