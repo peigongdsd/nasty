@@ -28,10 +28,39 @@ Boot your live environment and get to a root shell, then:
 ping -c1 github.com
 
 # 2. Identify your target disk
-lsblk
-DISK=/dev/sda  # change to your target disk
+lsblk -d
+```
 
-# 3. Partition: EFI (512M) + root (20G) + data (rest)
+Pick your target disk. For a standard SATA/NVMe disk:
+
+```bash
+DISK=/dev/sda
+PART1="${DISK}1"
+PART2="${DISK}2"
+PART3="${DISK}3"
+```
+
+For eMMC (e.g. ODROID H3):
+
+```bash
+DISK=/dev/mmcblk0
+PART1="${DISK}p1"
+PART2="${DISK}p2"
+PART3="${DISK}p3"
+```
+
+Then proceed with the installation:
+
+```bash
+# 3. Partition
+#    Option A: Dedicated NAS disk (EFI + root, no data partition — use separate disks for storage)
+parted -s "$DISK" -- \
+  mklabel gpt \
+  mkpart ESP fat32 1MiB 512MiB \
+  set 1 esp on \
+  mkpart root ext4 512MiB 100%
+
+#    Option B: Single disk (EFI + root + data partition for bcachefs)
 parted -s "$DISK" -- \
   mklabel gpt \
   mkpart ESP fat32 1MiB 512MiB \
@@ -40,44 +69,50 @@ parted -s "$DISK" -- \
   mkpart data 20GiB 100%
 
 # 4. Format EFI and root partitions
-mkfs.fat -F32 "${DISK}1"
-mkfs.ext4 -F "${DISK}2"
-# (data partition is left unformatted — create a bcachefs filesystem via the WebUI)
+mkfs.fat -F32 "$PART1"
+mkfs.ext4 -F "$PART2"
+# (data partition, if created, is left unformatted — create a bcachefs filesystem via the WebUI)
 
 # 5. Mount
-mount "${DISK}2" /mnt
+mount "$PART2" /mnt
 mkdir -p /mnt/boot
-mount "${DISK}1" /mnt/boot
+mount "$PART1" /mnt/boot
 
-# 6. Install Nix package manager
-curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
-. ~/.nix-profile/etc/profile.d/nix.sh
+# 6. Prepare Nix build users (required for Nix installation as root)
+groupadd -r nixbld 2>/dev/null || true
+for i in $(seq 1 10); do
+  useradd -r -g nixbld -G nixbld -d /var/empty -s /sbin/nologin "nixbld$i" 2>/dev/null || true
+done
 
-# 7. Enable flakes
+# 7. Install Nix package manager
+curl -L https://nixos.org/nix/install | sh -s -- --no-daemon --yes
+. /root/.nix-profile/etc/profile.d/nix.sh
+
+# 8. Enable flakes
 mkdir -p ~/.config/nix
 echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
 
-# 8. Install tools
+# 9. Install tools
 nix profile install nixpkgs#nixos-install-tools nixpkgs#git
 
-# 9. Clone NASty
+# 10. Clone NASty
 git clone https://github.com/nasty-project/nasty.git /tmp/nasty
 
-# 10. Generate hardware configuration for your machine
+# 11. Generate hardware configuration for your machine
 nixos-generate-config --root /mnt
 
-# 11. Copy it into the NASty flake
+# 12. Copy it into the NASty flake
 cp /mnt/etc/nixos/hardware-configuration.nix /tmp/nasty/nixos/
 
-# 12. Install NASty (this takes a while — downloads and builds the full system)
+# 13. Install NASty (this takes 10-30 minutes)
 nixos-install --root /mnt \
   --flake /tmp/nasty/nixos#nasty \
   --no-root-passwd
 
-# 13. Set root password
-nixos-enter --root /mnt -c 'passwd root'
+# 14. Set root password
+nixos-enter --root /mnt -c 'echo "root:yourpassword" | /run/current-system/sw/bin/chpasswd'
 
-# 14. Done — reboot into NASty
+# 15. Reboot (remove the USB stick)
 reboot
 ```
 
@@ -86,6 +121,6 @@ After reboot, open `https://<nasty-ip>` and log in with **admin** / **admin**.
 ### Notes
 
 - Step 2: make sure you pick the right disk — this will erase everything on it
-- Step 3: if your root disk is small (<40GB), adjust the 20GiB root partition size
-- Step 12: takes 10-30 minutes depending on your internet speed and hardware
-- The data partition (`${DISK}3`) is intentionally left unformatted — create a bcachefs filesystem from the WebUI after first boot
+- Step 3: use Option A if you have separate disks for storage (recommended). Use Option B for single-disk setups.
+- Step 13: takes 10-30 minutes depending on your internet speed and hardware
+- The data partition (if created) is intentionally left unformatted — create a bcachefs filesystem from the WebUI after first boot
