@@ -69,6 +69,16 @@ In bcachefs, a snapshot IS a subvolume. It's a first-class citizen, not a depend
 
 A clone is just a writable snapshot. One command: `bcachefs subvolume snapshot` (without `-r`). Instant, COW, fully independent. No clone modes, no send/receive for independence.
 
+## What about VMs and Apps?
+
+They exist. They technically work. That's where the compliments end.
+
+VMs use QEMU/KVM with a noVNC console in the browser. You can create a VM, boot an ISO, and use it. Will it replace Proxmox? No. Will it run a Minecraft server for your kids? Probably. Will it survive a host reboot gracefully? Define "gracefully."
+
+Apps run on an embedded k3s instance. You can deploy containers. The UI for managing them is... optimistic. Think of it as "Kubernetes for people who enjoy suffering but want it to look pretty."
+
+Both features are in the "it works on my machine" phase of development. If you're into QEMU internals or k3s wrangling, this is where your contributions would make the biggest impact. Please. I'm begging.
+
 ## How can I help?
 
 Try it. Break it. Tell me what sucks. Open issues. Send patches. Or just use it and let the telemetry tell me you exist — that alone is motivating.
