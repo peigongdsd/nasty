@@ -273,7 +273,12 @@ pub async fn disk_health() -> Vec<DiskHealth> {
                     let mut parts = line.split_whitespace();
                     let name = parts.next()?;
                     let dtype = parts.next()?;
-                    if dtype == "disk" {
+                    if dtype == "disk"
+                        && !name.starts_with("mmcblk")
+                        && !name.starts_with("loop")
+                        && !name.starts_with("ram")
+                        && !name.starts_with("zram")
+                    {
                         Some(format!("/dev/{name}"))
                     } else {
                         None
