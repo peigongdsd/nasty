@@ -241,6 +241,8 @@ in
 
       echo "==> Copying NASty source..."
       mkdir -p /mnt/etc/nixos
+      cp -L --no-preserve=mode /etc/nasty-src/flake.nix /mnt/etc/nixos/
+      cp -L --no-preserve=mode /etc/nasty-src/flake.lock /mnt/etc/nixos/
       for dir in engine webui nixos; do
         cp -rL --no-preserve=mode /etc/nasty-src/$dir /mnt/etc/nixos/
       done
@@ -311,12 +313,12 @@ in
       git init -q
       git remote add origin https://github.com/nasty-project/nasty.git
       git sparse-checkout init --cone
-      git sparse-checkout set engine webui nixos
+      git sparse-checkout set flake.nix flake.lock engine webui nixos
       git add .
 
       echo "==> Installing NASty..."
       echo "    (this may take a while on first install)"
-      nixos-install --flake /mnt/etc/nixos/nixos#nasty --no-root-passwd
+      nixos-install --flake /mnt/etc/nixos#nasty --no-root-passwd
 
       # Detect IP address to show in post-install message
       NASTY_IP=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[^ ]+' || echo "<ip>")
@@ -332,7 +334,7 @@ in
         echo ""
       fi
       echo "  To reconfigure later:"
-      echo "    nixos-rebuild switch --flake /etc/nixos/nixos#nasty"
+      echo "    nixos-rebuild switch --flake /etc/nixos#nasty"
       echo ""
 
       read -p "Set root password now? (yes/no): " SET_PW

@@ -20,8 +20,8 @@
     mkEngine = system: let pkgs = mkPkgs system; in pkgs.rustPlatform.buildRustPackage {
       pname = "nasty-engine";
       version = "0.1.0";
-      src = ../engine;
-      cargoLock.lockFile = ../engine/Cargo.lock;
+      src = ./engine;
+      cargoLock.lockFile = ./engine/Cargo.lock;
       NASTY_GIT_COMMIT = self.shortRev or self.dirtyShortRev or "unknown";
       meta = {
         description = "NASty NAS engine";
@@ -32,7 +32,7 @@
     mkWebui = system: let pkgs = mkPkgs system; in pkgs.buildNpmPackage {
       pname = "nasty-webui";
       version = "0.1.0";
-      src = ../webui;
+      src = ./webui;
       npmDepsHash = "sha256-B5xrBA4kwJk9Mwuz21/Lrl9dyo1PKKX55pVl+BDfaCc=";
       npmFlags = [ "--legacy-peer-deps" ];
       buildPhase = ''
@@ -93,11 +93,11 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
-          ./modules/bcachefs.nix
-          ./modules/linuxquota.nix
+          ./nixos/modules/bcachefs.nix
+          ./nixos/modules/linuxquota.nix
 
-          ./modules/nasty.nix
-          ./configuration.nix
+          ./nixos/modules/nasty.nix
+          ./nixos/configuration.nix
         ];
       };
 
@@ -106,10 +106,10 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
-          ./modules/bcachefs.nix
-          ./modules/linuxquota.nix
+          ./nixos/modules/bcachefs.nix
+          ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-          ./iso.nix
+          ./nixos/iso.nix
         ];
       };
 
@@ -120,10 +120,10 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
-          ./modules/bcachefs.nix
-          ./modules/linuxquota.nix
+          ./nixos/modules/bcachefs.nix
+          ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-          ./iso.nix
+          ./nixos/iso.nix
           ({ lib, ... }: {
             # Use systemd-boot instead of GRUB for EFI
             boot.loader.grub.enable = lib.mkForce false;
@@ -137,12 +137,12 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
-          ./modules/bcachefs.nix
-          ./modules/linuxquota.nix
+          ./nixos/modules/bcachefs.nix
+          ./nixos/modules/linuxquota.nix
 
-          ./modules/nasty.nix
-          ./configuration.nix
-          ./vm.nix
+          ./nixos/modules/nasty.nix
+          ./nixos/configuration.nix
+          ./nixos/vm.nix
         ];
       };
 
@@ -152,25 +152,25 @@
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
           "${nixpkgs}/nixos/modules/virtualisation/oci-image.nix"
-          ./modules/bcachefs.nix
-          ./modules/linuxquota.nix
-          ./modules/nasty.nix
-          ./tls.nix
-          ./cloud.nix
+          ./nixos/modules/bcachefs.nix
+          ./nixos/modules/linuxquota.nix
+          ./nixos/modules/nasty.nix
+          ./nixos/tls.nix
+          ./nixos/cloud.nix
         ];
       };
     };
 
   in {
     # Export packages for both architectures
-    packages.x86_64-linux = let pkgs = mkPkgs "x86_64-linux"; in {
+    packages.x86_64-linux = {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
       nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "x86_64-linux";
     };
 
-    packages.aarch64-linux = let pkgs = mkPkgs "aarch64-linux"; in {
+    packages.aarch64-linux = {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
       nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
@@ -178,7 +178,7 @@
     };
 
     # NixOS module
-    nixosModules.nasty = ./modules/nasty.nix;
+    nixosModules.nasty = ./nixos/modules/nasty.nix;
 
     # NixOS configurations for both architectures
     nixosConfigurations = (mkNixosConfigs "x86_64-linux") // (

@@ -29,14 +29,13 @@ jobs:
         run: |
           HASH=$(nix run nixpkgs#prefetch-npm-deps -- webui/package-lock.json 2>/dev/null)
           echo "Computed npmDepsHash: $HASH"
-          sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" nixos/flake.nix
-          git add nixos/flake.nix
+          sed -i "s|npmDepsHash = \".*\"|npmDepsHash = \"$HASH\"|" flake.nix
+          git add flake.nix
           echo "Updated flake.nix with hash: $HASH"
 
       - name: Build x86_64 ISO
         run: |
           set -o pipefail
-          cd nixos
           nix build .#nixosConfigurations.nasty-iso.config.system.build.isoImage \
             --no-link --print-out-paths -L 2>&1 | tee /tmp/build.log
           grep '^/nix/store' /tmp/build.log | tail -1 > /tmp/iso-path.txt

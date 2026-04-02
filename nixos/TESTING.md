@@ -5,8 +5,6 @@
 Build and run a VM with 3 virtual 1GB disks:
 
 ```bash
-cd nixos
-
 # Build the VM (first run downloads NixOS, takes a while)
 nix build .#nixosConfigurations.nasty-vm.config.system.build.vm
 
@@ -62,8 +60,6 @@ systemctl status smb
 ## Option 2: Build ISO for bare metal
 
 ```bash
-cd nixos
-
 # Build the installer ISO
 nix build .#nixosConfigurations.nasty-iso.config.system.build.isoImage
 
@@ -87,7 +83,7 @@ Add NASty as a flake input in your system configuration:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nasty.url = "path:/path/to/NAS/nixos"; # or github:your-org/nasty
+    nasty.url = "path:/path/to/NAS"; # or github:your-org/nasty
   };
 
   outputs = { nixpkgs, nasty, ... }: {
