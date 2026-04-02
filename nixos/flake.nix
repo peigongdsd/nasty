@@ -2,7 +2,7 @@
   description = "NASty - NAS System built on NixOS and bcachefs";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "git+https://mirrors.tuna.tsinghua.edu.cn/git/nixpkgs.git?ref=nixos-unstable";
 
     # ── bcachefs override (optional) ──────────────────────────────
     # Pinned to v1.37 release tag.
@@ -93,6 +93,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/china-geolocated.nix
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
 
@@ -106,6 +107,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/china-geolocated.nix
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -120,6 +122,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/china-geolocated.nix
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -137,6 +140,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
+          ./modules/china-geolocated.nix
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
 
@@ -152,6 +156,7 @@
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools; };
         modules = [
           "${nixpkgs}/nixos/modules/virtualisation/oci-image.nix"
+          ./modules/china-geolocated.nix
           ./modules/bcachefs.nix
           ./modules/linuxquota.nix
           ./modules/nasty.nix
