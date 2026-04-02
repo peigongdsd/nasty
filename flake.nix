@@ -126,7 +126,7 @@
       # ISO image for installation
       nasty-iso = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc nixpkgs; };
         modules = [
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
@@ -140,7 +140,7 @@
       # Build: nix build .#nixosConfigurations.nasty-iso-sd.config.system.build.isoImage
       nasty-iso-sd = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc nixpkgs; };
         modules = [
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix

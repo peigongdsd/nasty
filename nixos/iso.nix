@@ -1,4 +1,4 @@
-{ config, pkgs, lib, nasty-engine, nasty-webui, installerSrc, ... }:
+{ config, pkgs, lib, nasty-engine, nasty-webui, installerSrc, nixpkgs, ... }:
 
 let
   nasty-grub-theme = pkgs.runCommand "nasty-grub-theme" {
@@ -84,7 +84,7 @@ in
 {
   # Pre-built packages in the ISO's Nix store so nixos-install
   # can reuse them instead of recompiling from source.
-  system.extraDependencies = [ nasty-engine ]
+  system.extraDependencies = [ nixpkgs nasty-engine ]
     ++ lib.optional (nasty-webui != null) nasty-webui;
 
   # Bundle NASty source on the ISO for flake-based installation
@@ -304,14 +304,8 @@ in
       fi
 
       echo "==> Installing NASty..."
-      echo "    validating embedded flake.lock..."
-      SYSTEM=$(${pkgs.nix}/bin/nix --extra-experimental-features 'nix-command flakes' \
-        build /mnt/etc/nixos#nixosConfigurations.nasty.config.system.build.toplevel \
-        --no-update-lock-file \
-        --no-write-lock-file \
-        --print-out-paths)
-      echo "    installing validated system closure..."
-      nixos-install --system "$SYSTEM" --no-root-passwd
+      echo "    (this may take a while on first install)"
+      nixos-install --flake /mnt/etc/nixos#nasty --no-root-passwd
 
       # Detect IP address to show in post-install message
       NASTY_IP=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[^ ]+' || echo "<ip>")
