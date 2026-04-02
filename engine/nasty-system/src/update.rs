@@ -954,10 +954,8 @@ fi
 # Update debug checks flag in flake.nix and persist state
 {debug_checks_sed}
 {debug_checks_state}
-# Commit the updated flake.lock and flake.nix so the tree stays clean for the next rebuild
-git add flake.lock flake.nix
-git -c user.email="nasty@localhost" -c user.name="NASty" \
-  commit -m "bcachefs-tools: switch to {git_ref} (${{RESOLVED_SHA:-unknown}})" || true
+# /etc/nixos is the active flake payload, not necessarily a Git checkout.
+# Persist the selected ref and flake changes directly, then rebuild from them.
 echo "==> Rebuilding system..."
 NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
 echo "success" > {BCACHEFS_SWITCH_RESULT}
