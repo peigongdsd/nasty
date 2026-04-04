@@ -164,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/files", delete(files_delete_handler))
         .route("/api/files/upload", post(files_upload_handler).layer(DefaultBodyLimit::max(10_737_418_240)))
         .route("/api/files/mkdir", post(files_mkdir_handler))
+        .route("/api/auth/check", get(auth_check_handler))
         .route("/health", get(health))
         .with_state(state);
 
@@ -475,6 +476,18 @@ async fn validate_bearer(
         return Err((StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "Invalid token"}))));
     }
     Ok(client_ip)
+}
+
+/// Lightweight auth check.  GET /api/auth/check
+/// Returns 200 if the bearer token is valid, 401 otherwise.
+async fn auth_check_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    match validate_bearer(&headers, &state.auth).await {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 /// Delete a file or directory.  DELETE /api/files?path=first/subdir/file.txt

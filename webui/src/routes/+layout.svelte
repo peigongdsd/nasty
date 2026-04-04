@@ -105,6 +105,21 @@
 		}
 	});
 
+	async function checkAuth() {
+		const token = getToken();
+		if (!token || !connected) return;
+		try {
+			const res = await fetch('/api/auth/check', {
+				headers: { 'Authorization': `Bearer ${token}` },
+			});
+			if (res.status === 401) {
+				clearToken();
+				resetClient();
+				location.reload();
+			}
+		} catch { /* network error — reconnect spinner handles this */ }
+	}
+
 	function checkRebootRequired() {
 		if (connected) {
 			getClient().call<boolean>('system.reboot_required').then((v) => {
@@ -148,12 +163,14 @@
 		getClient().onDisconnect(onDisconnect);
 		const tick = setInterval(() => { now = new Date(); }, 1000);
 		const rebootPoll = setInterval(checkRebootRequired, 30_000);
+		const authPoll = setInterval(checkAuth, 60_000);
 		return () => {
 			getClient().offReconnect(onReconnect);
 			getClient().offDisconnect(onDisconnect);
 			getClient().disconnect();
 			clearInterval(tick);
 			clearInterval(rebootPoll);
+			clearInterval(authPoll);
 		};
 	});
 
