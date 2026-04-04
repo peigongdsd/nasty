@@ -303,6 +303,9 @@ export interface NetIfStats {
 
 export interface DiskHealth {
 	device: string;
+	ata_port?: string;
+	controller_pci?: string;
+	controller_name?: string;
 	model: string;
 	serial: string;
 	firmware: string;

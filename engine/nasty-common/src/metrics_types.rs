@@ -92,6 +92,12 @@ pub struct DiskHealth {
     /// ATA/SATA port identifier (e.g. `ata5`), if available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ata_port: Option<String>,
+    /// PCI address of the SATA/NVMe controller (e.g. `03:00.0`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub controller_pci: Option<String>,
+    /// Human-readable controller name (e.g. `ASMedia ASM1166`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub controller_name: Option<String>,
     /// Drive model name reported by SMART.
     pub model: String,
     /// Drive serial number.

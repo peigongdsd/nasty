@@ -335,11 +335,14 @@ async fn query_smartctl(device: &str) -> Option<DiskHealth> {
     };
 
     let dev_name = device.strip_prefix("/dev/").unwrap_or(device);
-    let ata_port = resolve_ata_port(dev_name);
+    let (ata_port, controller_pci) = resolve_device_path(dev_name);
+    let controller_name = controller_pci.as_deref().and_then(resolve_pci_name);
 
     Some(DiskHealth {
         device: device.to_string(),
         ata_port,
+        controller_pci,
+        controller_name,
         model: json.model_name.unwrap_or_else(|| "Unknown".into()),
         serial: json.serial_number.unwrap_or_else(|| "Unknown".into()),
         firmware: json.firmware_version.unwrap_or_else(|| "Unknown".into()),
@@ -352,20 +355,54 @@ async fn query_smartctl(device: &str) -> Option<DiskHealth> {
     })
 }
 
-/// Resolve the ATA port for a block device by following the sysfs device path.
-/// e.g. `/sys/block/sde/device` symlink contains `ataX` in its resolved path.
-fn resolve_ata_port(dev_name: &str) -> Option<String> {
+/// Resolve ATA port and PCI controller address from sysfs device path.
+/// e.g. `/sys/block/sde/device` → (Some("ata5"), Some("03:00.0"))
+fn resolve_device_path(dev_name: &str) -> (Option<String>, Option<String>) {
     let link = format!("/sys/block/{dev_name}/device");
-    let resolved = std::fs::read_link(&link)
-        .or_else(|_| std::fs::canonicalize(&link))
-        .ok()?;
-    let path_str = resolved.to_str()?;
+    let resolved = std::fs::canonicalize(&link).ok();
+    let path_str = match resolved.as_ref().and_then(|p| p.to_str()) {
+        Some(s) => s,
+        None => return (None, None),
+    };
 
-    // Look for "ataX" component in the resolved path
+    let mut ata_port = None;
+    let mut pci_addr = None;
+
     for component in path_str.split('/') {
-        if component.starts_with("ata") && component[3..].chars().all(|c| c.is_ascii_digit()) {
-            return Some(component.to_string());
+        // Match ataX
+        if component.starts_with("ata")
+            && component.len() > 3
+            && component[3..].chars().all(|c| c.is_ascii_digit())
+        {
+            ata_port = Some(component.to_string());
+        }
+        // Match PCI address like 0000:03:00.0 → extract 03:00.0
+        if component.contains(':') && component.contains('.') {
+            if let Some(short) = component.strip_prefix("0000:") {
+                pci_addr = Some(short.to_string());
+            } else if component.len() <= 8 && component.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.') {
+                pci_addr = Some(component.to_string());
+            }
         }
     }
-    None
+
+    (ata_port, pci_addr)
+}
+
+/// Look up a human-readable PCI device name via lspci.
+fn resolve_pci_name(pci_addr: &str) -> Option<String> {
+    let output = std::process::Command::new("lspci")
+        .args(["-s", pci_addr])
+        .output()
+        .ok()?;
+    let line = String::from_utf8_lossy(&output.stdout);
+    // Format: "03:00.0 SATA controller: ASMedia Technology Inc. ASM1166 ..."
+    let after_colon = line.find(':')?;
+    let desc = line[after_colon + 1..].trim();
+    // Skip the type prefix (e.g. "SATA controller: ")
+    if let Some(pos) = desc.find(": ") {
+        Some(desc[pos + 2..].trim().to_string())
+    } else {
+        Some(desc.to_string())
+    }
 }
