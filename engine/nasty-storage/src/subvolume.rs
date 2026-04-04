@@ -130,7 +130,68 @@ struct SubvolumeMeta {
     direct_io: bool,
 }
 
-/// Read NASty-internal metadata from the reserved `user.nasty.*` xattrs.
+/// All xattr data for a subvolume — both internal metadata and user-visible properties.
+/// Read in a single `xattr::list()` + N `xattr::get()` pass.
+struct SubvolumeAttrs {
+    meta: SubvolumeMeta,
+    properties: HashMap<String, String>,
+}
+
+/// Read all xattrs from a subvolume in one pass.
+/// Splits results into internal metadata (`user.nasty.*`) and user-visible properties
+/// (`user.nasty-csi:*` etc), avoiding duplicate enumeration.
+fn read_all_xattrs(path: &Path) -> SubvolumeAttrs {
+    let mut meta_raw: HashMap<String, String> = HashMap::new();
+    let mut properties: HashMap<String, String> = HashMap::new();
+
+    if let Ok(attrs) = xattr::list(path) {
+        for name in attrs {
+            let name_str = name.to_string_lossy();
+            let Some(key) = name_str.strip_prefix(XATTR_NS) else { continue };
+            let value = match xattr::get(path, &*name_str) {
+                Ok(Some(bytes)) => match String::from_utf8(bytes) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                },
+                _ => continue,
+            };
+            if key.starts_with(NASTY_KEY_PREFIX) {
+                // Internal metadata (user.nasty.*)
+                meta_raw.insert(key.to_string(), value);
+            } else {
+                // User-visible property (user.nasty-csi:* etc)
+                properties.insert(key.to_string(), value);
+            }
+        }
+    }
+
+    let subvolume_type = match meta_raw.get("nasty.type").map(|s| s.as_str()) {
+        Some("block") => SubvolumeType::Block,
+        Some("filesystem") => SubvolumeType::Filesystem,
+        _ => {
+            if path.join(BLOCK_FILE_NAME).exists() {
+                SubvolumeType::Block
+            } else {
+                SubvolumeType::Filesystem
+            }
+        }
+    };
+
+    SubvolumeAttrs {
+        meta: SubvolumeMeta {
+            subvolume_type,
+            volsize_bytes: meta_raw.get("nasty.volsize").and_then(|s| s.parse().ok()),
+            compression: meta_raw.remove("nasty.compression"),
+            comments: meta_raw.remove("nasty.comment"),
+            owner: meta_raw.remove("nasty.owner"),
+            direct_io: meta_raw.get("nasty.direct_io").map(|s| s == "true").unwrap_or(false),
+        },
+        properties,
+    }
+}
+
+/// Read only NASty-internal metadata from the reserved `user.nasty.*` xattrs.
+/// Used by code paths that don't need user-visible properties.
 fn read_meta_xattrs(path: &Path) -> SubvolumeMeta {
     let get = |key: &str| -> Option<String> {
         xattr::get(path, key)
@@ -143,8 +204,6 @@ fn read_meta_xattrs(path: &Path) -> SubvolumeMeta {
         Some("block") => SubvolumeType::Block,
         Some("filesystem") => SubvolumeType::Filesystem,
         _ => {
-            // Auto-detect for subvolumes created before xattr metadata: presence of
-            // vol.img means block, otherwise filesystem.
             if path.join(BLOCK_FILE_NAME).exists() {
                 SubvolumeType::Block
             } else {
@@ -444,11 +503,12 @@ impl SubvolumeService {
             let path_str = subvol_path(&mount_point, name);
             let path = Path::new(&path_str);
 
-            let meta = read_meta_xattrs(path);
+            // Single-pass xattr read: meta + properties in one list+get sweep
+            let attrs = read_all_xattrs(path);
 
             // Apply owner filter: operators only see their own subvolumes
             if let Some(filter) = owner_filter {
-                if meta.owner.as_deref() != Some(filter) {
+                if attrs.meta.owner.as_deref() != Some(filter) {
                     continue;
                 }
             }
@@ -475,7 +535,7 @@ impl SubvolumeService {
                 .collect();
 
             // Get size: project quota for filesystem subvols, stat for block subvols
-            let size = match meta.subvolume_type {
+            let size = match attrs.meta.subvolume_type {
                 SubvolumeType::Block => block_image_size(&path_str),
                 SubvolumeType::Filesystem => {
                     let projid = project_id_for(fs_name, name);
@@ -484,32 +544,30 @@ impl SubvolumeService {
             };
 
             // Look up loop device from pre-built map instead of spawning losetup per subvol
-            let block_device = if meta.subvolume_type == SubvolumeType::Block {
+            let block_device = if attrs.meta.subvolume_type == SubvolumeType::Block {
                 let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
                 find_loop_device_from_map(&losetup_map, &img_path)
             } else {
                 None
             };
 
-            let properties = read_xattrs(path);
-
             let parent = info.snapshot_parents.get(name.as_str()).cloned();
 
             subvolumes.push(Subvolume {
                 name: name.to_string(),
                 filesystem: fs_name.to_string(),
-                subvolume_type: meta.subvolume_type,
+                subvolume_type: attrs.meta.subvolume_type,
                 path: path_str.clone(),
                 used_bytes: size,
-                compression: meta.compression,
-                comments: meta.comments,
-                volsize_bytes: meta.volsize_bytes,
+                compression: attrs.meta.compression,
+                comments: attrs.meta.comments,
+                volsize_bytes: attrs.meta.volsize_bytes,
                 block_device,
                 snapshots: snapshots.iter().map(|s| s.name.clone()).collect(),
-                owner: meta.owner,
-                properties,
+                owner: attrs.meta.owner,
+                properties: attrs.properties,
                 parent,
-                direct_io: meta.direct_io,
+                direct_io: attrs.meta.direct_io,
             });
         }
 
@@ -1268,32 +1326,6 @@ impl SubvolumeService {
             .filter(|s| s.properties.get(&req.key).map(|v| v == &req.value).unwrap_or(false))
             .collect())
     }
-}
-
-/// Read user-defined xattr properties from a path.
-/// Returns a map of logical key → value (strips the "user." prefix).
-/// Excludes the reserved "user.nasty.*" keys (those are first-class struct fields).
-/// Non-UTF-8 values and unreadable xattrs are silently skipped.
-fn read_xattrs(path: &Path) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    let attrs = match xattr::list(path) {
-        Ok(a) => a,
-        Err(_) => return map,
-    };
-    for name in attrs {
-        let name_str = name.to_string_lossy();
-        let Some(key) = name_str.strip_prefix(XATTR_NS) else { continue };
-        // Skip reserved nasty.* keys — surfaced as first-class struct fields instead
-        if key.starts_with(NASTY_KEY_PREFIX) {
-            continue;
-        }
-        if let Ok(Some(bytes)) = xattr::get(path, &*name_str) {
-            if let Ok(value) = String::from_utf8(bytes) {
-                map.insert(key.to_string(), value);
-            }
-        }
-    }
-    map
 }
 
 /// Parsed result from `bcachefs subvolume list --snapshots --json`.
