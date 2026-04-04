@@ -33,9 +33,9 @@
           "${nasty}/nixos/modules/linuxquota.nix"
           "${nasty}/nixos/modules/nasty.nix"
           "${nasty}/nixos/appliance-base.nix"
-          ./nixos/hardware-configuration.nix
-          ./nixos/networking.nix
-          ./nixos/tls.nix
+          # Machine-local overlay files live directly under /etc/nixos.
+          ./hardware-configuration.nix
+          ./networking.nix
         ];
       };
     in {

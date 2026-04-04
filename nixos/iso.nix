@@ -262,9 +262,10 @@ in
       ' /tmp/hw-config/hardware-configuration.nix > /tmp/hw-clean.nix \
         && mv /tmp/hw-clean.nix /tmp/hw-config/hardware-configuration.nix
 
-      cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/nixos/hardware-configuration.nix
+      cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/hardware-configuration.nix
 
       echo "==> Writing network configuration..."
+      mkdir -p /mnt/var/lib/nasty
       if [ "$NET_MODE" = "2" ]; then
         NS_LIST=""
         for ns in $NET_DNS; do
@@ -279,7 +280,7 @@ in
           "  networking.defaultGateway = \"''${NET_GW}\";" \
           "  networking.nameservers = [''${NS_LIST} ];" \
           '}' \
-          > /mnt/etc/nixos/nixos/networking.nix
+          > /mnt/etc/nixos/networking.nix
         # Also write networking.json so WebUI shows the configured values
         printf '%s\n' \
           '{' \
@@ -298,11 +299,10 @@ in
           '{' \
           '  networking.useDHCP = true;' \
           '}' \
-          > /mnt/etc/nixos/nixos/networking.nix
+          > /mnt/etc/nixos/networking.nix
       fi
 
       echo "==> Recording installed NASty version..."
-      mkdir -p /mnt/var/lib/nasty
       NASTY_REF=$(jq -r '.nodes["nasty"].original.ref // empty' /mnt/etc/nixos/flake.lock 2>/dev/null || true)
       NASTY_REV=$(jq -r '.nodes["nasty"].locked.rev // empty' /mnt/etc/nixos/flake.lock 2>/dev/null || true)
       case "$NASTY_REF" in
