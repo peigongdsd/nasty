@@ -7,9 +7,9 @@
     bcachefs-tools.url = "github:koverstreet/bcachefs-tools/v1.37.4";
     bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
 
-    # The installed appliance tracks the upstream NASty flake and keeps only
-    # machine-local overlay files under /etc/nixos/nixos.
-    nasty.url = "github:nasty-project/nasty/main";
+    # Installer payload template. The ISO builder substitutes the tracked
+    # upstream URL here and ships a generated flake.lock alongside it.
+    nasty.url = "@NASTY_URL@";
     nasty.inputs.nixpkgs.follows = "nixpkgs";
     nasty.inputs.bcachefs-tools.follows = "bcachefs-tools";
   };

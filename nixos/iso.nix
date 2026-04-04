@@ -1,4 +1,4 @@
-{ config, pkgs, lib, nasty-engine, nasty-webui, nixpkgs, nasty-rootfs-toplevel ? null, ... }:
+{ config, pkgs, lib, nasty-engine, nasty-webui, nixpkgs, nasty-rootfs-toplevel ? null, installerSystemFlake, installerNastySource ? null, ... }:
 
 let
   nasty-grub-theme = pkgs.runCommand "nasty-grub-theme" {
@@ -86,11 +86,12 @@ in
   # can reuse them instead of recompiling from source.
   system.extraDependencies = [ nixpkgs nasty-engine pkgs.OVMF pkgs.OVMF.fd ]
     ++ lib.optional (nasty-rootfs-toplevel != null) nasty-rootfs-toplevel
+    ++ lib.optional (installerNastySource != null) installerNastySource
     ++ lib.optional (nasty-webui != null) nasty-webui;
 
   # Bundle the slim local system flake on the ISO. The installed appliance keeps
   # only a wrapper flake plus machine-local modules under /etc/nixos.
-  environment.etc."nasty-system-flake".source = ./system-flake;
+  environment.etc."nasty-system-flake".source = installerSystemFlake;
 
   # ── Branding ──────────────────────────────────────────────
   image.baseName = lib.mkForce "nasty";
