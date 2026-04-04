@@ -16,6 +16,46 @@
   outputs = { self, nixpkgs, bcachefs-tools, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
+    rootLock = builtins.fromJSON (builtins.readFile ./flake.lock);
+    installerNastyOwner = "peigongdsd";
+    installerNastyRepo = "nasty";
+    installerNastyRef = "system-configuration-slim";
+    installerNastyUrl = "github:${installerNastyOwner}/${installerNastyRepo}/${installerNastyRef}";
+    installerSystemFlakeNix = builtins.replaceStrings
+      [ "@NASTY_URL@" ]
+      [ installerNastyUrl ]
+      (builtins.readFile ./nixos/system-flake/flake.nix.template);
+    installerSystemFlakeLock = builtins.toJSON {
+      version = rootLock.version;
+      root = "root";
+      nodes = (builtins.removeAttrs rootLock.nodes [ "root" ]) // {
+        nasty = {
+          locked = {
+            type = "path";
+            path = self.outPath;
+            narHash = self.narHash;
+            lastModified = self.lastModified;
+          };
+          original = {
+            type = "github";
+            owner = installerNastyOwner;
+            repo = installerNastyRepo;
+            ref = installerNastyRef;
+          };
+          inputs = {
+            bcachefs-tools = [ "bcachefs-tools" ];
+            nixpkgs = [ "nixpkgs" ];
+          };
+        };
+        root = {
+          inputs = {
+            bcachefs-tools = "bcachefs-tools";
+            nasty = "nasty";
+            nixpkgs = "nixpkgs";
+          };
+        };
+      };
+    };
 
     nasty-version = (builtins.fromTOML (builtins.readFile ./engine/Cargo.toml)).workspace.package.version;
 
@@ -89,6 +129,13 @@
       nasty-engine = mkEngine system;
       nasty-webui = mkWebui system;
       nasty-bcachefs-tools = mkBcachefsTools system;
+      installerSystemFlake = pkgs.runCommand "nasty-system-flake" {} ''
+        mkdir -p "$out"
+        cp ${./nixos/system-flake/hardware-configuration.nix} "$out/hardware-configuration.nix"
+        cp ${./nixos/system-flake/networking.nix} "$out/networking.nix"
+        cp ${pkgs.writeText "nasty-system-flake.nix" installerSystemFlakeNix} "$out/flake.nix"
+        cp ${pkgs.writeText "nasty-system-flake.lock" installerSystemFlakeLock} "$out/flake.lock"
+      '';
     in rec {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
@@ -123,6 +170,8 @@
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
+          installerSystemFlake = installerSystemFlake;
+          installerNastySource = self.outPath;
         };
         modules = [
           ./nixos/modules/bcachefs.nix
@@ -140,6 +189,8 @@
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
+          installerSystemFlake = installerSystemFlake;
+          installerNastySource = self.outPath;
         };
         modules = [
           ./nixos/modules/bcachefs.nix

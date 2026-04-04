@@ -7,10 +7,9 @@
     bcachefs-tools.url = "github:koverstreet/bcachefs-tools/v1.37.4";
     bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
 
-    # Tracks this migration branch for now so test installs boot the same code
-    # that built the ISO. Once merged, switch this ref back to the upstream main
-    # branch and refresh flake.lock.
-    nasty.url = "github:peigongdsd/nasty/system-configuration-slim";
+    # Installer payload template. The ISO builder substitutes the tracked
+    # upstream URL here and ships a generated flake.lock alongside it.
+    nasty.url = "@NASTY_URL@";
     nasty.inputs.nixpkgs.follows = "nixpkgs";
     nasty.inputs.bcachefs-tools.follows = "bcachefs-tools";
   };
