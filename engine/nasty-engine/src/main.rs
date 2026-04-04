@@ -62,12 +62,11 @@ pub const METRICS_BASE: &str = "http://127.0.0.1:2138";
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let version = env!("CARGO_PKG_VERSION");
-    let commit = env!("NASTY_GIT_COMMIT");
     let built = env!("NASTY_BUILD_DATE");
 
     // --version flag
     if std::env::args().any(|a| a == "--version" || a == "-V") {
-        println!("nasty-engine {version} (commit: {commit}, built: {built})");
+        println!("nasty-engine {version} (built: {built})");
         return Ok(());
     }
 
@@ -90,7 +89,7 @@ async fn main() -> anyhow::Result<()> {
         events: event_tx,
         log_reload: reload_handle,
         system: nasty_system::SystemService::new(
-            Some(commit.to_string()),
+            None,
             Some(built.to_string()),
         ),
         settings: nasty_system::settings::SettingsService::new().await,
@@ -169,7 +168,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 2137));
-    info!("NASty Engine v{version} (commit: {commit}, built: {built})");
+    info!("NASty Engine v{version} (built: {built})");
     info!("Listening on {addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -195,7 +194,6 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
-        "commit": env!("NASTY_GIT_COMMIT"),
         "built": env!("NASTY_BUILD_DATE"),
     }))
 }
