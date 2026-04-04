@@ -127,6 +127,41 @@ pub struct SmartAttribute {
     pub failing: bool,
 }
 
+// ── Kernel errors ──────────────────────────────────────────────
+
+/// A suspicious kernel message detected in the ring buffer.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct KernelError {
+    /// Timestamp in microseconds from boot.
+    pub timestamp_usec: u64,
+    /// The raw kernel message text.
+    pub message: String,
+    /// Category of error: `sata`, `nvme`, `filesystem`, `memory`, `generic`.
+    pub category: String,
+    /// Source device or subsystem if identifiable (e.g. `ata5`, `nvme0`).
+    pub source: String,
+}
+
+/// Summary of kernel errors since boot.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct KernelErrorSummary {
+    /// Total suspicious kernel messages since boot.
+    pub total_count: u64,
+    /// Per-category error counts.
+    pub by_category: Vec<CategoryCount>,
+    /// Most recent errors (capped at 50).
+    pub recent_errors: Vec<KernelError>,
+}
+
+/// Error count for a single category.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CategoryCount {
+    /// Category name.
+    pub category: String,
+    /// Number of errors in this category.
+    pub count: u64,
+}
+
 // ── Time-series (metrics history) ──────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]

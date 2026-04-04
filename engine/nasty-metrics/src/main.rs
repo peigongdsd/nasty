@@ -13,12 +13,13 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 mod collect_bcachefs;
+mod collect_kernel;
 mod collect_system;
 mod db;
 mod prometheus;
 
 use collect_bcachefs::BcachefsMetrics;
-use nasty_common::metrics_types::{DiskHealth, ResourceHistory, SystemStats};
+use nasty_common::metrics_types::{DiskHealth, KernelErrorSummary, ResourceHistory, SystemStats};
 
 struct AppState {
     db: db::MetricsDb,
@@ -28,6 +29,8 @@ struct AppState {
     disks: RwLock<Vec<DiskHealth>>,
     /// Cached latest bcachefs metrics snapshot.
     bcachefs: RwLock<Vec<BcachefsMetrics>>,
+    /// Cached kernel error summary.
+    kernel_errors: RwLock<KernelErrorSummary>,
 }
 
 #[tokio::main]
@@ -47,12 +50,14 @@ async fn main() -> anyhow::Result<()> {
         stats: RwLock::new(collect_system::system_stats()),
         disks: RwLock::new(Vec::new()),
         bcachefs: RwLock::new(Vec::new()),
+        kernel_errors: RwLock::new(KernelErrorSummary::default()),
     });
 
     // Background collectors
     tokio::spawn(system_collector(state.clone()));
     tokio::spawn(disk_collector(state.clone()));
     tokio::spawn(bcachefs_collector(state.clone()));
+    tokio::spawn(kernel_error_collector(state.clone()));
 
     // Signal systemd readiness
     sd_notify_ready();
@@ -61,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/metrics", get(metrics_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/disks", get(disks_handler))
+        .route("/api/kernel_errors", get(kernel_errors_handler))
         .route("/api/history", get(history_handler))
         .route("/health", get(|| async { "ok" }))
         .with_state(state);
@@ -98,6 +104,11 @@ async fn stats_handler(State(state): State<Arc<AppState>>) -> Json<SystemStats> 
 async fn disks_handler(State(state): State<Arc<AppState>>) -> Json<Vec<DiskHealth>> {
     let disks = state.disks.read().await;
     Json(disks.clone())
+}
+
+async fn kernel_errors_handler(State(state): State<Arc<AppState>>) -> Json<KernelErrorSummary> {
+    let errors = state.kernel_errors.read().await;
+    Json(errors.clone())
 }
 
 #[derive(Deserialize)]
@@ -211,6 +222,21 @@ async fn bcachefs_collector(state: Arc<AppState>) {
             .unwrap_or_default();
         *state.bcachefs.write().await = metrics;
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+}
+
+/// Kernel error collector: scans dmesg every 30s for suspicious messages.
+async fn kernel_error_collector(state: Arc<AppState>) {
+    let collector = std::sync::Arc::new(std::sync::Mutex::new(
+        collect_kernel::KernelErrorCollector::new(),
+    ));
+    loop {
+        let c = collector.clone();
+        let summary = tokio::task::spawn_blocking(move || c.lock().unwrap().collect())
+            .await
+            .unwrap_or_default();
+        *state.kernel_errors.write().await = summary;
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
     }
 }
 

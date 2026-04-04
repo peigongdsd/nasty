@@ -40,6 +40,8 @@ pub enum AlertMetric {
     BcachefsIOErrors,
     BcachefsScrubErrors,
     BcachefsReconcileStalled,
+    // Kernel error monitoring
+    KernelErrors,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, JsonSchema)]
@@ -167,6 +169,7 @@ impl AlertService {
         filesystems: &[FsUsage],
         disk_health: &[DiskHealthSummary],
         bcachefs_health: &[BcachefsHealth],
+        kernel_errors: &KernelErrorAlert,
     ) -> Vec<ActiveAlert> {
         let state = self.state.read().await;
         let mut alerts = Vec::new();
@@ -423,6 +426,29 @@ impl AlertService {
                         }
                     }
                 }
+                AlertMetric::KernelErrors => {
+                    let val = kernel_errors.total_count as f64;
+                    if check_condition(val, &rule.condition, rule.threshold) {
+                        let cat_list = if kernel_errors.categories.is_empty() {
+                            "none".to_string()
+                        } else {
+                            kernel_errors.categories.join(", ")
+                        };
+                        alerts.push(ActiveAlert {
+                            rule_id: rule.id.clone(),
+                            rule_name: rule.name.clone(),
+                            severity: rule.severity.clone(),
+                            metric: rule.metric.clone(),
+                            message: format!(
+                                "{} kernel error(s) detected (categories: {})",
+                                kernel_errors.total_count, cat_list
+                            ),
+                            current_value: val,
+                            threshold: rule.threshold,
+                            source: "kernel".into(),
+                        });
+                    }
+                }
             }
         }
 
@@ -444,6 +470,15 @@ pub struct DiskHealthSummary {
     pub device: String,
     pub temperature_c: Option<i32>,
     pub health_passed: bool,
+}
+
+/// Kernel error data for alert evaluation.
+#[derive(Debug, Default)]
+pub struct KernelErrorAlert {
+    /// Total error count since boot.
+    pub total_count: u64,
+    /// Category names that have errors.
+    pub categories: Vec<String>,
 }
 
 /// bcachefs filesystem health for alert evaluation
@@ -615,6 +650,16 @@ fn default_rules() -> Vec<AlertRule> {
             metric: AlertMetric::BcachefsReconcileStalled,
             condition: AlertCondition::Equals,
             threshold: 1.0,
+            severity: AlertSeverity::Warning,
+        },
+        // Kernel error monitoring
+        AlertRule {
+            id: "kernel-errors".into(),
+            name: "Kernel errors detected".into(),
+            enabled: true,
+            metric: AlertMetric::KernelErrors,
+            condition: AlertCondition::Above,
+            threshold: 0.0,
             severity: AlertSeverity::Warning,
         },
     ]

@@ -544,7 +544,17 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 });
             }
 
-            let alerts = state.alerts.evaluate(&stats, &fs_usage_list, &disk_summary, &bcachefs_health).await;
+            // Collect kernel errors from metrics service
+            let kernel_summary: nasty_common::metrics_types::KernelErrorSummary =
+                fetch_metrics_json(&state.metrics_client, "/api/kernel_errors")
+                    .await
+                    .unwrap_or_default();
+            let kernel_alert = nasty_system::alerts::KernelErrorAlert {
+                total_count: kernel_summary.total_count,
+                categories: kernel_summary.by_category.iter().map(|c| c.category.clone()).collect(),
+            };
+
+            let alerts = state.alerts.evaluate(&stats, &fs_usage_list, &disk_summary, &bcachefs_health, &kernel_alert).await;
             ok(req, alerts)
         }
         "alert.rules.list" => ok(req, state.alerts.list_rules().await),
