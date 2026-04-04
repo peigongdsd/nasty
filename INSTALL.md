@@ -106,7 +106,7 @@ cp /tmp/hw-config/hardware-configuration.nix /mnt/etc/nixos/nixos/
 
 # 13. Install NASty (this takes 10-30 minutes)
 nixos-install --root /mnt \
-  --flake /mnt/etc/nixos/nixos#nasty \
+  --flake /mnt/etc/nixos#nasty \
   --no-root-passwd
 
 # 14. Set root password

@@ -3,7 +3,7 @@
 # filesystem layout, and cloud-init automatically.
 #
 # Build:
-#   nix build .#nasty-cloud-image
+#   nix build .#packages.x86_64-linux.nasty-cloud-image
 #
 # The resulting image has:
 #   - NASty engine + WebUI running on boot

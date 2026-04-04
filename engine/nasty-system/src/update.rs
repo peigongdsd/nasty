@@ -10,13 +10,13 @@ const VERSION_PATH: &str = "/var/lib/nasty/version";
 /// Fallback version path — baked in by NixOS at build time (may be a local SHA).
 const VERSION_PATH_FALLBACK: &str = "/etc/nasty-version";
 const UPDATE_UNIT: &str = "nasty-update";
-const LOCAL_FLAKE_DIR: &str = "/etc/nixos/nixos";
+const LOCAL_FLAKE_DIR: &str = "/etc/nixos";
 const SYSTEM_CONFIG_PATH: &str = "/var/lib/nasty/system-config";
 const DEFAULT_CONFIG: &str = "nasty";
 const REPO_URL: &str = "https://github.com/nasty-project/nasty.git";
 const LOCAL_REPO: &str = "/etc/nixos";
 const BCACHEFS_SWITCH_UNIT: &str = "nasty-bcachefs-switch";
-const NIXOS_FLAKE_DIR: &str = "/etc/nixos/nixos";
+const NIXOS_FLAKE_DIR: &str = "/etc/nixos";
 const BCACHEFS_TOOLS_REPO: &str = "github:koverstreet/bcachefs-tools";
 const BCACHEFS_REF_STATE: &str = "/var/lib/nasty/bcachefs-tools-ref";
 const BCACHEFS_DEBUG_CHECKS_STATE: &str = "/var/lib/nasty/bcachefs-debug-checks";
@@ -954,10 +954,8 @@ fi
 # Update debug checks flag in flake.nix and persist state
 {debug_checks_sed}
 {debug_checks_state}
-# Commit the updated flake.lock and flake.nix so the tree stays clean for the next rebuild
-git add flake.lock flake.nix
-git -c user.email="nasty@localhost" -c user.name="NASty" \
-  commit -m "bcachefs-tools: switch to {git_ref} (${{RESOLVED_SHA:-unknown}})" || true
+# /etc/nixos is the active flake payload, not necessarily a Git checkout.
+# Persist the selected ref and flake changes directly, then rebuild from them.
 echo "==> Rebuilding system..."
 NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
 echo "success" > {BCACHEFS_SWITCH_RESULT}

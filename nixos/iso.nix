@@ -1,8 +1,6 @@
-{ config, pkgs, lib, nasty-engine, nasty-webui, ... }:
+{ config, pkgs, lib, nasty-engine, nasty-webui, installerSrc, nixpkgs, nasty-rootfs-toplevel ? null, ... }:
 
 let
-  nastySrc = lib.cleanSource ./..;
-
   nasty-grub-theme = pkgs.runCommand "nasty-grub-theme" {
     nativeBuildInputs = [ pkgs.librsvg pkgs.imagemagick ];
   } ''
@@ -86,11 +84,12 @@ in
 {
   # Pre-built packages in the ISO's Nix store so nixos-install
   # can reuse them instead of recompiling from source.
-  system.extraDependencies = [ nasty-engine ]
+  system.extraDependencies = [ nixpkgs nasty-engine pkgs.OVMF pkgs.OVMF.fd ]
+    ++ lib.optional (nasty-rootfs-toplevel != null) nasty-rootfs-toplevel
     ++ lib.optional (nasty-webui != null) nasty-webui;
 
   # Bundle NASty source on the ISO for flake-based installation
-  environment.etc."nasty-src".source = nastySrc;
+  environment.etc."nasty-src".source = installerSrc;
 
   # ── Branding ──────────────────────────────────────────────
   image.baseName = lib.mkForce "nasty";
@@ -116,7 +115,6 @@ in
     e2fsprogs
     dosfstools
     nixos-install-tools
-    git  # required for Nix flakes
 
     (writeShellScriptBin "nasty-install" ''
       set -euo pipefail
@@ -241,6 +239,8 @@ in
 
       echo "==> Copying NASty source..."
       mkdir -p /mnt/etc/nixos
+      cp -L --no-preserve=mode /etc/nasty-src/flake.nix /mnt/etc/nixos/
+      cp -L --no-preserve=mode /etc/nasty-src/flake.lock /mnt/etc/nixos/
       for dir in engine webui nixos; do
         cp -rL --no-preserve=mode /etc/nasty-src/$dir /mnt/etc/nixos/
       done
@@ -304,19 +304,9 @@ in
           > /mnt/etc/nixos/nixos/networking.nix
       fi
 
-      # Flakes require a git repo to resolve paths.
-      # Sparse checkout ensures future updates don't materialize dev-only files
-      # (tests/, CLAUDE.md, build-iso.sh) that have no place on an appliance.
-      cd /mnt/etc/nixos
-      git init -q
-      git remote add origin https://github.com/nasty-project/nasty.git
-      git sparse-checkout init --cone
-      git sparse-checkout set engine webui nixos
-      git add .
-
       echo "==> Installing NASty..."
       echo "    (this may take a while on first install)"
-      nixos-install --flake /mnt/etc/nixos/nixos#nasty --no-root-passwd
+      nixos-install --flake /mnt/etc/nixos#nasty --no-root-passwd
 
       # Detect IP address to show in post-install message
       NASTY_IP=$(${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[^ ]+' || echo "<ip>")
@@ -332,7 +322,7 @@ in
         echo ""
       fi
       echo "  To reconfigure later:"
-      echo "    nixos-rebuild switch --flake /etc/nixos/nixos#nasty"
+      echo "    nixos-rebuild switch --flake /etc/nixos#nasty"
       echo ""
 
       read -p "Set root password now? (yes/no): " SET_PW
