@@ -433,6 +433,12 @@ impl SubvolumeService {
         // Ask bcachefs which paths are real subvolumes (filters out plain dirs)
         let info = bcachefs_list_all(&mount_point).await;
 
+        // Batch queries: run repquota + losetup once instead of du/losetup per subvolume
+        let (project_usages, losetup_map) = tokio::join!(
+            query_project_usages(&mount_point),
+            build_losetup_map()
+        );
+
         // List all subvolumes except snapshots (@) and internal .nasty/* ones.
         for name in info.subvol_paths.iter().filter(|p| !p.is_empty() && !p.contains('@') && !p.starts_with(".nasty/") && *p != ".nasty") {
             let path_str = subvol_path(&mount_point, name);
@@ -467,11 +473,20 @@ impl SubvolumeService {
                     }
                 })
                 .collect();
-            let size = dir_usage(path).await;
 
+            // Get size: project quota for filesystem subvols, stat for block subvols
+            let size = match meta.subvolume_type {
+                SubvolumeType::Block => block_image_size(&path_str),
+                SubvolumeType::Filesystem => {
+                    let projid = project_id_for(fs_name, name);
+                    project_usages.get(&projid).copied()
+                }
+            };
+
+            // Look up loop device from pre-built map instead of spawning losetup per subvol
             let block_device = if meta.subvolume_type == SubvolumeType::Block {
                 let img_path = format!("{path_str}/{BLOCK_FILE_NAME}");
-                find_loop_device(&img_path).await
+                find_loop_device_from_map(&losetup_map, &img_path)
             } else {
                 None
             };
@@ -1417,43 +1432,92 @@ fn unregister_project(projid: u32) {
     }
 }
 
-/// Get disk usage for a directory using `du`
-async fn dir_usage(path: &Path) -> Option<u64> {
-    let path_str = path.to_string_lossy();
-    let output = cmd::run_ok("du", &["-sb", &path_str]).await.ok()?;
-    output
-        .split_whitespace()
-        .next()
-        .and_then(|s| s.parse().ok())
+/// Get disk usage for a block subvolume by statting the sparse image file directly.
+/// Much faster than `du -sb` since it's a single syscall instead of a tree walk.
+fn block_image_size(subvol_path: &str) -> Option<u64> {
+    let img_path = format!("{subvol_path}/{BLOCK_FILE_NAME}");
+    std::fs::metadata(&img_path).ok().map(|m| m.len())
 }
 
-/// Find the loop device attached to a given file, matched by backing-file PATH.
+/// Query project quota usage for all projects on a filesystem in one shot.
+/// Returns a map of project_id → used_bytes.
+/// Falls back to empty map if repquota is unavailable or fails.
+async fn query_project_usages(mount_point: &str) -> HashMap<u32, u64> {
+    let mut usages = HashMap::new();
+
+    // repquota -P --raw-grace outputs KB values with numeric project IDs when using -n
+    let output = match cmd::run_ok("repquota", &["-P", "--raw-grace", "-n", mount_point]).await {
+        Ok(o) => o,
+        Err(e) => {
+            warn!("repquota failed on {mount_point}: {e}");
+            return usages;
+        }
+    };
+
+    // Parse lines like: "#1689127545 -- 125486988 1073741824000 1073741824000 0 78 0 0 0"
+    // Fields: project_name status used_kb soft_kb hard_kb grace files_used files_soft files_hard files_grace
+    for line in output.lines() {
+        let line = line.trim();
+        if !line.starts_with('#') {
+            continue;
+        }
+        let id_str = &line[1..]; // strip '#'
+        let mut parts = id_str.split_whitespace();
+        let projid: u32 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(id) if id > 0 => id,
+            _ => continue,
+        };
+        let _status = parts.next(); // "--" or "+-" etc
+        let used_kb: u64 = match parts.next().and_then(|s| s.parse().ok()) {
+            Some(v) => v,
+            None => continue,
+        };
+        usages.insert(projid, used_kb * 1024);
+    }
+
+    usages
+}
+
+/// Build a map of canonical backing-file path → loop device name.
+/// Called once per `list()` invocation instead of per-subvolume.
+async fn build_losetup_map() -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let output = match cmd::run_ok(
+        "losetup",
+        &["--list", "--output", "NAME,BACK-FILE", "--noheadings"],
+    )
+    .await
+    {
+        Ok(o) => o,
+        Err(_) => return map,
+    };
+
+    for line in output.lines() {
+        let mut parts = line.split_whitespace();
+        if let (Some(dev), Some(back)) = (parts.next(), parts.next()) {
+            map.insert(back.to_string(), dev.to_string());
+        }
+    }
+    map
+}
+
+/// Find the loop device attached to a given file (single-call variant for non-list paths).
 ///
 /// bcachefs COW clones preserve inode numbers, so `losetup -j` (which matches
 /// by device+inode) incorrectly returns the original subvolume's loop device
 /// when called on a clone's vol.img. We instead parse `losetup --list` output
 /// and match by the exact canonical file path to avoid this false-positive.
 async fn find_loop_device(file_path: &str) -> Option<String> {
+    let map = build_losetup_map().await;
+    find_loop_device_from_map(&map, file_path)
+}
+
+/// Look up the loop device for a given file path using a pre-built map.
+fn find_loop_device_from_map(losetup_map: &HashMap<String, String>, file_path: &str) -> Option<String> {
     // Canonicalize the target path so symlinks / relative paths don't matter
     let canonical = std::fs::canonicalize(file_path).ok()?;
-    let canonical_str = canonical.to_string_lossy();
-
-    let output = cmd::run_ok(
-        "losetup",
-        &["--list", "--output", "NAME,BACK-FILE", "--noheadings"],
-    )
-    .await
-    .ok()?;
-
-    for line in output.lines() {
-        let mut parts = line.split_whitespace();
-        let dev = parts.next()?;
-        let back = parts.next()?;
-        if back == canonical_str {
-            return Some(dev.to_string());
-        }
-    }
-    None
+    let canonical_str = canonical.to_string_lossy().to_string();
+    losetup_map.get(&canonical_str).cloned()
 }
 
 /// Find all child subvolumes under a given parent path using `bcachefs subvolume list -R`.
