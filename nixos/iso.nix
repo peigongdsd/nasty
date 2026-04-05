@@ -243,6 +243,18 @@ in
       mkdir -p /mnt/etc/nixos
       cp -rL --no-preserve=mode /etc/nasty-system-flake/. /mnt/etc/nixos/
 
+      echo "==> Detecting local system identifier..."
+      LOCAL_SYSTEM=$(nix --extra-experimental-features 'nix-command flakes' eval --impure --raw --expr builtins.currentSystem)
+      if [ -z "$LOCAL_SYSTEM" ]; then
+        echo "Error: failed to detect local system identifier"
+        exit 1
+      fi
+      if ! grep -q '"local-system"' /mnt/etc/nixos/flake.nix; then
+        echo "Error: local system placeholder not found in /mnt/etc/nixos/flake.nix"
+        exit 1
+      fi
+      ${pkgs.gnused}/bin/sed -i "s/\"local-system\"/\"$LOCAL_SYSTEM\"/" /mnt/etc/nixos/flake.nix
+
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
 

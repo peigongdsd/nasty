@@ -40,8 +40,7 @@
       };
     in {
       nixosConfigurations = {
-        nasty = mkSystem "x86_64-linux";
-        nasty-aarch64 = mkSystem "aarch64-linux";
+        nasty = mkSystem "local-system";
       };
     };
 }
