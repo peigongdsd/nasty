@@ -10,9 +10,7 @@ const VERSION_PATH: &str = "/var/lib/nasty/version";
 /// Fallback version path — baked in by NixOS at build time (may be a local SHA).
 const VERSION_PATH_FALLBACK: &str = "/etc/nasty-version";
 const UPDATE_UNIT: &str = "nasty-update";
-const LOCAL_FLAKE_DIR: &str = "/etc/nixos";
-const SYSTEM_CONFIG_PATH: &str = "/var/lib/nasty/system-config";
-const DEFAULT_CONFIG: &str = "nasty";
+const LOCAL_FLAKE_TARGET: &str = "/etc/nixos#nasty";
 const LOCAL_REPO: &str = "/etc/nixos";
 const BCACHEFS_SWITCH_UNIT: &str = "nasty-bcachefs-switch";
 const NIXOS_FLAKE_DIR: &str = "/etc/nixos";
@@ -435,7 +433,7 @@ impl UpdateService {
             ),
         };
 
-        let local_flake = local_flake().await;
+        let local_flake = local_flake();
         let script = format!(
             r#"#!/bin/bash
 set -euo pipefail
@@ -900,7 +898,7 @@ echo "==> Switch to generation {gen_id} complete!"
             format!(r#"rm -f {BCACHEFS_DEBUG_CHECKS_STATE}"#)
         };
 
-        let local_flake = local_flake().await;
+        let local_flake = local_flake();
         let script = format!(
             r#"#!/bin/bash
 set -euo pipefail
@@ -1426,20 +1424,9 @@ async fn bcachefs_version() -> (String, Option<bool>) {
     (version, kernel_rust)
 }
 
-/// Public wrapper for use by lib.rs cached info.
-/// Read the system config name from the state file, defaulting to "nasty" (bare metal).
-async fn read_system_config() -> String {
-    tokio::fs::read_to_string(SYSTEM_CONFIG_PATH).await
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_CONFIG.to_string())
-}
-
 /// Build the full flake reference for nixos-rebuild.
-async fn local_flake() -> String {
-    let config = read_system_config().await;
-    format!("{LOCAL_FLAKE_DIR}#{config}")
+fn local_flake() -> &'static str {
+    LOCAL_FLAKE_TARGET
 }
 
 pub async fn read_flake_nix_default_ref_pub() -> String {
