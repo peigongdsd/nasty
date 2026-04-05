@@ -7,8 +7,7 @@
 </p>
 
 <p align="center">
-  <strong>A NAS appliance built on bcachefs.</strong><br>
-  Not a joke. Probably.
+  <strong>A NAS appliance built on bcachefs.</strong>
 </p>
 
 ---
@@ -17,18 +16,18 @@ NASty is a NAS operating system built on NixOS and bcachefs. It turns commodity 
 
 ## Features
 
-- **bcachefs** — yes, you read that right — compression, checksumming, erasure coding, tiering, encryption, O(1) snapshots
+- **bcachefs** — compression, checksumming, erasure coding, tiering, encryption, O(1) snapshots
 - **File sharing** — NFS, SMB — managed from one UI
-- **Block storage** — iSCSI, NVMe-oF — because sometimes you need raw blocks
+- **Block storage** — iSCSI, NVMe-oF
 - **Web UI** — manage filesystems, subvolumes, snapshots, shares, disks, VMs, and more
 - **Web terminal** — built-in shell access from the browser
-- **Virtual machines** — QEMU/KVM with VNC console *(here be dragons)*
-- **Apps** — k3s-based container runtime *(here be bigger dragons)*
+- **Virtual machines** — QEMU/KVM with VNC console (experimental)
+- **Apps** — k3s-based container runtime (experimental)
 - **Alerts** — configurable rules for filesystem usage, disk health, temperatures
-- **Let's Encrypt** — automatic TLS certificates so your browser stops complaining
+- **Let's Encrypt** — automatic TLS certificates
 - **Kubernetes integration** — CSI driver for dynamic volume provisioning across all 4 protocols
 - **Atomic updates** — NixOS-based, with one-click rollback to any previous generation
-- **File browser** — browse and manage files on your filesystems from the web UI
+- **File browser** — browse and manage files from the web UI
 
 ## Screenshots
 
@@ -65,7 +64,7 @@ NASty is a NAS operating system built on NixOS and bcachefs. It turns commodity 
 ## Getting Started
 
 1. Download the latest ISO from [Releases](../../releases)
-2. Boot it on your hardware — the "installer" (generous term) lets you pick a disk and press Enter
+2. Boot it on your hardware — the installer lets you pick a disk and press Enter
 3. Open the WebUI at `https://<nasty-ip>`
 4. Default credentials: **admin** / **admin**
 
@@ -96,9 +95,9 @@ Switch flavors from **Settings → Update → Flavor** in the WebUI.
 ## Project Structure
 
 ```
-engine/         The part that actually works (Rust)
-webui/          The part that looks pretty (SvelteKit)
-nixos/          The part that makes updates terrifying (NixOS)
+engine/         Rust workspace — storage, sharing, system management
+webui/          SvelteKit web interface
+nixos/          NixOS modules and ISO configuration
 ```
 
 The full ecosystem (CSI driver, Helm chart, kubectl plugin, and more) lives at [github.com/nasty-project](https://github.com/nasty-project).
