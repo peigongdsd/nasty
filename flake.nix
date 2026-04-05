@@ -16,8 +16,46 @@
   outputs = { self, nixpkgs, bcachefs-tools, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
-
-    installerSrc = self.outPath;
+    rootLock = builtins.fromJSON (builtins.readFile ./flake.lock);
+    installerNastyOwner = "nasty-project";
+    installerNastyRepo = "nasty";
+    installerNastyRef = "main";
+    installerNastyUrl = "github:${installerNastyOwner}/${installerNastyRepo}/${installerNastyRef}";
+    installerSystemFlakeNix = builtins.replaceStrings
+      [ "@NASTY_URL@" ]
+      [ installerNastyUrl ]
+      (builtins.readFile ./nixos/system-flake/flake.nix.template);
+    installerSystemFlakeLock = builtins.toJSON {
+      version = rootLock.version;
+      root = "root";
+      nodes = (builtins.removeAttrs rootLock.nodes [ "root" ]) // {
+        nasty = {
+          locked = {
+            type = "path";
+            path = self.outPath;
+            narHash = self.narHash;
+            lastModified = self.lastModified;
+          };
+          original = {
+            type = "github";
+            owner = installerNastyOwner;
+            repo = installerNastyRepo;
+            ref = installerNastyRef;
+          };
+          inputs = {
+            bcachefs-tools = [ "bcachefs-tools" ];
+            nixpkgs = [ "nixpkgs" ];
+          };
+        };
+        root = {
+          inputs = {
+            bcachefs-tools = "bcachefs-tools";
+            nasty = "nasty";
+            nixpkgs = "nixpkgs";
+          };
+        };
+      };
+    };
 
     nasty-version = (builtins.fromTOML (builtins.readFile ./engine/Cargo.toml)).workspace.package.version;
 
@@ -48,10 +86,8 @@
       '';
     };
 
-    mkNixosConfigs = system: let
+    mkBcachefsTools = system: let
       pkgs = mkPkgs system;
-      nasty-engine = mkEngine system;
-      nasty-webui = mkWebui system;
       # Override nixpkgs' bcachefs-tools with HEAD source from the flake input.
       # Using the nixpkgs package as the base preserves the `dkms` output and
       # `passthru.kernelModule` that the NixOS bcachefs module needs to build
@@ -62,32 +98,44 @@
       # its own Kconfig is never processed by the host kernel's build system.
       # We patch the DKMS Makefile to inject -DCONFIG_BCACHEFS_QUOTA directly,
       # enabling the VFS quotactl_ops (sb->s_qcop) that setquota/repquota need.
-      nasty-bcachefs-tools = let
-        base = pkgs.bcachefs-tools.overrideAttrs (old: {
-          version = (builtins.fromTOML (builtins.readFile "${bcachefs-tools}/Cargo.toml")).package.version;
-          src = bcachefs-tools;
-          cargoDeps = pkgs.rustPlatform.importCargoLock {
-            lockFile = "${bcachefs-tools}/Cargo.lock";
-          };
-        });
-      in base.overrideAttrs (old: {
-        passthru = old.passthru // {
-          # kernelModule must keep the same named-attr signature that callPackage
-          # expects: { lib, stdenv, kernelModuleMakeFlags, kernel } -> drv.
-          kernelModule = { lib, stdenv, kernelModuleMakeFlags, kernel }:
-            (old.passthru.kernelModule { inherit lib stdenv kernelModuleMakeFlags kernel; }).overrideAttrs (kOld: {
-              postPatch = (kOld.postPatch or "") + ''
-                # ccflags-y in the top-level Makefile only covers objects built
-                # there.  The actual compilation happens in src/fs/bcachefs/,
-                # so we patch that subdir's Makefile, inside the BCACHEFS_DKMS
-                # block where CONFIG_BCACHEFS_FS is already set.
-                sed -i 's|# Enable other features here?|# Enable other features here?\n\tCONFIG_BCACHEFS_QUOTA := y\n\tccflags-y += -DCONFIG_BCACHEFS_QUOTA|' \
-                  src/fs/bcachefs/Makefile
-                # @NASTY_DEBUG_CHECKS_LINE@
-              '';
-            });
+      base = pkgs.bcachefs-tools.overrideAttrs (old: {
+        version = (builtins.fromTOML (builtins.readFile "${bcachefs-tools}/Cargo.toml")).package.version;
+        src = bcachefs-tools;
+        cargoDeps = pkgs.rustPlatform.importCargoLock {
+          lockFile = "${bcachefs-tools}/Cargo.lock";
         };
       });
+    in base.overrideAttrs (old: {
+      passthru = old.passthru // {
+        # kernelModule must keep the same named-attr signature that callPackage
+        # expects: { lib, stdenv, kernelModuleMakeFlags, kernel } -> drv.
+        kernelModule = { lib, stdenv, kernelModuleMakeFlags, kernel }:
+          (old.passthru.kernelModule { inherit lib stdenv kernelModuleMakeFlags kernel; }).overrideAttrs (kOld: {
+            postPatch = (kOld.postPatch or "") + ''
+              # ccflags-y in the top-level Makefile only covers objects built
+              # there.  The actual compilation happens in src/fs/bcachefs/,
+              # so we patch that subdir's Makefile, inside the BCACHEFS_DKMS
+              # block where CONFIG_BCACHEFS_FS is already set.
+              sed -i 's|# Enable other features here?|# Enable other features here?\n\tCONFIG_BCACHEFS_QUOTA := y\n\tccflags-y += -DCONFIG_BCACHEFS_QUOTA|' \
+                src/fs/bcachefs/Makefile
+              # @NASTY_DEBUG_CHECKS_LINE@
+            '';
+          });
+      };
+    });
+
+    mkNixosConfigs = system: let
+      pkgs = mkPkgs system;
+      nasty-engine = mkEngine system;
+      nasty-webui = mkWebui system;
+      nasty-bcachefs-tools = mkBcachefsTools system;
+      installerSystemFlake = pkgs.runCommand "nasty-system-flake" {} ''
+        mkdir -p "$out"
+        cp ${./nixos/system-flake/hardware-configuration.nix} "$out/hardware-configuration.nix"
+        cp ${./nixos/system-flake/networking.nix} "$out/networking.nix"
+        cp ${pkgs.writeText "nasty-system-flake.nix" installerSystemFlakeNix} "$out/flake.nix"
+        cp ${pkgs.writeText "nasty-system-flake.lock" installerSystemFlakeLock} "$out/flake.lock"
+      '';
     in rec {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
@@ -120,8 +168,10 @@
       nasty-iso = nixpkgs.lib.nixosSystem {
         inherit system;
         specialArgs = {
-          inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc nixpkgs;
+          inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
+          installerSystemFlake = installerSystemFlake;
+          installerNastySource = self.outPath;
         };
         modules = [
           ./nixos/modules/bcachefs.nix
@@ -137,8 +187,10 @@
       nasty-iso-sd = nixpkgs.lib.nixosSystem {
         inherit system;
         specialArgs = {
-          inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools installerSrc nixpkgs;
+          inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
+          installerSystemFlake = installerSystemFlake;
+          installerNastySource = self.outPath;
         };
         modules = [
           ./nixos/modules/bcachefs.nix
@@ -187,6 +239,7 @@
     packages.x86_64-linux = {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
+      bcachefs-tools = mkBcachefsTools "x86_64-linux";
       nasty-rootfs = (mkNixosConfigs "x86_64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "x86_64-linux";
@@ -195,13 +248,19 @@
     packages.aarch64-linux = {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
+      bcachefs-tools = mkBcachefsTools "aarch64-linux";
       nasty-rootfs = (mkNixosConfigs "aarch64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "aarch64-linux";
     };
 
     # NixOS module
-    nixosModules.nasty = ./nixos/modules/nasty.nix;
+    nixosModules = {
+      nasty = ./nixos/modules/nasty.nix;
+      bcachefs = ./nixos/modules/bcachefs.nix;
+      linuxquota = ./nixos/modules/linuxquota.nix;
+      appliance-base = ./nixos/appliance-base.nix;
+    };
 
     # NixOS configurations for both architectures
     nixosConfigurations = (mkNixosConfigs "x86_64-linux") // (
