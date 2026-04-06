@@ -43,6 +43,7 @@ pub struct AppState {
     pub network: nasty_system::network::NetworkService,
     pub protocols: nasty_system::protocol::ProtocolService,
     pub updates: nasty_system::update::UpdateService,
+    pub tailscale: nasty_system::tailscale::TailscaleService,
     pub metrics_client: reqwest::Client,
     pub filesystems: nasty_storage::FilesystemService,
     pub subvolumes: Arc<nasty_storage::SubvolumeService>,
@@ -97,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
         network: nasty_system::network::NetworkService::new(),
         protocols: nasty_system::protocol::ProtocolService::new(),
         updates: nasty_system::update::UpdateService::new(),
+        tailscale: nasty_system::tailscale::TailscaleService::new().await,
         metrics_client: reqwest::Client::new(),
         filesystems: nasty_storage::FilesystemService::new(),
         snapshots: nasty_snapshot::SnapshotService::new(subvolumes.clone()),
@@ -128,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
     state.nvmeof.restore().await;
     state.vms.restore().await;
     state.apps.restore().await;
+    state.tailscale.restore().await;
 
     // Pre-warm caches so first page loads are fast.
     // Runs before sd_notify_ready() — nginx won't serve until this completes.

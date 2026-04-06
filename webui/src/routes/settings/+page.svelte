@@ -7,7 +7,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Copy, Check, ChevronDown, ChevronRight } from '@lucide/svelte';
 
-	let activeTab: 'general' | 'tls' | 'metrics' = $state('general');
+	let activeTab: 'general' | 'tls' | 'vpn' | 'metrics' = $state('general');
 
 	// ── General tab state ───────────────────────────────────
 	let settings: Settings | null = $state(null);
@@ -55,6 +55,22 @@
 	let gcKeep = $state(20);
 	let gcMaxAge = $state(0);
 	let savingGc = $state(false);
+
+	// VPN (Tailscale)
+	interface TailscaleStatus {
+		enabled: boolean;
+		daemon_running: boolean;
+		connected: boolean;
+		ip?: string;
+		hostname?: string;
+		version?: string;
+		has_auth_key: boolean;
+	}
+	let tsStatus: TailscaleStatus | null = $state(null);
+	let tsAuthKey = $state('');
+	let tsEnabled = $state(false);
+	let savingTs = $state(false);
+	let tsChanged = $state(false);
 
 	const popularDnsProviders = [
 		{ code: 'cloudflare', name: 'Cloudflare' },
@@ -162,6 +178,12 @@
 				gcKeep = gc.keep_generations;
 				gcMaxAge = gc.max_age_days;
 			} catch { /* ignore */ }
+
+			// Load Tailscale status
+			try {
+				tsStatus = await client.call<TailscaleStatus>('system.tailscale.get');
+				tsEnabled = tsStatus.enabled;
+			} catch { /* ignore — tailscale module may not be enabled */ }
 		});
 	});
 
@@ -315,7 +337,7 @@
 		collapsedSections[title] = !collapsedSections[title];
 	}
 
-	function switchTab(tab: 'general' | 'tls' | 'metrics') {
+	function switchTab(tab: 'general' | 'tls' | 'vpn' | 'metrics') {
 		activeTab = tab;
 		if (tab === 'metrics' && !metricsText) {
 			loadMetrics();
@@ -338,6 +360,12 @@
 			? 'border-b-2 border-primary text-foreground'
 			: 'text-muted-foreground hover:text-foreground'}"
 	>TLS</button>
+	<button
+		onclick={() => switchTab('vpn')}
+		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'vpn'
+			? 'border-b-2 border-primary text-foreground'
+			: 'text-muted-foreground hover:text-foreground'}"
+	>VPN</button>
 	<button
 		onclick={() => switchTab('metrics')}
 		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'metrics'
@@ -782,7 +810,7 @@
 		</section>
 	</div>
 
-{:else}
+{:else if activeTab === 'metrics'}
 
 	<!-- Metrics tab -->
 	<div class="rounded-lg border border-border p-5">
@@ -834,6 +862,98 @@
 						{/if}
 					</div>
 				{/each}
+			</div>
+		{/if}
+	</div>
+
+{:else if activeTab === 'vpn'}
+
+	<div class="space-y-6">
+		<div>
+			<h3 class="text-lg font-semibold mb-1">Tailscale VPN</h3>
+			<p class="text-sm text-muted-foreground">Connect your NASty to a Tailscale network for secure remote access.</p>
+		</div>
+
+		{#if !tsStatus}
+			<p class="text-muted-foreground">Loading...</p>
+		{:else}
+			<!-- Status -->
+			<div class="rounded-lg border p-4 space-y-2">
+				<div class="flex items-center gap-2">
+					<span class="text-sm font-medium">Status:</span>
+					{#if tsStatus.connected}
+						<span class="inline-flex items-center gap-1 text-sm text-green-500">
+							<span class="w-2 h-2 rounded-full bg-green-500"></span>Connected
+						</span>
+					{:else if tsStatus.daemon_running}
+						<span class="inline-flex items-center gap-1 text-sm text-yellow-500">
+							<span class="w-2 h-2 rounded-full bg-yellow-500"></span>Daemon running, not connected
+						</span>
+					{:else}
+						<span class="inline-flex items-center gap-1 text-sm text-muted-foreground">
+							<span class="w-2 h-2 rounded-full bg-muted-foreground"></span>Disabled
+						</span>
+					{/if}
+				</div>
+				{#if tsStatus.ip}
+					<div class="text-sm"><span class="text-muted-foreground">Tailscale IP:</span> <span class="font-mono">{tsStatus.ip}</span></div>
+				{/if}
+				{#if tsStatus.hostname}
+					<div class="text-sm"><span class="text-muted-foreground">Hostname:</span> {tsStatus.hostname}</div>
+				{/if}
+				{#if tsStatus.version}
+					<div class="text-sm"><span class="text-muted-foreground">Version:</span> {tsStatus.version}</div>
+				{/if}
+			</div>
+
+			<!-- Configuration -->
+			<div class="space-y-4">
+				<div class="flex items-center gap-3">
+					<label class="text-sm font-medium">Enable Tailscale</label>
+					<button
+						onclick={() => { tsEnabled = !tsEnabled; tsChanged = true; }}
+						class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors {tsEnabled ? 'bg-primary' : 'bg-muted'}"
+					>
+						<span class="inline-block h-4 w-4 transform rounded-full bg-background transition-transform {tsEnabled ? 'translate-x-6' : 'translate-x-1'}"></span>
+					</button>
+				</div>
+
+				<div>
+					<label for="ts-authkey" class="block text-sm font-medium mb-1">Auth Key</label>
+					<input
+						id="ts-authkey"
+						type="password"
+						bind:value={tsAuthKey}
+						oninput={() => { tsChanged = true; }}
+						placeholder="tskey-auth-..."
+						class="w-full max-w-md rounded-md border bg-background px-3 py-2 text-sm"
+					/>
+					<p class="text-xs text-muted-foreground mt-1">
+						Generate at <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" class="underline">Tailscale admin console</a>. Use a reusable key for persistent connections.
+					</p>
+				</div>
+
+				<Button
+					disabled={!tsChanged || savingTs}
+					onclick={async () => {
+						savingTs = true;
+						const result = await withToast(
+							() => client.call('system.tailscale.update', {
+								enabled: tsEnabled,
+								auth_key: tsAuthKey || undefined,
+							}),
+							tsEnabled ? 'Tailscale enabled' : 'Tailscale disabled'
+						);
+						if (result) {
+							tsStatus = result as TailscaleStatus;
+							tsEnabled = tsStatus.enabled;
+							tsChanged = false;
+						}
+						savingTs = false;
+					}}
+				>
+					{savingTs ? 'Saving...' : 'Save'}
+				</Button>
 			</div>
 		{/if}
 	</div>

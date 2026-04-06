@@ -146,6 +146,9 @@ in {
     smb.enable = mkEnableOption "Samba server for NASty shares" // { default = true; };
     iscsi.enable = mkEnableOption "iSCSI target (LIO) for NASty" // { default = true; };
     nvmeof.enable = mkEnableOption "NVMe-oF target for NASty" // { default = true; };
+
+    # VPN — not enabled by default (requires Tailscale auth key)
+    tailscale.enable = mkEnableOption "Tailscale VPN for NASty";
   };
 
   config = mkIf cfg.enable {
@@ -741,7 +744,8 @@ in {
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
         ++ lib.optionals cfg.smb.enable [ samba shadow.out ]
         ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
-        ++ lib.optionals cfg.nvmeof.enable [ nvme-cli ];
+        ++ lib.optionals cfg.nvmeof.enable [ nvme-cli ]
+        ++ lib.optionals cfg.tailscale.enable [ tailscale ];
 
       environment = {
         RUST_LOG = cfg.engine.logLevel;
@@ -918,6 +922,26 @@ in {
       copytruncate = true;  # don't rename — engine holds the file open
     };
 
+    # ── Tailscale VPN ─────────────────────────────────────────
+    # Custom systemd service instead of the stock NixOS services.tailscale module.
+    # The engine manages tailscale up/down imperatively from /var/lib/nasty/tailscale.json.
+    # Service is NOT auto-started — the engine starts it when Tailscale is enabled.
+    systemd.services.nasty-tailscale = mkIf cfg.tailscale.enable {
+      description = "NASty Tailscale VPN";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = []; # Engine manages lifecycle via systemctl start/stop
+      serviceConfig = {
+        ExecStart = "${pkgs.tailscale}/bin/tailscaled --state=/var/lib/nasty/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock";
+        RuntimeDirectory = "tailscale";
+        StateDirectory = "nasty/tailscale";
+        Restart = "on-failure";
+        RestartSec = 5;
+      };
+    };
+
+    environment.systemPackages = lib.optionals cfg.tailscale.enable [ pkgs.tailscale ];
+
     # ── Firewall ───────────────────────────────────────────────
 
     networking.firewall.allowedTCPPorts = lib.flatten [
@@ -927,5 +951,7 @@ in {
       (lib.optionals cfg.smb.enable [ 445 139 ])
       (lib.optional cfg.nvmeof.enable 4420)
     ];
+
+    networking.firewall.allowedUDPPorts = lib.optionals cfg.tailscale.enable [ 41641 ];
   };
 }
