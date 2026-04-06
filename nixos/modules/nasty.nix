@@ -628,7 +628,8 @@ in {
     ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
       ++ lib.optionals cfg.smb.enable [ samba ]
       ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]
-      ++ lib.optionals cfg.nvmeof.enable [ nvme-cli ];
+      ++ lib.optionals cfg.nvmeof.enable [ nvme-cli ]
+      ++ lib.optionals cfg.tailscale.enable [ tailscale ];
 
     # ── State directory ────────────────────────────────────────
 
@@ -939,8 +940,6 @@ in {
         RestartSec = 5;
       };
     };
-
-    environment.systemPackages = lib.optionals cfg.tailscale.enable [ pkgs.tailscale ];
 
     # ── Firewall ───────────────────────────────────────────────
 
