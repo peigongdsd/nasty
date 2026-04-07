@@ -135,7 +135,8 @@ impl TailscaleService {
 // ── Lifecycle commands ──────────────────────────────────────────
 
 async fn start_tailscale(auth_key: Option<&str>) -> Result<(), String> {
-    // Start the daemon
+    // Always restart to clear any stale auth state from previous attempts
+    let _ = run_cmd("systemctl", &["stop", SYSTEMD_UNIT]).await;
     run_cmd("systemctl", &["start", SYSTEMD_UNIT]).await?;
 
     // Wait for the socket to appear
@@ -174,7 +175,17 @@ async fn start_tailscale(auth_key: Option<&str>) -> Result<(), String> {
     ).await;
 
     match result {
-        Ok(Ok(_)) => info!("Tailscale started and connected"),
+        Ok(Ok(stdout)) => {
+            info!("tailscale up succeeded (stdout: {})", stdout.trim());
+            // Verify the connection actually worked by checking status
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            let (connected, ip, _, _) = query_status().await;
+            if connected {
+                info!("Tailscale connected, IP: {:?}", ip);
+            } else {
+                return Err("tailscale up returned success but connection not established — check your auth key".to_string());
+            }
+        }
         Ok(Err(e)) => return Err(format!("tailscale up failed: {e}")),
         Err(_) => return Err("tailscale up timed out after 30s — check your auth key".to_string()),
     }
