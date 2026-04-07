@@ -165,10 +165,12 @@ async fn start_tailscale(auth_key: Option<&str>) -> Result<(), String> {
 
     let authkey_arg = format!("--auth-key={key}");
 
+    let socket_arg = format!("--socket={TAILSCALE_SOCKET}");
+
     // Use a timeout to prevent hanging if auth key is invalid or network is unreachable
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        run_cmd("tailscale", &["up", "--accept-routes", &authkey_arg]),
+        run_cmd("tailscale", &[&socket_arg, "up", "--accept-routes", &authkey_arg]),
     ).await;
 
     match result {
@@ -182,7 +184,8 @@ async fn start_tailscale(auth_key: Option<&str>) -> Result<(), String> {
 
 async fn stop_tailscale() -> Result<(), String> {
     // Disconnect from network
-    let _ = run_cmd("tailscale", &["down"]).await;
+    let socket_arg = format!("--socket={TAILSCALE_SOCKET}");
+    let _ = run_cmd("tailscale", &[&socket_arg, "down"]).await;
     // Stop the daemon
     run_cmd("systemctl", &["stop", SYSTEMD_UNIT]).await?;
     info!("Tailscale stopped");
@@ -202,7 +205,7 @@ async fn is_daemon_running() -> bool {
 
 async fn query_status() -> (bool, Option<String>, Option<String>, Option<String>) {
     let output = match tokio::process::Command::new("tailscale")
-        .args(["status", "--json"])
+        .args([&format!("--socket={TAILSCALE_SOCKET}"), "status", "--json"])
         .output()
         .await
     {
