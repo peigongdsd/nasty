@@ -724,7 +724,7 @@ impl FilesystemService {
 
         // Remove mount point directory if it exists
         let mount_dir = format!("{NASTY_MOUNT_BASE}/{}", req.name);
-        let _ = tokio::fs::remove_dir(&mount_dir).await;
+        let _ = tokio::fs::remove_dir_all(&mount_dir).await;
 
         // If force, wipe the superblocks
         if req.force == Some(true) {
