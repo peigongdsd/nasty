@@ -6,6 +6,7 @@
 	import { error as showError } from '$lib/toast.svelte';
 	import Toasts from '$lib/components/Toasts.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import ConfirmDangerousDialog from '$lib/components/ConfirmDangerousDialog.svelte';
 	import ReconnectSpinner from '$lib/components/ReconnectSpinner.svelte';
 	import { confirm } from '$lib/confirm.svelte';
 	import type { AuthResult } from '$lib/rpc';
@@ -301,6 +302,7 @@
 
 <Toasts />
 <ConfirmDialog />
+<ConfirmDangerousDialog />
 
 {#if showLogin}
 	<div class="flex min-h-screen items-center justify-center">

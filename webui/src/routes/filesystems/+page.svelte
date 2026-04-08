@@ -8,6 +8,7 @@
 		typeof window !== 'undefined' && window.location.hash === '#diagnostics' ? 'diagnostics' : 'manage'
 	);
 	import { confirm } from '$lib/confirm.svelte';
+	import { confirmDangerous } from '$lib/confirm-dangerous.svelte';
 	import type { Filesystem, FilesystemDevice, BlockDevice, DeviceState, ScrubStatus, ReconcileStatus, TieringProfile, TieringProfileId } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -387,9 +388,13 @@
 	}
 
 	async function destroyFs(name: string) {
-		if (!await confirm(`Destroy Filesystem "${name}"`, `This will unmount it.`)) return;
+		if (!await confirmDangerous(
+			`Destroy Filesystem "${name}"`,
+			`This will unmount the filesystem and wipe all device superblocks. Type the filesystem name to confirm.`,
+			name,
+		)) return;
 		await withToast(
-			() => client.call('fs.destroy', { name, force: true }),
+			() => client.call('fs.destroy', { name, confirm_name: name }),
 			`Filesystem "${name}" destroyed`
 		);
 		await refresh();

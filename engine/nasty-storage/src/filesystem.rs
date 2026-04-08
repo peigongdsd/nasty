@@ -25,6 +25,8 @@ pub enum FilesystemError {
     AlreadyExists(String),
     #[error("device {0} is already in use")]
     DeviceInUse(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     #[error("no devices specified")]
     NoDevices,
     #[error("device not found: {0}")]
@@ -185,8 +187,8 @@ fn default_store_key() -> Option<bool> { Some(true) }
 pub struct DestroyFilesystemRequest {
     /// Name of the filesystem to destroy.
     pub name: String,
-    /// If true, wipe bcachefs superblocks from all member devices after unmounting.
-    pub force: Option<bool>,
+    /// Must match `name` exactly — guards against accidental destruction.
+    pub confirm_name: String,
 }
 
 /// Update runtime-mutable filesystem options on a mounted filesystem.
@@ -705,8 +707,14 @@ impl FilesystemService {
         })
     }
 
-    /// Unmount and optionally wipe a filesystem
+    /// Unmount and destroy a filesystem, wiping superblocks from all member devices.
     pub async fn destroy(&self, req: DestroyFilesystemRequest) -> Result<(), FilesystemError> {
+        if req.confirm_name != req.name {
+            return Err(FilesystemError::InvalidInput(
+                "confirmation name does not match filesystem name".into(),
+            ));
+        }
+
         let fs = self.get(&req.name).await?;
 
         // Unmount if mounted
@@ -726,12 +734,10 @@ impl FilesystemService {
         let mount_dir = format!("{NASTY_MOUNT_BASE}/{}", req.name);
         let _ = tokio::fs::remove_dir_all(&mount_dir).await;
 
-        // If force, wipe the superblocks
-        if req.force == Some(true) {
-            for dev in &fs.devices {
-                info!("Wiping bcachefs superblock on {}", dev.path);
-                let _ = cmd::run_ok("wipefs", &["-a", &dev.path]).await;
-            }
+        // Wipe bcachefs superblocks from all member devices
+        for dev in &fs.devices {
+            info!("Wiping bcachefs superblock on {}", dev.path);
+            let _ = cmd::run_ok("wipefs", &["-a", &dev.path]).await;
         }
 
         self.invalidate_list_cache().await;
