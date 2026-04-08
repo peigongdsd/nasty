@@ -617,9 +617,22 @@ impl FilesystemService {
             })?;
             // bcachefs format --encrypted reads passphrase twice from stdin (passphrase + confirm)
             let stdin = format!("{passphrase}\n{passphrase}\n");
-            cmd::run_ok_stdin("bcachefs", &arg_refs, stdin.as_bytes())
+            let output = cmd::run_stdin("bcachefs", &arg_refs, stdin.as_bytes())
                 .await
-                .map_err(FilesystemError::CommandFailed)?;
+                .map_err(|e| FilesystemError::CommandFailed(format!("failed to execute bcachefs: {e}")))?;
+
+            if !output.status.success() {
+                // bcachefs format writes superblocks then does a trial open that
+                // can race with udev, causing EBUSY on exit even though format
+                // succeeded.  Check if superblocks were actually written.
+                if !is_device_bcachefs(&req.devices[0].path).await {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(FilesystemError::CommandFailed(
+                        format!("bcachefs exited with {}: {stderr}", output.status),
+                    ));
+                }
+                warn!("bcachefs format exited with {} but superblocks are present, continuing", output.status);
+            }
 
             // Store key for auto-unlock (default: yes)
             if req.store_key != Some(false) {
@@ -629,9 +642,19 @@ impl FilesystemService {
                 info!("Encryption key stored at {key_path}");
             }
         } else {
-            cmd::run_ok("bcachefs", &arg_refs)
+            let output = cmd::run("bcachefs", &arg_refs)
                 .await
-                .map_err(FilesystemError::CommandFailed)?;
+                .map_err(|e| FilesystemError::CommandFailed(format!("failed to execute bcachefs: {e}")))?;
+
+            if !output.status.success() {
+                if !is_device_bcachefs(&req.devices[0].path).await {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(FilesystemError::CommandFailed(
+                        format!("bcachefs exited with {}: {stderr}", output.status),
+                    ));
+                }
+                warn!("bcachefs format exited with {} but superblocks are present, continuing", output.status);
+            }
         }
 
         // Create mount point
