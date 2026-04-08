@@ -98,6 +98,10 @@ pub struct FilesystemOptions {
     pub fsck: Option<bool>,
     /// Whether journal flushing is disabled.
     pub journal_flush_disabled: Option<bool>,
+    /// Maximum concurrent background mover IOs.
+    pub move_ios_in_flight: Option<u32>,
+    /// Maximum bytes in flight for background mover (e.g. `"8.0M"`).
+    pub move_bytes_in_flight: Option<String>,
 }
 
 /// A device within a filesystem, with its per-device bcachefs configuration.
@@ -218,6 +222,14 @@ pub struct UpdateFilesystemOptionsRequest {
     pub fsck: Option<bool>,
     /// Disable journal flushing (unsafe, for benchmarking).
     pub journal_flush_disabled: Option<bool>,
+    /// Number of data replicas.
+    pub data_replicas: Option<u32>,
+    /// Number of metadata replicas.
+    pub metadata_replicas: Option<u32>,
+    /// Maximum concurrent background mover IOs.
+    pub move_ios_in_flight: Option<u32>,
+    /// Maximum bytes in flight for background mover (e.g. `"8.0M"`).
+    pub move_bytes_in_flight: Option<String>,
 }
 
 /// Add a device to an existing filesystem.
@@ -853,6 +865,18 @@ impl FilesystemService {
         }
         if let Some(ec) = req.erasure_code {
             write_opt(&base, "erasure_code", if ec { "1" } else { "0" }).await?;
+        }
+        if let Some(v) = req.data_replicas {
+            write_opt(&base, "data_replicas", &v.to_string()).await?;
+        }
+        if let Some(v) = req.metadata_replicas {
+            write_opt(&base, "metadata_replicas", &v.to_string()).await?;
+        }
+        if let Some(v) = req.move_ios_in_flight {
+            write_opt(&base, "move_ios_in_flight", &v.to_string()).await?;
+        }
+        if let Some(ref v) = req.move_bytes_in_flight {
+            write_opt(&base, "move_bytes_in_flight", v).await?;
         }
 
         // Mount options require a remount to take effect — but only if they actually changed.
@@ -1878,6 +1902,8 @@ async fn read_fs_options_sysfs(uuid: &str) -> FilesystemOptions {
         verbose: None,
         fsck: None,
         journal_flush_disabled: None,
+        move_ios_in_flight: read_opt_u32(&base, "move_ios_in_flight").await,
+        move_bytes_in_flight: read_opt(&base, "move_bytes_in_flight").await,
     }
 }
 

@@ -60,6 +60,10 @@
 	let showAddPartitions = $state(false);
 	let editErasureCode = $state(false);
 	let editVersionUpgrade = $state('');
+	let editDataReplicas = $state(1);
+	let editMetadataReplicas = $state(1);
+	let editMoveIos = $state(32);
+	let editMoveBytes = $state('');
 	let unlockFs: string | null = $state(null);
 	let unlockPassphrase = $state('');
 	let editDegraded = $state(false);
@@ -481,6 +485,10 @@
 		editBgCompression = fs.options.background_compression ?? '';
 	editErasureCode = fs.options.erasure_code ?? false;
 		editVersionUpgrade = fs.options.version_upgrade ?? '';
+		editDataReplicas = fs.options.data_replicas ?? 1;
+		editMetadataReplicas = fs.options.metadata_replicas ?? 1;
+		editMoveIos = fs.options.move_ios_in_flight ?? 32;
+		editMoveBytes = fs.options.move_bytes_in_flight ?? '';
 		editDegraded = fs.options.degraded ?? false;
 		editVerbose = fs.options.verbose ?? false;
 		editFsck = fs.options.fsck ?? false;
@@ -506,6 +514,10 @@
 				compression: editCompression || 'none',
 				background_compression: editBgCompression || 'none',
 				erasure_code: editErasureCode,
+				data_replicas: editDataReplicas,
+				metadata_replicas: editMetadataReplicas,
+				move_ios_in_flight: editMoveIos,
+				move_bytes_in_flight: editMoveBytes || undefined,
 				version_upgrade: editVersionUpgrade || undefined,
 				degraded: editDegraded || undefined,
 				verbose: editVerbose || undefined,
@@ -1184,6 +1196,24 @@
 								<option value="incompatible">Incompatible</option>
 							</select>
 							<p class="mt-0.5 text-[0.65rem] text-muted-foreground">Requires remount</p>
+						</div>
+					</div>
+					<div class="mt-3 flex flex-wrap gap-4">
+						<div>
+							<label for="edit-data-replicas-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Data Replicas</label>
+							<input id="edit-data-replicas-{fs.name}" type="number" min="1" max="4" bind:value={editDataReplicas} class="h-9 w-20 rounded-md border border-input bg-transparent px-3 text-sm" />
+						</div>
+						<div>
+							<label for="edit-meta-replicas-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Metadata Replicas</label>
+							<input id="edit-meta-replicas-{fs.name}" type="number" min="1" max="4" bind:value={editMetadataReplicas} class="h-9 w-20 rounded-md border border-input bg-transparent px-3 text-sm" />
+						</div>
+						<div>
+							<label for="edit-move-ios-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Mover IOs in Flight</label>
+							<input id="edit-move-ios-{fs.name}" type="number" min="1" max="256" bind:value={editMoveIos} class="h-9 w-20 rounded-md border border-input bg-transparent px-3 text-sm" />
+						</div>
+						<div>
+							<label for="edit-move-bytes-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Mover Bytes in Flight</label>
+							<input id="edit-move-bytes-{fs.name}" type="text" placeholder="e.g. 8.0M" bind:value={editMoveBytes} class="h-9 w-24 rounded-md border border-input bg-transparent px-3 text-sm" />
 						</div>
 					</div>
 					<div class="mt-3 flex flex-wrap gap-4">
