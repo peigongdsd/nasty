@@ -948,6 +948,7 @@ dependencies = [
 name = "nasty-system"
 version = "0.0.2"
 dependencies = [
+ "base64",
  "libc",
  "nasty-common",
  "reqwest",

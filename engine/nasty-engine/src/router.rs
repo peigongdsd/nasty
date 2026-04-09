@@ -121,6 +121,7 @@ fn is_read_only(method: &str) -> bool {
                 | "system.reboot_required"
                 | "system.generations.list"
                 | "system.version.get"
+                | "system.version.tagged_release_notice"
                 | "system.log.level"
                 | "system.settings.timezones"
         )
@@ -452,6 +453,21 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
         },
+        "system.version.tagged_release_notice" => {
+            match state.updates.version_tagged_release_status().await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            }
+        }
+        "system.version.upgrade_tagged_release" => {
+            match state.updates.upgrade_tagged_release().await {
+                Ok(()) => {
+                    state.system.invalidate_bcachefs_cache().await;
+                    ok(req, serde_json::json!({"status": "started"}))
+                }
+                Err(e) => err(req, e),
+            }
+        }
         "system.version.cleanup" => match state.updates.version_cleanup().await {
             Ok(()) => ok(req, "ok"),
             Err(e) => err(req, e),

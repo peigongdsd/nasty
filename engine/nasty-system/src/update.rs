@@ -1,8 +1,10 @@
+use base64::Engine as _;
 use rnix::ast::{self};
 use rowan::ast::AstNode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 use thiserror::Error;
 use tracing::info;
 
@@ -20,7 +22,9 @@ const GC_CONFIG_PATH: &str = "/var/lib/nasty/gc-config.json";
 const VERSION_SWITCH_BACKUP_DIR: &str = "/var/lib/nasty/etc-nixos-backup";
 const DEFAULT_NASTY_OWNER: &str = "nasty-project";
 const DEFAULT_NASTY_REPO: &str = "nasty";
+const DEFAULT_NASTY_REF: &str = "main";
 const VERSION_INPUT_NAMES: [&str; 3] = ["nixpkgs", "bcachefs-tools", "nasty"];
+const SYSTEM_FLAKE_TEMPLATE_PATH: &str = "nixos/system-flake/flake.nix.template";
 
 // ── Garbage collection config ────────────────────────────────────
 
@@ -176,6 +180,24 @@ pub struct VersionInfo {
     pub inputs: Vec<VersionInputInfo>,
 }
 
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct VersionTaggedReleaseStatus {
+    /// Exact current `nasty.url` string from `/etc/nixos/flake.nix`.
+    pub current_url: String,
+    /// Latest official NASty release tag available upstream.
+    pub latest_tag: String,
+    /// Standard shorthand URL for the latest official tagged release.
+    pub latest_url: String,
+    /// True when `nasty.url` already matches the newest official tagged release.
+    pub current_is_latest_standard_url: bool,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct BootstrapSystemFlakeResult {
+    /// Path of the written flake.nix.
+    pub flake_path: String,
+}
+
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct VersionSwitchInput {
     /// Flake input name.
@@ -323,6 +345,148 @@ impl UpdateService {
         }
 
         Ok(VersionInfo { inputs })
+    }
+
+    /// Return the latest official tagged release and whether the current
+    /// `nasty.url` already matches its standard GitHub shorthand form.
+    pub async fn version_tagged_release_status(
+        &self,
+    ) -> Result<VersionTaggedReleaseStatus, UpdateError> {
+        let urls = read_flake_input_urls().await?;
+        let current_url = urls.get("nasty").cloned().ok_or_else(|| {
+            UpdateError::CommandFailed(format!("missing nasty.url in {NIXOS_FLAKE_DIR}/flake.nix"))
+        })?;
+        let latest_tag = latest_official_nasty_release_tag().await?;
+        let latest_url = official_nasty_release_url(&latest_tag);
+
+        Ok(VersionTaggedReleaseStatus {
+            current_is_latest_standard_url: current_url.trim() == latest_url,
+            current_url,
+            latest_tag,
+            latest_url,
+        })
+    }
+
+    /// Bootstrap `/etc/nixos/flake.nix` from the latest official tagged
+    /// release's wrapper-flake template, then run a switch rebuild.
+    pub async fn upgrade_tagged_release(&self) -> Result<(), UpdateError> {
+        let update_status = self.status().await;
+        if update_status.state == "running" {
+            return Err(UpdateError::AlreadyRunning);
+        }
+
+        self.purge_stale_version_backup().await?;
+
+        let release_status = self.version_tagged_release_status().await?;
+        if release_status.current_is_latest_standard_url {
+            return Err(UpdateError::CommandFailed(
+                "system already tracks the newest official tagged NASty release".to_string(),
+            ));
+        }
+
+        let local_system = detect_local_system().await?;
+        let token = read_github_token().await;
+        let template = fetch_github_text_file(
+            token.as_deref(),
+            DEFAULT_NASTY_OWNER,
+            DEFAULT_NASTY_REPO,
+            SYSTEM_FLAKE_TEMPLATE_PATH,
+            &release_status.latest_tag,
+        )
+        .await?;
+        let bootstrapped_flake =
+            render_system_flake_template(&template, &release_status.latest_url, &local_system)?;
+
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["reset-failed", UPDATE_UNIT])
+            .output()
+            .await;
+        let _ = tokio::process::Command::new("systemctl")
+            .args(["stop", UPDATE_UNIT])
+            .output()
+            .await;
+
+        let flake_temp_path = "/tmp/nasty-upgrade-flake.nix";
+        tokio::fs::write(flake_temp_path, &bootstrapped_flake)
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("write {flake_temp_path}: {e}")))?;
+
+        let local_flake = local_flake();
+        let script = format!(
+            r#"#!/bin/bash
+set -euo pipefail
+export PATH="/run/current-system/sw/bin:$PATH"
+_nginx_conf() {{
+    grep -o "/nix/store/[^' ]*nginx\.conf" \
+        /run/current-system/etc/systemd/system/nginx.service 2>/dev/null | head -1 || true
+}}
+_NGINX_CONF_BEFORE=$(_nginx_conf)
+WEBUI_BEFORE=$([ -n "$_NGINX_CONF_BEFORE" ] && grep 'nasty-webui' "$_NGINX_CONF_BEFORE" 2>/dev/null | head -1 || echo "")
+echo "false" > {UPDATE_WEBUI_CHANGED}
+
+echo "==> Updating local system flake..."
+cd {NIXOS_FLAKE_DIR}
+cp {flake_temp_path} flake.nix
+nix flake update nixpkgs
+nix flake update bcachefs-tools
+nix flake update nasty
+
+echo "==> Rebuilding system..."
+NIXOS_INSTALL_BOOTLOADER=0 nixos-rebuild switch --flake {local_flake}
+
+_NGINX_CONF_AFTER=$(_nginx_conf)
+WEBUI_AFTER=$([ -n "$_NGINX_CONF_AFTER" ] && grep 'nasty-webui' "$_NGINX_CONF_AFTER" 2>/dev/null | head -1 || echo "")
+if [ -n "$WEBUI_BEFORE" ] && [ "$WEBUI_BEFORE" != "$WEBUI_AFTER" ]; then
+    echo "true" > {UPDATE_WEBUI_CHANGED}
+fi
+
+echo "{latest_tag}" > {VERSION_PATH}
+echo "==> Update complete!"
+"#,
+            latest_tag = release_status.latest_tag,
+        );
+
+        let script_path = "/tmp/nasty-upgrade-tagged-release.sh";
+        tokio::fs::write(script_path, &script).await.map_err(|e| {
+            UpdateError::CommandFailed(format!(
+                "failed to write tagged release upgrade script: {e}"
+            ))
+        })?;
+
+        let path = std::env::var("PATH").unwrap_or_default();
+        let output = tokio::process::Command::new("systemd-run")
+            .args([
+                "--unit",
+                UPDATE_UNIT,
+                "--no-block",
+                "--description",
+                "NASty tagged release upgrade",
+                "--property=Type=oneshot",
+                "--property=StandardOutput=journal",
+                "--property=StandardError=journal",
+                "--setenv",
+                &format!("PATH={path}"),
+                "--",
+                "bash",
+                script_path,
+            ])
+            .output()
+            .await
+            .map_err(|e| UpdateError::CommandFailed(format!("systemd-run: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(UpdateError::CommandFailed(format!(
+                "failed to start tagged release upgrade: {stderr}"
+            )));
+        }
+
+        info!(
+            "Tagged release upgrade started: {} -> {}",
+            release_status.current_url.trim(),
+            release_status.latest_tag
+        );
+        Ok(())
     }
 
     /// Legacy endpoint kept for compatibility with older web UIs.
@@ -1163,16 +1327,161 @@ async fn check_latest_tag(
     let stdout = String::from_utf8_lossy(&output.stdout);
     // First line is the latest tag (sorted by version descending)
     // Format: "sha\trefs/tags/v0.0.1"
-    if let Some(line) = stdout.lines().next() {
+    for line in stdout.lines() {
         if let Some(tag_ref) = line.split('\t').nth(1) {
-            let tag = tag_ref.strip_prefix("refs/tags/").unwrap_or(tag_ref);
-            return Ok(tag.to_string());
+            let tag = normalize_git_tag_ref(tag_ref);
+            if !tag.is_empty() {
+                return Ok(tag.to_string());
+            }
         }
     }
 
     Err(UpdateError::CommandFailed(format!(
         "no tags matching '{pattern}' found"
     )))
+}
+
+async fn latest_official_nasty_release_tag() -> Result<String, UpdateError> {
+    let token = read_github_token().await;
+    let latest_tag = tokio::time::timeout(
+        Duration::from_secs(60),
+        check_latest_tag(
+            token.as_deref(),
+            DEFAULT_NASTY_OWNER,
+            DEFAULT_NASTY_REPO,
+            "v*",
+        ),
+    )
+    .await
+    .map_err(|_| UpdateError::CommandFailed("timed out fetching latest tagged release".into()))??;
+
+    if parse_release_tag_version(&latest_tag).is_none() {
+        return Err(UpdateError::CommandFailed(format!(
+            "latest official tagged release is not a semantic vX.Y.Z tag: {latest_tag}"
+        )));
+    }
+
+    Ok(latest_tag)
+}
+
+pub async fn bootstrap_system_flake_from_template_path(
+    template_path: &str,
+    dest_dir: &str,
+    nasty_url: &str,
+    local_system: &str,
+) -> Result<BootstrapSystemFlakeResult, UpdateError> {
+    let template = tokio::fs::read_to_string(template_path)
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("read {template_path}: {e}")))?;
+    bootstrap_system_flake_from_template(&template, dest_dir, nasty_url, local_system).await
+}
+
+pub async fn bootstrap_system_flake_from_template(
+    template: &str,
+    dest_dir: &str,
+    nasty_url: &str,
+    local_system: &str,
+) -> Result<BootstrapSystemFlakeResult, UpdateError> {
+    let rendered = render_system_flake_template(template, nasty_url, local_system)?;
+    tokio::fs::create_dir_all(dest_dir)
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("mkdir {dest_dir}: {e}")))?;
+    let flake_path = format!("{dest_dir}/flake.nix");
+    tokio::fs::write(&flake_path, rendered)
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("write {flake_path}: {e}")))?;
+    Ok(BootstrapSystemFlakeResult { flake_path })
+}
+
+fn render_system_flake_template(
+    template: &str,
+    nasty_url: &str,
+    local_system: &str,
+) -> Result<String, UpdateError> {
+    if !template.contains("@NASTY_URL@") {
+        return Err(UpdateError::CommandFailed(
+            "system flake template is missing @NASTY_URL@ placeholder".into(),
+        ));
+    }
+    if !template.contains("\"local-system\"") {
+        return Err(UpdateError::CommandFailed(
+            "system flake template is missing \"local-system\" placeholder".into(),
+        ));
+    }
+
+    Ok(template
+        .replace("@NASTY_URL@", nasty_url)
+        .replace("\"local-system\"", &format!("\"{local_system}\"")))
+}
+
+async fn detect_local_system() -> Result<String, UpdateError> {
+    let output = tokio::process::Command::new("nix")
+        .args([
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "eval",
+            "--impure",
+            "--raw",
+            "--expr",
+            "builtins.currentSystem",
+        ])
+        .output()
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("detect local system: {e}")))?;
+
+    if !output.status.success() {
+        return Err(UpdateError::CommandFailed(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        ));
+    }
+
+    let system = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if system.is_empty() {
+        return Err(UpdateError::CommandFailed(
+            "failed to detect local system identifier".into(),
+        ));
+    }
+    Ok(system)
+}
+
+async fn fetch_github_text_file(
+    token: Option<&str>,
+    owner: &str,
+    repo: &str,
+    path: &str,
+    git_ref: &str,
+) -> Result<String, UpdateError> {
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={git_ref}");
+    let mut req = reqwest::Client::new()
+        .get(&url)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "nasty-engine");
+    if let Some(token) = token.filter(|t| !t.is_empty()) {
+        req = req.header("Authorization", format!("Bearer {token}"));
+    }
+    let body: serde_json::Value = req
+        .send()
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("GitHub API request failed: {e}")))?
+        .json()
+        .await
+        .map_err(|e| UpdateError::CommandFailed(format!("failed to parse GitHub response: {e}")))?;
+
+    let encoding = body["encoding"].as_str().unwrap_or_default();
+    let content = body["content"].as_str().ok_or_else(|| {
+        UpdateError::CommandFailed("missing file content in GitHub response".into())
+    })?;
+    if encoding != "base64" {
+        return Err(UpdateError::CommandFailed(format!(
+            "unsupported GitHub content encoding: {encoding}"
+        )));
+    }
+    let normalized = content.replace('\n', "");
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(normalized)
+        .map_err(|e| UpdateError::CommandFailed(format!("failed to decode GitHub file: {e}")))?;
+    String::from_utf8(decoded)
+        .map_err(|e| UpdateError::CommandFailed(format!("GitHub file is not valid UTF-8: {e}")))
 }
 
 /// Check latest commit on a branch via GitHub API.
@@ -1488,7 +1797,7 @@ async fn read_nasty_input_source() -> NastyInputSource {
             return NastyInputSource {
                 owner: DEFAULT_NASTY_OWNER.to_string(),
                 repo: DEFAULT_NASTY_REPO.to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: DEFAULT_NASTY_REF.to_string(),
             };
         }
     };
@@ -1498,7 +1807,7 @@ async fn read_nasty_input_source() -> NastyInputSource {
             return NastyInputSource {
                 owner: DEFAULT_NASTY_OWNER.to_string(),
                 repo: DEFAULT_NASTY_REPO.to_string(),
-                tracked_ref: "main".to_string(),
+                tracked_ref: DEFAULT_NASTY_REF.to_string(),
             };
         }
     };
@@ -1516,13 +1825,54 @@ async fn read_nasty_input_source() -> NastyInputSource {
     let tracked_ref = node["original"]["ref"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .unwrap_or("main")
+        .unwrap_or(DEFAULT_NASTY_REF)
         .to_string();
     NastyInputSource {
         owner,
         repo,
         tracked_ref,
     }
+}
+
+fn normalize_git_tag_ref(tag_ref: &str) -> &str {
+    tag_ref
+        .strip_prefix("refs/tags/")
+        .unwrap_or(tag_ref)
+        .strip_suffix("^{}")
+        .unwrap_or_else(|| tag_ref.strip_prefix("refs/tags/").unwrap_or(tag_ref))
+}
+
+fn official_nasty_release_url(tag: &str) -> String {
+    format!("github:{DEFAULT_NASTY_OWNER}/{DEFAULT_NASTY_REPO}/{tag}")
+}
+
+#[cfg(test)]
+fn parse_official_nasty_release_tag(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    let rest = trimmed.strip_prefix("github:")?;
+    let mut parts = rest.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    let git_ref = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    if owner != DEFAULT_NASTY_OWNER || repo != DEFAULT_NASTY_REPO {
+        return None;
+    }
+    parse_release_tag_version(git_ref).map(|_| git_ref.to_string())
+}
+
+fn parse_release_tag_version(tag: &str) -> Option<(u64, u64, u64)> {
+    let raw = tag.strip_prefix('v')?;
+    let mut parts = raw.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
 }
 
 async fn read_locked_nasty_version() -> Option<String> {
@@ -1551,4 +1901,65 @@ async fn read_flake_lock_bcachefs() -> (Option<String>, Option<String>) {
         .as_str()
         .map(|s| s[..s.len().min(12)].to_string()); // short rev, 12 chars
     (pinned_ref, pinned_rev)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        normalize_git_tag_ref, parse_official_nasty_release_tag, parse_release_tag_version,
+    };
+
+    #[test]
+    fn normalizes_annotated_git_tag_refs() {
+        assert_eq!(normalize_git_tag_ref("refs/tags/v0.0.3^{}"), "v0.0.3");
+        assert_eq!(normalize_git_tag_ref("refs/tags/v0.0.3"), "v0.0.3");
+    }
+
+    #[test]
+    fn parses_only_official_release_tags() {
+        assert_eq!(
+            parse_official_nasty_release_tag("github:nasty-project/nasty/v0.0.2"),
+            Some("v0.0.2".to_string())
+        );
+        assert_eq!(
+            parse_official_nasty_release_tag("github:nasty-project/nasty/main"),
+            None
+        );
+        assert_eq!(
+            parse_official_nasty_release_tag("github:someone-else/nasty/v0.0.2"),
+            None
+        );
+        assert_eq!(
+            parse_official_nasty_release_tag("github:nasty-project/nasty/v0.0.2-rc1"),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_semver_release_tags() {
+        assert_eq!(parse_release_tag_version("v1.2.3"), Some((1, 2, 3)));
+        assert_eq!(parse_release_tag_version("v1.2"), None);
+        assert_eq!(parse_release_tag_version("main"), None);
+    }
+
+    #[test]
+    fn renders_system_flake_template() {
+        let template = r#"
+inputs = { nasty.url = "@NASTY_URL@"; };
+"#
+        .to_string()
+            + r#"
+outputs = { nixpkgs, nasty, ... }: {
+  nixosConfigurations.nasty = nixpkgs.lib.nixosSystem { system = "local-system"; };
+};
+"#;
+        let rendered = super::render_system_flake_template(
+            &template,
+            "github:nasty-project/nasty/v0.0.3",
+            "x86_64-linux",
+        )
+        .expect("rendered");
+        assert!(rendered.contains("github:nasty-project/nasty/v0.0.3"));
+        assert!(rendered.contains("\"x86_64-linux\""));
+    }
 }

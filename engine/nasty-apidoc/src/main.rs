@@ -113,7 +113,7 @@ use nasty_system::network::NetworkConfig;
 use nasty_system::protocol::ProtocolStatus;
 use nasty_system::settings::{Settings, SettingsUpdate};
 use nasty_system::update::{
-    UpdateInfo, UpdateStatus, VersionInfo, VersionSwitchRequest,
+    UpdateInfo, UpdateStatus, VersionInfo, VersionSwitchRequest, VersionTaggedReleaseStatus,
 };
 use nasty_system::{DiskHealth, SystemHealth, SystemInfo, SystemStats};
 
@@ -310,6 +310,20 @@ fn methods(generator: &mut SchemaGenerator) -> Vec<(&'static str, Vec<Method>)> 
                     role: "any",
                     params: MethodParams::None,
                     result: Some(gen_schema::<VersionInfo>(generator)),
+                },
+                Method {
+                    name: "system.version.tagged_release_notice",
+                    desc: "Return the latest official tagged release and whether the current `nasty.url` already matches its standard `github:nasty-project/nasty/vX.Y.Z` form.",
+                    role: "any",
+                    params: MethodParams::None,
+                    result: Some(gen_schema::<VersionTaggedReleaseStatus>(generator)),
+                },
+                Method {
+                    name: "system.version.upgrade_tagged_release",
+                    desc: "Bootstrap a new wrapper `flake.nix` from the latest official tagged release template and start a switch rebuild.",
+                    role: "admin",
+                    params: MethodParams::None,
+                    result: None,
                 },
                 Method {
                     name: "system.version.switch",

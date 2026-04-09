@@ -9,12 +9,13 @@
 		Generation,
 		FirmwareDevice,
 		FirmwareUpdateResult,
-		VersionInfo
+		VersionInfo,
+		VersionTaggedReleaseStatus
 	} from '$lib/types';
-	import { Tag, Trash2, ArrowRightLeft, X, Check } from '@lucide/svelte';
+	import { Tag, Trash2, ArrowRightLeft, X, Check, ChevronDown, ChevronRight } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Input } from '$lib/components/ui/input';
 	import { refreshState } from '$lib/refresh.svelte';
 	import { rebootState } from '$lib/reboot.svelte';
@@ -30,7 +31,14 @@
 		initialRev: string | null;
 	};
 
+	type TaggedReleaseBannerState =
+		| { kind: 'loading' }
+		| { kind: 'switching' }
+		| { kind: 'failure' }
+		| ({ kind: 'ready' } & VersionTaggedReleaseStatus);
+
 	const client = getClient();
+	const VERSION_PAGE_ACTION_KEY = 'nasty.version-page.action';
 
 	let activeTab: Tab = $state(
 		typeof window !== 'undefined' && window.location.hash === '#generations' ? 'generations'
@@ -39,14 +47,17 @@
 	);
 
 	let info: UpdateInfo | null = $state(null);
-	let versionInfo: VersionInfo | null = $state(null);
+	let taggedReleaseBanner: TaggedReleaseBannerState = $state({ kind: 'loading' });
 	let versionRows: VersionRow[] = $state([]);
 	let status: UpdateStatus | null = $state(null);
 	let loading = $state(true);
 	let startingSwitch = $state(false);
+	let startingUpgrade = $state(false);
+	let upstreamExpanded = $state(false);
 	let pollInterval: ReturnType<typeof setInterval> | null = null;
 	let logEl: HTMLPreElement | undefined = $state();
 	let logCollapsed = $state(true);
+	let taggedReleaseBannerRequestId = 0;
 
 	let generations: Generation[] = $state([]);
 	let generationsLoading = $state(false);
@@ -94,6 +105,10 @@
 
 	const versionDirty = $derived.by(() =>
 		versionRows.some((row) => row.url.trim() !== row.initialUrl || row.update)
+	);
+
+	const upstreamBusy = $derived.by(() =>
+		startingSwitch || startingUpgrade || status?.state === 'running'
 	);
 
 	const versionSelectionCount = $derived.by(() =>
@@ -188,21 +203,68 @@
 		if (tab === 'firmware' && !firmwareLoaded) void loadFirmware();
 	}
 
+	function readVersionPageAction(): string | null {
+		if (typeof window === 'undefined') return null;
+		return window.sessionStorage.getItem(VERSION_PAGE_ACTION_KEY);
+	}
+
+	function writeVersionPageAction(action: string | null) {
+		if (typeof window === 'undefined') return;
+		if (action) {
+			window.sessionStorage.setItem(VERSION_PAGE_ACTION_KEY, action);
+		} else {
+			window.sessionStorage.removeItem(VERSION_PAGE_ACTION_KEY);
+		}
+	}
+
 	async function loadVersionPage() {
 		await withToast(async () => {
 			const [nextInfo, nextVersion] = await Promise.all([
 				client.call<VersionInfo>('system.version.get'),
 				client.call<UpdateInfo>('system.update.version')
 			]);
-			versionInfo = nextInfo;
 			info = nextVersion;
 			syncVersionRows(nextInfo);
+			if (readVersionPageAction() === 'version-switch') {
+				taggedReleaseBanner = { kind: 'switching' };
+			} else {
+				void loadTaggedReleaseBanner();
+			}
 		});
+	}
+
+	async function loadTaggedReleaseBanner() {
+		if (readVersionPageAction() === 'version-switch') {
+			taggedReleaseBanner = { kind: 'switching' };
+			return;
+		}
+		const requestId = ++taggedReleaseBannerRequestId;
+		taggedReleaseBanner = { kind: 'loading' };
+		try {
+			const releaseStatus = await client.call<VersionTaggedReleaseStatus>(
+				'system.version.tagged_release_notice'
+			);
+			if (requestId === taggedReleaseBannerRequestId) {
+				taggedReleaseBanner = { kind: 'ready', ...releaseStatus };
+			}
+		} catch {
+			if (requestId === taggedReleaseBannerRequestId) {
+				taggedReleaseBanner = { kind: 'failure' };
+			}
+		}
 	}
 
 	async function loadStatus() {
 		await withToast(async () => {
 			status = await client.call<UpdateStatus>('system.update.status');
+			if (readVersionPageAction() === 'version-switch') {
+				if (status?.state === 'running') {
+					taggedReleaseBanner = { kind: 'switching' };
+				} else {
+					writeVersionPageAction(null);
+					void loadTaggedReleaseBanner();
+				}
+			}
 			if (status?.state === 'running') startPolling();
 		});
 	}
@@ -226,6 +288,8 @@
 
 	async function doVersionSwitch() {
 		startingSwitch = true;
+		writeVersionPageAction('version-switch');
+		taggedReleaseBanner = { kind: 'switching' };
 		logCollapsed = false;
 		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
 		const result = await withToast(
@@ -240,19 +304,42 @@
 		);
 		if (result !== undefined) {
 			startPolling();
+		} else {
+			writeVersionPageAction(null);
+			void loadTaggedReleaseBanner();
 		}
 		startingSwitch = false;
+	}
+
+	async function upgradeTaggedRelease() {
+		if (taggedReleaseBanner.kind !== 'ready' || taggedReleaseBanner.current_is_latest_standard_url) return;
+		startingUpgrade = true;
+		logCollapsed = false;
+		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
+		const result = await withToast(
+			() => client.call('system.version.upgrade_tagged_release'),
+			'Tagged release upgrade started'
+		);
+		if (result !== undefined) {
+			startPolling();
+		} else {
+			await loadVersionPage();
+		}
+		startingUpgrade = false;
 	}
 
 	function startPolling() {
 		stopPolling();
 		pollInterval = setInterval(async () => {
 			try {
-				status = await client.call<UpdateStatus>('system.update.status');
-				if (status && (status.state === 'success' || status.state === 'failed')) {
-					stopPolling();
-					await loadVersionPage();
-					if (status.state === 'success') {
+					status = await client.call<UpdateStatus>('system.update.status');
+					if (status && (status.state === 'success' || status.state === 'failed')) {
+						if (readVersionPageAction() === 'version-switch') {
+							writeVersionPageAction(null);
+						}
+						stopPolling();
+						await loadVersionPage();
+						if (status.state === 'success') {
 						if (status.webui_changed) refreshState.set();
 						if (status.reboot_required) rebootState.set();
 						setTimeout(() => { logCollapsed = true; }, 3000);
@@ -388,69 +475,126 @@
 		>Firmware</button>
 	</div>
 
-		{#if activeTab === 'version'}
-			<Card class="mb-6">
-				<CardHeader>
-					<CardTitle>Upstream</CardTitle>
-				</CardHeader>
-				<CardContent class="space-y-4">
-				{#if info}
-					<div class="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-sm">
-						<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed NASty</div>
-						<div class="mt-1 font-mono text-lg font-semibold">{info.current_version}</div>
+	{#if activeTab === 'version'}
+		<Card class="mb-6">
+			<CardContent class="space-y-4 pt-6">
+				<div
+					class="rounded-lg border px-4 py-4 text-sm {taggedReleaseBanner.kind === 'failure'
+						? 'border-amber-500/40 bg-amber-500/10'
+						: taggedReleaseBanner.kind === 'ready' && !taggedReleaseBanner.current_is_latest_standard_url
+							? 'border-emerald-500/40 bg-emerald-500/10'
+							: 'border-border/60 bg-muted/20'}"
+				>
+					<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+						<div class="min-w-0 flex-1">
+							<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tagged Release</div>
+							{#if taggedReleaseBanner.kind === 'loading'}
+								<div class="mt-1 font-medium">Fetching newest version...</div>
+							{:else if taggedReleaseBanner.kind === 'switching'}
+								<div class="mt-1 font-medium">Switching to another Version...</div>
+							{:else if taggedReleaseBanner.kind === 'failure'}
+								<div class="mt-1 font-medium">Network failure, unable to fetch newest tagged release</div>
+							{:else if taggedReleaseBanner.current_is_latest_standard_url}
+								<div class="mt-1 font-medium">Already at newest tagged release</div>
+								<div class="mt-1 text-xs text-muted-foreground">
+									<code class="font-mono">{taggedReleaseBanner.latest_tag}</code>
+								</div>
+							{:else}
+								<div class="mt-1 font-medium">
+									The newest tagged release is {taggedReleaseBanner.latest_tag}, click to switch
+								</div>
+								<div class="mt-1 text-xs text-muted-foreground">
+									<code class="font-mono">{taggedReleaseBanner.latest_url}</code>
+								</div>
+							{/if}
+						</div>
+						<div class="flex flex-wrap items-start justify-end gap-3">
+							{#if info}
+								<div class="min-w-[11rem] rounded-lg border border-border/60 bg-background/60 px-4 py-3 text-sm">
+									<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed NASty</div>
+									<div class="mt-1 font-mono text-lg font-semibold">{info.current_version}</div>
+								</div>
+							{/if}
+							{#if taggedReleaseBanner.kind === 'ready' && !taggedReleaseBanner.current_is_latest_standard_url}
+								<Button size="sm" onclick={upgradeTaggedRelease} disabled={startingUpgrade || status?.state === 'running'}>
+									{startingUpgrade ? 'Starting...' : 'Upgrade'}
+								</Button>
+							{/if}
+						</div>
 					</div>
-				{/if}
+				</div>
 
-				<div class="space-y-3">
-					{#each versionRows as row}
-						<div class="rounded-lg border border-border/60 p-4">
-							<div class="mb-2 flex items-center justify-between gap-3">
-								<div class="font-medium">{row.label}</div>
-								<div class="flex items-center gap-2 text-xs">
-									<span class="text-muted-foreground">locked</span>
-									<Badge variant="secondary" class="font-mono">{row.rev ?? 'unknown'}</Badge>
-								</div>
-							</div>
-							<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-								<div class="flex-1">
-									<Input
-										bind:value={row.url}
-										disabled={startingSwitch || status?.state === 'running'}
-										class="font-mono text-sm"
-									/>
-								</div>
-									<label class="flex items-center gap-2 text-sm text-muted-foreground lg:w-28 lg:justify-end">
-										<input
-											type="checkbox"
-											checked={row.update || isForcedVersionUpdate(row)}
-											disabled={startingSwitch || status?.state === 'running' || isForcedVersionUpdate(row)}
-											onchange={(event) => {
-												row.update = (event.currentTarget as HTMLInputElement).checked;
-											}}
-											class="h-4 w-4 rounded border-input"
-										/>
-										<span>Update</span>
-									</label>
-								</div>
-							</div>
-						{/each}
-					</div>
-
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<p class="text-xs text-muted-foreground">
-						{#if versionSelectionCount > 0}
-							{versionSelectionCount} input{versionSelectionCount === 1 ? '' : 's'} selected for refresh.
-						{:else}
-							No refresh selected yet.
-						{/if}
-					</p>
-					<Button
-						size="sm"
-						onclick={requestVersionSwitch}
-						disabled={!versionDirty || startingSwitch || status?.state === 'running'}
+				<div class="rounded-lg border border-border/60">
+					<button
+						onclick={() => { upstreamExpanded = !upstreamExpanded; }}
+						class="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/20"
 					>
-						{startingSwitch ? 'Starting...' : 'Switch'}
-					</Button>
+						{#if upstreamExpanded}
+							<ChevronDown class="h-4 w-4 shrink-0 text-muted-foreground" />
+						{:else}
+							<ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground" />
+						{/if}
+						<div class="flex-1">
+							<div class="font-medium">Upstream</div>
+							<div class="text-xs text-muted-foreground">Edit live flake input URLs and rebuild from /etc/nixos.</div>
+						</div>
+					</button>
+
+					{#if upstreamExpanded}
+						<div class="space-y-4 border-t border-border/60 p-4 {upstreamBusy ? 'pointer-events-none opacity-50' : ''}">
+							<div class="space-y-3">
+								{#each versionRows as row}
+									<div class="rounded-lg border border-border/60 p-4">
+										<div class="mb-2 flex items-center justify-between gap-3">
+											<div class="font-medium">{row.label}</div>
+											<div class="flex items-center gap-2 text-xs">
+												<span class="text-muted-foreground">locked</span>
+												<Badge variant="secondary" class="font-mono">{row.rev ?? 'unknown'}</Badge>
+											</div>
+										</div>
+										<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+											<div class="flex-1">
+												<Input
+													bind:value={row.url}
+													disabled={startingSwitch || status?.state === 'running'}
+													class="font-mono text-sm"
+												/>
+											</div>
+											<label class="flex items-center gap-2 text-sm text-muted-foreground lg:w-28 lg:justify-end">
+												<input
+													type="checkbox"
+													checked={row.update || isForcedVersionUpdate(row)}
+													disabled={startingSwitch || status?.state === 'running' || isForcedVersionUpdate(row)}
+													onchange={(event) => {
+														row.update = (event.currentTarget as HTMLInputElement).checked;
+													}}
+													class="h-4 w-4 rounded border-input"
+												/>
+												<span>Update</span>
+											</label>
+										</div>
+									</div>
+								{/each}
+							</div>
+
+							<div class="flex flex-wrap items-center justify-between gap-3">
+								<p class="text-xs text-muted-foreground">
+									{#if versionSelectionCount > 0}
+										{versionSelectionCount} input{versionSelectionCount === 1 ? '' : 's'} selected for refresh.
+									{:else}
+										No refresh selected yet.
+									{/if}
+								</p>
+								<Button
+									size="sm"
+									onclick={requestVersionSwitch}
+									disabled={!versionDirty || startingSwitch || status?.state === 'running'}
+								>
+									{startingSwitch ? 'Starting...' : 'Switch'}
+								</Button>
+							</div>
+						</div>
+					{/if}
 				</div>
 			</CardContent>
 		</Card>

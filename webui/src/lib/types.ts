@@ -365,6 +365,13 @@ export interface VersionInfo {
 	inputs: VersionInputInfo[];
 }
 
+export interface VersionTaggedReleaseStatus {
+	current_url: string;
+	latest_tag: string;
+	latest_url: string;
+	current_is_latest_standard_url: boolean;
+}
+
 export interface Generation {
 	generation: number;
 	date: string;
