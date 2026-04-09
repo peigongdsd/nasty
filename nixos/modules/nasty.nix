@@ -335,9 +335,10 @@ in {
          bcachefs subvolume snapshot <src> <dst>
 
        I/O monitoring
-         iotop -o
+         iotop-c -o
          iostat -x 1
          dool -dny 1
+         btop                                       interactive CPU/mem/disk/net dashboard
          # → type 'debug' for perf profiling and kernel oops symbolization
          # → type 'benchmark' for fio storage tests
 
@@ -468,7 +469,7 @@ in {
       hdparm            # HDD spin-down, drive parameters
       lm_sensors        # CPU/drive temperature monitoring
       lsof              # open file debugging ("device busy")
-      iotop             # per-process I/O monitoring
+      iotop-c           # per-process I/O monitoring
       ethtool           # NIC speed, duplex, ring buffer tuning
       iperf3            # network throughput testing
       tcpdump           # packet capture for protocol debugging
@@ -577,7 +578,7 @@ in {
       # bcachefs debugging
       perf               # perf record/report/script
       fio               # storage benchmarking
-      iotop             # per-process I/O monitoring
+      iotop-c           # per-process I/O monitoring
       sysstat           # iostat, pidstat
       lsof              # open file handles
       strace            # syscall tracing

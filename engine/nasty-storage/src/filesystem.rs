@@ -25,6 +25,8 @@ pub enum FilesystemError {
     AlreadyExists(String),
     #[error("device {0} is already in use")]
     DeviceInUse(String),
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     #[error("no devices specified")]
     NoDevices,
     #[error("device not found: {0}")]
@@ -185,8 +187,8 @@ fn default_store_key() -> Option<bool> { Some(true) }
 pub struct DestroyFilesystemRequest {
     /// Name of the filesystem to destroy.
     pub name: String,
-    /// If true, wipe bcachefs superblocks from all member devices after unmounting.
-    pub force: Option<bool>,
+    /// Must match `name` exactly — guards against accidental destruction.
+    pub confirm_name: String,
 }
 
 /// Update runtime-mutable filesystem options on a mounted filesystem.
@@ -222,6 +224,10 @@ pub struct UpdateFilesystemOptionsRequest {
     pub fsck: Option<bool>,
     /// Disable journal flushing (unsafe, for benchmarking).
     pub journal_flush_disabled: Option<bool>,
+    /// Data checksum algorithm (`none`, `crc32c`, `crc64`, `xxhash`).
+    pub data_checksum: Option<String>,
+    /// Metadata checksum algorithm (`none`, `crc32c`, `crc64`, `xxhash`).
+    pub metadata_checksum: Option<String>,
     /// Number of data replicas.
     pub data_replicas: Option<u32>,
     /// Number of metadata replicas.
@@ -313,6 +319,8 @@ pub struct ScrubStatus {
 pub struct ReconcileStatus {
     /// Raw text output from the bcachefs reconcile status command.
     pub raw: String,
+    /// Whether reconcile is currently enabled on this filesystem.
+    pub enabled: bool,
 }
 
 /// How long a cached `list()` result stays valid.
@@ -564,6 +572,21 @@ impl FilesystemService {
         }
 
         if req.erasure_code == Some(true) {
+            if req.replicas < 2 {
+                return Err(FilesystemError::InvalidInput(
+                    "Erasure coding requires replicas >= 2 (data is written as replicas first, then converted to parity stripes)".to_string(),
+                ));
+            }
+            if req.devices.len() < (req.replicas as usize) + 1 {
+                return Err(FilesystemError::InvalidInput(
+                    format!(
+                        "Erasure coding with {} replicas requires at least {} devices (got {})",
+                        req.replicas,
+                        req.replicas + 1,
+                        req.devices.len(),
+                    ),
+                ));
+            }
             args.push("--erasure_code".to_string());
         }
 
@@ -615,9 +638,22 @@ impl FilesystemService {
             })?;
             // bcachefs format --encrypted reads passphrase twice from stdin (passphrase + confirm)
             let stdin = format!("{passphrase}\n{passphrase}\n");
-            cmd::run_ok_stdin("bcachefs", &arg_refs, stdin.as_bytes())
+            let output = cmd::run_stdin("bcachefs", &arg_refs, stdin.as_bytes())
                 .await
-                .map_err(FilesystemError::CommandFailed)?;
+                .map_err(|e| FilesystemError::CommandFailed(format!("failed to execute bcachefs: {e}")))?;
+
+            if !output.status.success() {
+                // bcachefs format writes superblocks then does a trial open that
+                // can race with udev, causing EBUSY on exit even though format
+                // succeeded.  Check if superblocks were actually written.
+                if !is_device_bcachefs(&req.devices[0].path).await {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(FilesystemError::CommandFailed(
+                        format!("bcachefs exited with {}: {stderr}", output.status),
+                    ));
+                }
+                warn!("bcachefs format exited with {} but superblocks are present, continuing", output.status);
+            }
 
             // Store key for auto-unlock (default: yes)
             if req.store_key != Some(false) {
@@ -627,9 +663,19 @@ impl FilesystemService {
                 info!("Encryption key stored at {key_path}");
             }
         } else {
-            cmd::run_ok("bcachefs", &arg_refs)
+            let output = cmd::run("bcachefs", &arg_refs)
                 .await
-                .map_err(FilesystemError::CommandFailed)?;
+                .map_err(|e| FilesystemError::CommandFailed(format!("failed to execute bcachefs: {e}")))?;
+
+            if !output.status.success() {
+                if !is_device_bcachefs(&req.devices[0].path).await {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(FilesystemError::CommandFailed(
+                        format!("bcachefs exited with {}: {stderr}", output.status),
+                    ));
+                }
+                warn!("bcachefs format exited with {} but superblocks are present, continuing", output.status);
+            }
         }
 
         // Create mount point
@@ -705,8 +751,14 @@ impl FilesystemService {
         })
     }
 
-    /// Unmount and optionally wipe a filesystem
+    /// Unmount and destroy a filesystem, wiping superblocks from all member devices.
     pub async fn destroy(&self, req: DestroyFilesystemRequest) -> Result<(), FilesystemError> {
+        if req.confirm_name != req.name {
+            return Err(FilesystemError::InvalidInput(
+                "confirmation name does not match filesystem name".into(),
+            ));
+        }
+
         let fs = self.get(&req.name).await?;
 
         // Unmount if mounted
@@ -724,14 +776,12 @@ impl FilesystemService {
 
         // Remove mount point directory if it exists
         let mount_dir = format!("{NASTY_MOUNT_BASE}/{}", req.name);
-        let _ = tokio::fs::remove_dir(&mount_dir).await;
+        let _ = tokio::fs::remove_dir_all(&mount_dir).await;
 
-        // If force, wipe the superblocks
-        if req.force == Some(true) {
-            for dev in &fs.devices {
-                info!("Wiping bcachefs superblock on {}", dev.path);
-                let _ = cmd::run_ok("wipefs", &["-a", &dev.path]).await;
-            }
+        // Wipe bcachefs superblocks from all member devices
+        for dev in &fs.devices {
+            info!("Wiping bcachefs superblock on {}", dev.path);
+            let _ = cmd::run_ok("wipefs", &["-a", &dev.path]).await;
         }
 
         self.invalidate_list_cache().await;
@@ -865,6 +915,12 @@ impl FilesystemService {
         }
         if let Some(ec) = req.erasure_code {
             write_opt(&base, "erasure_code", if ec { "1" } else { "0" }).await?;
+        }
+        if let Some(ref v) = req.data_checksum {
+            write_opt(&base, "data_checksum", v).await?;
+        }
+        if let Some(ref v) = req.metadata_checksum {
+            write_opt(&base, "metadata_checksum", v).await?;
         }
         if let Some(v) = req.data_replicas {
             write_opt(&base, "data_replicas", &v.to_string()).await?;
@@ -1480,7 +1536,34 @@ impl FilesystemService {
             .await
             .unwrap_or_else(|_| "No reconcile data available".to_string());
 
-        Ok(ReconcileStatus { raw })
+        let enabled = self.reconcile_enabled(&fs.uuid).await;
+
+        Ok(ReconcileStatus { raw, enabled })
+    }
+
+    /// Read reconcile_enabled from sysfs for a mounted filesystem.
+    async fn reconcile_enabled(&self, uuid: &str) -> bool {
+        let path = format!("/sys/fs/bcachefs/{uuid}/options/reconcile_enabled");
+        tokio::fs::read_to_string(&path)
+            .await
+            .map(|s| s.trim() != "0")
+            .unwrap_or(true)
+    }
+
+    /// Enable or disable reconcile on a mounted filesystem via sysfs.
+    pub async fn set_reconcile_enabled(&self, name: &str, enabled: bool) -> Result<(), FilesystemError> {
+        let fs = self.get(name).await?;
+        if !fs.mounted {
+            return Err(FilesystemError::CommandFailed(
+                "filesystem must be mounted to toggle reconcile".to_string(),
+            ));
+        }
+        let path = format!("/sys/fs/bcachefs/{}/options/reconcile_enabled", fs.uuid);
+        let val = if enabled { "1" } else { "0" };
+        info!("Setting reconcile_enabled={val} on filesystem '{name}'");
+        tokio::fs::write(&path, val).await.map_err(|e| {
+            FilesystemError::CommandFailed(format!("failed to write {path}: {e}"))
+        })
     }
 
     /// Raw output of `bcachefs fs usage <mount>` — space breakdown by data type and device.

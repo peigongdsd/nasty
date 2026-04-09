@@ -8,6 +8,7 @@
 		typeof window !== 'undefined' && window.location.hash === '#diagnostics' ? 'diagnostics' : 'manage'
 	);
 	import { confirm } from '$lib/confirm.svelte';
+	import { confirmDangerous } from '$lib/confirm-dangerous.svelte';
 	import type { Filesystem, FilesystemDevice, BlockDevice, DeviceState, ScrubStatus, ReconcileStatus, TieringProfile, TieringProfileId } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent } from '$lib/components/ui/card';
@@ -59,6 +60,8 @@
 	let addDeviceLabel = $state('');
 	let showAddPartitions = $state(false);
 	let editErasureCode = $state(false);
+	let editDataChecksum = $state('');
+	let editMetadataChecksum = $state('');
 	let editVersionUpgrade = $state('');
 	let editDataReplicas = $state(1);
 	let editMetadataReplicas = $state(1);
@@ -300,7 +303,8 @@
 	}
 
 	$effect(() => {
-		if (replicas < 2 && erasureCode) erasureCode = false;
+		if (erasureCode && replicas < 2) replicas = 2;
+		if (erasureCode && selectedPaths.length < 3) erasureCode = false;
 	});
 
 	async function createFs() {
@@ -387,9 +391,13 @@
 	}
 
 	async function destroyFs(name: string) {
-		if (!await confirm(`Destroy Filesystem "${name}"`, `This will unmount it.`)) return;
+		if (!await confirmDangerous(
+			`Destroy Filesystem "${name}"`,
+			`This will unmount the filesystem and wipe all device superblocks. Type the filesystem name to confirm.`,
+			name,
+		)) return;
 		await withToast(
-			() => client.call('fs.destroy', { name, force: true }),
+			() => client.call('fs.destroy', { name, confirm_name: name }),
 			`Filesystem "${name}" destroyed`
 		);
 		await refresh();
@@ -484,6 +492,8 @@
 		editCompression = fs.options.compression ?? '';
 		editBgCompression = fs.options.background_compression ?? '';
 	editErasureCode = fs.options.erasure_code ?? false;
+		editDataChecksum = fs.options.data_checksum ?? 'none';
+		editMetadataChecksum = fs.options.metadata_checksum ?? 'none';
 		editVersionUpgrade = fs.options.version_upgrade ?? '';
 		editDataReplicas = fs.options.data_replicas ?? 1;
 		editMetadataReplicas = fs.options.metadata_replicas ?? 1;
@@ -514,6 +524,8 @@
 				compression: editCompression || 'none',
 				background_compression: editBgCompression || 'none',
 				erasure_code: editErasureCode,
+				data_checksum: editDataChecksum || 'none',
+				metadata_checksum: editMetadataChecksum || 'none',
 				data_replicas: editDataReplicas,
 				metadata_replicas: editMetadataReplicas,
 				move_ios_in_flight: editMoveIos,
@@ -570,7 +582,8 @@
 		} else {
 			selectedPaths = [...selectedPaths, path];
 		}
-		if (selectedPaths.length <= 1) replicas = 1;
+		if (selectedPaths.length <= 1) { replicas = 1; erasureCode = false; }
+		else if (erasureCode && selectedPaths.length < replicas + 1) erasureCode = false;
 	}
 
 	function availableDevices(): BlockDevice[] {
@@ -916,14 +929,20 @@
 				<div class="mb-5 grid grid-cols-2 gap-4">
 					<div>
 						<Label for="replicas">Replicas</Label>
-						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1}
+						<select id="replicas" bind:value={replicas} disabled={selectedPaths.length <= 1 || erasureCode}
 							class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-							<option value={1}>1 (no redundancy)</option>
+							{#if !erasureCode}
+								<option value={1}>1 (no redundancy)</option>
+							{/if}
 							<option value={2}>2{erasureCode ? ' (RAID-5)' : ' (mirrored)'}</option>
-							<option value={3}>3{erasureCode ? ' (RAID-6)' : ''}</option>
+							{#if selectedPaths.length >= 4 || !erasureCode}
+								<option value={3}>3{erasureCode ? ' (RAID-6)' : ''}</option>
+							{/if}
 						</select>
 						{#if selectedPaths.length <= 1}
 							<span class="text-xs text-muted-foreground">Requires multiple devices</span>
+						{:else if erasureCode}
+							<span class="text-xs text-muted-foreground">Set by erasure coding</span>
 						{/if}
 					</div>
 					<div>
@@ -938,19 +957,22 @@
 					</div>
 				</div>
 
-				{#if selectedPaths.length >= 3 && replicas >= 2}
+				{#if selectedPaths.length >= 3}
 				<div class="mb-5">
 					<label class="flex cursor-pointer items-center gap-2 text-sm">
-						<input type="checkbox" bind:checked={erasureCode} disabled={selectedPaths.length < replicas + 1} class="h-4 w-4" />
+						<input type="checkbox" bind:checked={erasureCode} disabled={selectedPaths.length < 3} class="h-4 w-4" />
 						<span class="font-medium">Erasure Coding</span>
 						{#if erasureCode}
-							<span class="text-xs text-amber-400">({replicas === 2 ? 'RAID-5' : 'RAID-6'}, min {replicas + 1} devices)</span>
+							<span class="text-xs text-amber-400">({replicas === 2 ? 'RAID-5' : 'RAID-6'}, {replicas}+1 across {selectedPaths.length} devices)</span>
 						{:else}
-							<span class="text-xs text-muted-foreground">(Reed-Solomon parity, min {replicas + 1} devices)</span>
+							<span class="text-xs text-muted-foreground">(Reed-Solomon parity, requires 3+ devices)</span>
 						{/if}
 					</label>
-					{#if erasureCode && selectedPaths.length < replicas + 1}
-						<p class="mt-1 ml-6 text-xs text-destructive">Needs at least {replicas + 1} devices (currently {selectedPaths.length}).</p>
+					{#if erasureCode}
+						<p class="mt-1 ml-6 text-xs text-muted-foreground">Data is written as {replicas} replicas, then converted to parity stripes in the background. Needs {replicas + 1}+ devices.</p>
+						{#if selectedPaths.length < replicas + 1}
+							<p class="mt-1 ml-6 text-xs text-destructive">Not enough devices: need at least {replicas + 1} for {replicas === 2 ? 'RAID-5' : 'RAID-6'} (have {selectedPaths.length}).</p>
+						{/if}
 					{/if}
 				</div>
 				{/if}
@@ -1180,6 +1202,26 @@
 								<input id="edit-erasure-{fs.name}" type="checkbox" bind:checked={editErasureCode} class="h-4 w-4" />
 								<span class="text-xs">Erasure coding</span>
 							</label>
+							<div class="mt-3 grid grid-cols-2 gap-3">
+								<div>
+									<label for="edit-data-checksum-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Data Checksum</label>
+									<select id="edit-data-checksum-{fs.name}" bind:value={editDataChecksum} class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm">
+										<option value="none">None</option>
+										<option value="crc32c">CRC32C</option>
+										<option value="crc64">CRC64</option>
+										<option value="xxhash">xxHash</option>
+									</select>
+								</div>
+								<div>
+									<label for="edit-meta-checksum-{fs.name}" class="mb-1 block text-xs text-muted-foreground">Metadata Checksum</label>
+									<select id="edit-meta-checksum-{fs.name}" bind:value={editMetadataChecksum} class="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm">
+										<option value="none">None</option>
+										<option value="crc32c">CRC32C</option>
+										<option value="crc64">CRC64</option>
+										<option value="xxhash">xxHash</option>
+									</select>
+								</div>
+							</div>
 						</fieldset>
 						<!-- Compression -->
 						<fieldset class="rounded-md border border-border p-3">
@@ -1267,6 +1309,8 @@
 							<span>{fs.options.data_checksum ?? '—'}</span>
 							<span class="text-muted-foreground">Compression</span>
 							<span>{fs.options.compression ?? 'none'}{#if fs.options.background_compression} / bg: {fs.options.background_compression}{/if}</span>
+							<span class="text-muted-foreground">Erasure Code</span>
+							<span>{fs.options.erasure_code ? 'Enabled' : 'No'}</span>
 							<span class="text-muted-foreground">Encrypted</span>
 							<span>
 								{#if fs.options.encrypted}
@@ -1298,10 +1342,6 @@
 							{#if fs.options.metadata_target}
 								<span class="text-muted-foreground">Meta Target</span>
 								<span>{fs.options.metadata_target}</span>
-							{/if}
-							{#if fs.options.erasure_code}
-								<span class="text-muted-foreground">Erasure Code</span>
-								<span>Enabled</span>
 							{/if}
 							{#if fs.options.error_action}
 								<span class="text-muted-foreground">Error Action</span>
