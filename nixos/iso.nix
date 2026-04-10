@@ -92,7 +92,6 @@ in
   # Bundle the slim local system flake on the ISO. The installed appliance keeps
   # only a wrapper flake plus machine-local modules under /etc/nixos.
   environment.etc."nasty-system-flake".source = installerSystemFlake;
-  environment.etc."nasty-source".source = lib.mkIf (installerNastySource != null) installerNastySource;
 
   # ── Branding ──────────────────────────────────────────────
   image.baseName = lib.mkForce "nasty";
@@ -240,9 +239,9 @@ in
       mkdir -p /mnt/boot
       mount "$PART1" /mnt/boot
 
-      echo "==> Bootstrapping local system flake..."
+      echo "==> Copying local system flake..."
       mkdir -p /mnt/etc/nixos
-      cp /etc/nasty-system-flake/flake.lock /mnt/etc/nixos/flake.lock
+      cp -rL --no-preserve=mode /etc/nasty-system-flake/. /mnt/etc/nixos/
 
       echo "==> Detecting local system identifier..."
       LOCAL_SYSTEM=$(nix --extra-experimental-features 'nix-command flakes' eval --impure --raw --expr builtins.currentSystem)
@@ -250,14 +249,11 @@ in
         echo "Error: failed to detect local system identifier"
         exit 1
       fi
-      if [ ! -f /etc/nasty-source/nixos/system-flake/flake.nix.template ]; then
-        echo "Error: missing /etc/nasty-source/nixos/system-flake/flake.nix.template"
+      if ! grep -q '"local-system"' /mnt/etc/nixos/flake.nix; then
+        echo "Error: local system placeholder not found in /mnt/etc/nixos/flake.nix"
         exit 1
       fi
-      ${nasty-engine}/bin/nasty-engine bootstrap-system-flake \
-        --dest-dir /mnt/etc/nixos \
-        --template-file /etc/nasty-source/nixos/system-flake/flake.nix.template \
-        --system "$LOCAL_SYSTEM" >/dev/null
+      ${pkgs.gnused}/bin/sed -i "s/\"local-system\"/\"$LOCAL_SYSTEM\"/" /mnt/etc/nixos/flake.nix
 
       echo "==> Generating hardware configuration..."
       nixos-generate-config --root /mnt --dir /tmp/hw-config
