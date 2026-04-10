@@ -24,10 +24,11 @@ struct CachedInfo {
     bcachefs_commit: Option<String>,
     bcachefs_pinned_ref: Option<String>,
     debug_symbols: bool,
+    debug_checks: bool,
     /// Whether the RUNNING module is custom (version differs from default).
     bcachefs_is_custom_running: bool,
-    /// Whether the RUNNING module has debug checks.
-    bcachefs_debug_checks: bool,
+    /// Whether the RUNNING module has debug checks (sysfs reflects loaded module).
+    bcachefs_debug_checks_running: bool,
 }
 
 pub struct SystemService {
@@ -54,7 +55,7 @@ pub struct SystemInfo {
     pub bcachefs_version: String,
     /// Short (12-char) commit SHA of the pinned bcachefs-tools in flake.lock
     pub bcachefs_commit: Option<String>,
-    /// The ref currently pinned in `/etc/nixos/flake.lock` for `bcachefs-tools`.
+    /// The ref stored in the state file: tag name (e.g. "v1.37.1") or short SHA
     pub bcachefs_pinned_ref: Option<String>,
     /// True when the RUNNING bcachefs module version differs from the default.
     pub bcachefs_is_custom: bool,
@@ -108,9 +109,16 @@ impl SystemService {
         Self { cached: Arc::new(RwLock::new(None)), engine_commit, engine_built }
     }
 
-    /// Invalidate cached bcachefs info — call after rebuild or reboot.
+    /// Invalidate cached bcachefs info — call after bcachefs switch or reboot.
     pub async fn invalidate_bcachefs_cache(&self) {
         *self.cached.write().await = None;
+    }
+
+    /// Return cached debug_symbols and debug_checks for the loaded module.
+    /// Used by UpdateService to avoid re-running expensive detection on every page load.
+    pub async fn cached_debug_flags(&self) -> (bool, bool) {
+        let cached = self.get_cached_bcachefs().await;
+        (cached.debug_symbols, cached.debug_checks)
     }
 
     async fn get_cached_bcachefs(&self) -> CachedInfo {
@@ -121,10 +129,15 @@ impl SystemService {
             }
         }
         // Compute — run subprocess calls in parallel.
-        let (bcachefs_version, bcachefs_commit, (pinned_ref, _), debug_symbols, debug_checks, default_ref) = tokio::join!(
+        let (bcachefs_version, bcachefs_commit, pinned_ref_raw, debug_symbols, debug_checks, default_ref) = tokio::join!(
             bcachefs_version(),
             read_bcachefs_commit(),
-            crate::update::read_flake_lock_bcachefs_pub(),
+            async {
+                tokio::fs::read_to_string("/var/lib/nasty/bcachefs-tools-ref").await
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+            },
             bcachefs_has_debug_symbols(),
             bcachefs_has_debug_checks(),
             crate::update::read_flake_nix_default_ref_pub(),
@@ -133,13 +146,17 @@ impl SystemService {
         // Strip leading 'v' from default ref for comparison (e.g. "v1.37.2" vs "1.37.2").
         let default_bare = default_ref.strip_prefix('v').unwrap_or(&default_ref);
         let bcachefs_is_custom_running = bcachefs_version != default_bare && bcachefs_version != "unknown";
+        // Debug checks running: sysfs reflects the actually loaded module, so no
+        // reboot_required guard needed (unlike the old state-file approach).
+        let bcachefs_debug_checks_running = debug_checks;
         let info = CachedInfo {
             bcachefs_version,
             bcachefs_commit,
-            bcachefs_pinned_ref: pinned_ref,
+            bcachefs_pinned_ref: pinned_ref_raw,
             debug_symbols,
+            debug_checks,
             bcachefs_is_custom_running,
-            bcachefs_debug_checks: debug_checks,
+            bcachefs_debug_checks_running,
         };
         *self.cached.write().await = Some(info.clone());
         info
@@ -163,7 +180,7 @@ impl SystemService {
             timezone,
             ntp_synced,
             bcachefs_debug_symbols: cached.debug_symbols,
-            bcachefs_debug_checks: cached.bcachefs_debug_checks,
+            bcachefs_debug_checks: cached.bcachefs_debug_checks_running,
             kvm_available: std::path::Path::new("/dev/kvm").exists(),
         }
     }
