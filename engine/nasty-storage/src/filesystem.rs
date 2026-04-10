@@ -100,6 +100,12 @@ pub struct FilesystemOptions {
     pub fsck: Option<bool>,
     /// Whether journal flushing is disabled.
     pub journal_flush_disabled: Option<bool>,
+    /// Journal flush delay in microseconds. Higher values batch more journal writes,
+    /// improving throughput under sync-heavy workloads (e.g. NFS commits).
+    pub journal_flush_delay: Option<u32>,
+    /// I/O scheduler for member block devices (e.g. `none`, `mq-deadline`, `kyber`).
+    /// `none` is recommended for SSDs; `mq-deadline` is the kernel default.
+    pub io_scheduler: Option<String>,
     /// Maximum concurrent background mover IOs.
     pub move_ios_in_flight: Option<u32>,
     /// Maximum bytes in flight for background mover (e.g. `"8.0M"`).
@@ -178,6 +184,12 @@ pub struct CreateFilesystemRequest {
     pub encoded_extent_max: Option<String>,
     /// Version upgrade behavior at mount time: `compatible`, `incompatible`, or `none`.
     pub version_upgrade: Option<String>,
+    /// Journal flush delay in microseconds (default: 1000). Higher values batch
+    /// more journal writes, improving throughput under sync-heavy workloads.
+    pub journal_flush_delay: Option<u32>,
+    /// I/O scheduler for member block devices (`none`, `mq-deadline`, `kyber`).
+    /// `none` is recommended for SSDs.
+    pub io_scheduler: Option<String>,
 }
 
 fn default_replicas() -> u32 { 1 }
@@ -224,6 +236,10 @@ pub struct UpdateFilesystemOptionsRequest {
     pub fsck: Option<bool>,
     /// Disable journal flushing (unsafe, for benchmarking).
     pub journal_flush_disabled: Option<bool>,
+    /// Journal flush delay in microseconds. Higher values batch more journal writes.
+    pub journal_flush_delay: Option<u32>,
+    /// I/O scheduler for member block devices (`none`, `mq-deadline`, `kyber`).
+    pub io_scheduler: Option<String>,
     /// Data checksum algorithm (`none`, `crc32c`, `crc64`, `xxhash`).
     pub data_checksum: Option<String>,
     /// Metadata checksum algorithm (`none`, `crc32c`, `crc64`, `xxhash`).
@@ -416,7 +432,8 @@ impl FilesystemService {
 
             // Read per-device labels and fs options for mounted filesystems
             let fs_devices = read_fs_devices(&uuid, devices).await;
-            let options = read_fs_options_sysfs(&uuid).await;
+            let mut options = read_fs_options_sysfs(&uuid).await;
+            options.io_scheduler = read_io_scheduler(&fs_devices).await;
 
             filesystems.push(Filesystem {
                 name,
@@ -707,6 +724,8 @@ impl FilesystemService {
         let mount_opts = FsMountOptions {
             encrypted: if is_encrypted { Some(true) } else { None },
             version_upgrade: req.version_upgrade.clone(),
+            journal_flush_delay: req.journal_flush_delay,
+            io_scheduler: req.io_scheduler.clone(),
             ..FsMountOptions::default()
         };
         let mount_opt_str = build_mount_opts(&mount_opts);
@@ -714,6 +733,17 @@ impl FilesystemService {
         cmd::run_ok("bcachefs", &["mount", "-o", &mount_opt_str, &device_arg, &mount_point])
             .await
             .map_err(FilesystemError::CommandFailed)?;
+
+        // Apply I/O scheduler to member block devices
+        let dev_list: Vec<FilesystemDevice> = req.devices.iter().map(|d| FilesystemDevice {
+            path: d.path.clone(), label: d.label.clone(), durability: d.durability,
+            state: None, data_allowed: None, has_data: None, discard: None,
+        }).collect();
+        if let Some(ref sched) = req.io_scheduler {
+            if let Err(e) = apply_io_scheduler(&dev_list, sched).await {
+                warn!("Failed to set I/O scheduler: {e}");
+            }
+        }
 
         // Track mount state for boot reconciliation
         save_fs_mounted_with_opts(&req.name, mount_opts).await;
@@ -832,6 +862,13 @@ impl FilesystemService {
             .await
             .map_err(FilesystemError::CommandFailed)?;
 
+        // Apply I/O scheduler to member block devices
+        if let Some(ref sched) = opts.io_scheduler {
+            if let Err(e) = apply_io_scheduler(&fs.devices, sched).await {
+                warn!("Failed to set I/O scheduler: {e}");
+            }
+        }
+
         // Track mount state for boot reconciliation
         save_fs_mounted_with_opts(name, opts.clone()).await;
 
@@ -934,6 +971,14 @@ impl FilesystemService {
         if let Some(ref v) = req.move_bytes_in_flight {
             write_opt(&base, "move_bytes_in_flight", v).await?;
         }
+        if let Some(v) = req.journal_flush_delay {
+            write_opt(&base, "journal_flush_delay", &v.to_string()).await?;
+        }
+
+        // Apply I/O scheduler to member block devices
+        if let Some(ref sched) = req.io_scheduler {
+            apply_io_scheduler(&fs.devices, sched).await?;
+        }
 
         // Mount options require a remount to take effect — but only if they actually changed.
         let state = load_fs_state().await;
@@ -943,10 +988,15 @@ impl FilesystemService {
             || (req.degraded.is_some() && req.degraded != current.degraded)
             || (req.verbose.is_some() && req.verbose != current.verbose)
             || (req.fsck.is_some() && req.fsck != current.fsck)
-            || (req.journal_flush_disabled.is_some() && req.journal_flush_disabled != current.journal_flush_disabled);
+            || (req.journal_flush_disabled.is_some() && req.journal_flush_disabled != current.journal_flush_disabled)
+            || (req.journal_flush_delay.is_some() && req.journal_flush_delay != current.journal_flush_delay);
         drop(state);
 
-        if mount_changed {
+        // Persist state changes (mount opts + io_scheduler)
+        let state_changed = mount_changed
+            || (req.io_scheduler.is_some() && req.io_scheduler != current.io_scheduler);
+
+        if state_changed {
             let mut state = load_fs_state().await;
             {
                 let opts = state.entry(req.name.clone()).or_default();
@@ -955,11 +1005,16 @@ impl FilesystemService {
                 if let Some(v) = req.verbose { opts.verbose = Some(v); }
                 if let Some(v) = req.fsck { opts.fsck = Some(v); }
                 if let Some(v) = req.journal_flush_disabled { opts.journal_flush_disabled = Some(v); }
+                if let Some(v) = req.journal_flush_delay { opts.journal_flush_delay = Some(v); }
+                if let Some(ref v) = req.io_scheduler { opts.io_scheduler = Some(v.clone()); }
             }
             let _ = save_fs_state(&state).await;
+        }
 
+        if mount_changed {
             // Remount in-place (no unmount needed, works even when busy)
             let mount_point = format!("{NASTY_MOUNT_BASE}/{}", req.name);
+            let state = load_fs_state().await;
             let mount_opt_str = build_mount_opts(state.get(&req.name).unwrap_or(&FsMountOptions::default()));
             cmd::run_ok("mount", &["-o", &format!("remount,{mount_opt_str}"), &mount_point])
                 .await
@@ -1985,6 +2040,8 @@ async fn read_fs_options_sysfs(uuid: &str) -> FilesystemOptions {
         verbose: None,
         fsck: None,
         journal_flush_disabled: None,
+        journal_flush_delay: read_opt_u32(&base, "journal_flush_delay").await,
+        io_scheduler: None, // read per-device, not from bcachefs sysfs
         move_ios_in_flight: read_opt_u32(&base, "move_ios_in_flight").await,
         move_bytes_in_flight: read_opt(&base, "move_bytes_in_flight").await,
     }
@@ -2155,6 +2212,10 @@ struct FsMountOptions {
     fsck: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     journal_flush_disabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    journal_flush_delay: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    io_scheduler: Option<String>,
 }
 
 /// Filesystem state: maps fs name → mount options.
@@ -2202,7 +2263,43 @@ fn build_mount_opts(opts: &FsMountOptions) -> String {
     if opts.verbose == Some(true) { parts.push("verbose".to_string()); }
     if opts.fsck == Some(true) { parts.push("fsck".to_string()); }
     if opts.journal_flush_disabled == Some(true) { parts.push("journal_flush_disabled".to_string()); }
+    if let Some(delay) = opts.journal_flush_delay {
+        parts.push(format!("journal_flush_delay={delay}"));
+    }
     parts.join(",")
+}
+
+/// Extract the short device name from a path (e.g. `/dev/sda` → `sda`).
+fn block_dev_name(path: &str) -> Option<&str> {
+    path.rsplit('/').next()
+}
+
+/// Apply an I/O scheduler to all member block devices of a filesystem.
+async fn apply_io_scheduler(devices: &[FilesystemDevice], scheduler: &str) -> Result<(), FilesystemError> {
+    for dev in devices {
+        let Some(name) = block_dev_name(&dev.path) else { continue };
+        let sysfs_path = format!("/sys/block/{name}/queue/scheduler");
+        if let Err(e) = tokio::fs::write(&sysfs_path, scheduler).await {
+            // Not fatal — device may be a partition or missing sysfs entry
+            warn!("Failed to set I/O scheduler on {name}: {e}");
+        } else {
+            info!("Set I/O scheduler to '{scheduler}' on {name}");
+        }
+    }
+    Ok(())
+}
+
+/// Read the active I/O scheduler from the first member device.
+/// Returns the bracketed value from `/sys/block/{dev}/queue/scheduler`.
+async fn read_io_scheduler(devices: &[FilesystemDevice]) -> Option<String> {
+    let dev = devices.first()?;
+    let name = block_dev_name(&dev.path)?;
+    let sysfs_path = format!("/sys/block/{name}/queue/scheduler");
+    let content = tokio::fs::read_to_string(&sysfs_path).await.ok()?;
+    // Format: "none [mq-deadline] kyber" — extract the bracketed one
+    content.split_whitespace()
+        .find(|s| s.starts_with('['))
+        .map(|s| s.trim_matches(|c| c == '[' || c == ']').to_string())
 }
 
 async fn is_mountpoint(path: &str) -> bool {

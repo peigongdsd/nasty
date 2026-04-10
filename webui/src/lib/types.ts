@@ -78,6 +78,8 @@ export interface FilesystemOptions {
 	verbose: boolean | null;
 	fsck: boolean | null;
 	journal_flush_disabled: boolean | null;
+	journal_flush_delay: number | null;
+	io_scheduler: string | null;
 	move_ios_in_flight: number | null;
 	move_bytes_in_flight: string | null;
 }
