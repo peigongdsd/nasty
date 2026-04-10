@@ -1,8 +1,9 @@
-{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, nastySystemFlakeSnapshot ? null, ... }:
+args@{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, ... }:
 
 let
   cfg = config.services.nasty;
   inherit (lib) mkEnableOption mkOption mkIf types;
+  nastySystemFlakeSnapshot = args.nastySystemFlakeSnapshot or null;
 
   useSelfSigned = cfg.tls.selfSigned && cfg.tls.certFile == null && cfg.tls.keyFile == null;
   tlsCertFile = if cfg.tls.certFile != null then cfg.tls.certFile else "/var/lib/nasty/tls/cert.pem";

@@ -50,6 +50,7 @@
           ];
         };
     in {
+      wrapperFlakeVersion = "v0.1";
       nixosConfigurations = {
         nasty = mkSystem "@LOCAL_SYSTEM@";
       };

@@ -25,6 +25,7 @@ const DEFAULT_NASTY_REPO: &str = "nasty";
 const DEFAULT_NASTY_REF: &str = "main";
 const VERSION_INPUT_NAMES: [&str; 3] = ["nixpkgs", "bcachefs-tools", "nasty"];
 const SYSTEM_FLAKE_TEMPLATE_PATH: &str = "nixos/system-flake/flake.nix.template";
+const GITHUB_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
 
 // ── Garbage collection config ────────────────────────────────────
 
@@ -262,6 +263,12 @@ struct ParsedFlakeInput {
     value_end: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct WrapperFlakeVersion {
+    major: u64,
+    minor: u64,
+}
+
 impl NastyInputSource {
     fn repo_url(&self) -> String {
         format!("https://github.com/{}/{}.git", self.owner, self.repo)
@@ -394,8 +401,18 @@ impl UpdateService {
             &release_status.latest_tag,
         )
         .await?;
-        let bootstrapped_flake =
-            render_system_flake_template(&template, &release_status.latest_tag, &local_system)?;
+        let current_flake_path = format!("{NIXOS_FLAKE_DIR}/flake.nix");
+        let current_flake = tokio::fs::read_to_string(&current_flake_path).await.map_err(|e| {
+            UpdateError::CommandFailed(format!("read {current_flake_path}: {e}"))
+        })?;
+        let next_flake = if should_rebootstrap_wrapper_flake(&current_flake, &template)? {
+            render_system_flake_template(&template, &release_status.latest_tag, &local_system)?
+        } else {
+            rewrite_flake_input_urls(
+                &current_flake,
+                &HashMap::from([(String::from("nasty"), release_status.latest_url.clone())]),
+            )?
+        };
 
         let _ = tokio::process::Command::new("systemctl")
             .args(["reset-failed", UPDATE_UNIT])
@@ -407,7 +424,7 @@ impl UpdateService {
             .await;
 
         let flake_temp_path = "/tmp/nasty-upgrade-flake.nix";
-        tokio::fs::write(flake_temp_path, &bootstrapped_flake)
+        tokio::fs::write(flake_temp_path, &next_flake)
             .await
             .map_err(|e| UpdateError::CommandFailed(format!("write {flake_temp_path}: {e}")))?;
 
@@ -803,11 +820,68 @@ echo "==> Update complete!"
         let current_flake = tokio::fs::read_to_string(&flake_path)
             .await
             .map_err(|e| UpdateError::CommandFailed(format!("read {flake_path}: {e}")))?;
-        let flake_replacements = url_changes
-            .iter()
-            .map(|(name, url)| (name.clone(), url.clone()))
-            .collect::<HashMap<_, _>>();
-        let rewritten_flake = rewrite_flake_input_urls(&current_flake, &flake_replacements)?;
+        let requested_nasty_url = requested
+            .get("nasty")
+            .map(|input| input.url.clone())
+            .ok_or_else(|| UpdateError::CommandFailed("missing request entry for nasty".into()))?;
+        let rewritten_flake = if let Some(target_tag) =
+            parse_official_nasty_release_tag(&requested_nasty_url)
+        {
+            let token = read_github_token().await;
+            let template = fetch_github_text_file(
+                token.as_deref(),
+                DEFAULT_NASTY_OWNER,
+                DEFAULT_NASTY_REPO,
+                SYSTEM_FLAKE_TEMPLATE_PATH,
+                &target_tag,
+            )
+            .await?;
+
+            if should_rebootstrap_wrapper_flake(&current_flake, &template)? {
+                let local_system = detect_local_system().await?;
+                let bootstrapped_flake =
+                    render_system_flake_template(&template, &target_tag, &local_system)?;
+                let preserved_urls = HashMap::from([
+                    (
+                        String::from("nixpkgs"),
+                        requested
+                            .get("nixpkgs")
+                            .ok_or_else(|| {
+                                UpdateError::CommandFailed(
+                                    "missing request entry for nixpkgs".into(),
+                                )
+                            })?
+                            .url
+                            .clone(),
+                    ),
+                    (
+                        String::from("bcachefs-tools"),
+                        requested
+                            .get("bcachefs-tools")
+                            .ok_or_else(|| {
+                                UpdateError::CommandFailed(
+                                    "missing request entry for bcachefs-tools".into(),
+                                )
+                            })?
+                            .url
+                            .clone(),
+                    ),
+                ]);
+                rewrite_flake_input_urls(&bootstrapped_flake, &preserved_urls)?
+            } else {
+                let flake_replacements = url_changes
+                    .iter()
+                    .map(|(name, url)| (name.clone(), url.clone()))
+                    .collect::<HashMap<_, _>>();
+                rewrite_flake_input_urls(&current_flake, &flake_replacements)?
+            }
+        } else {
+            let flake_replacements = url_changes
+                .iter()
+                .map(|(name, url)| (name.clone(), url.clone()))
+                .collect::<HashMap<_, _>>();
+            rewrite_flake_input_urls(&current_flake, &flake_replacements)?
+        };
         let flake_temp_path = "/tmp/nasty-version-flake.nix";
         tokio::fs::write(flake_temp_path, &rewritten_flake)
             .await
@@ -1344,7 +1418,7 @@ async fn check_latest_tag(
 async fn latest_official_nasty_release_tag() -> Result<String, UpdateError> {
     let token = read_github_token().await;
     let latest_tag = tokio::time::timeout(
-        Duration::from_secs(60),
+        GITHUB_FETCH_TIMEOUT,
         check_latest_tag(
             token.as_deref(),
             DEFAULT_NASTY_OWNER,
@@ -1415,6 +1489,20 @@ fn render_system_flake_template(
         .replace("@LOCAL_SYSTEM@", local_system))
 }
 
+fn should_rebootstrap_wrapper_flake(
+    local_flake: &str,
+    upstream_template: &str,
+) -> Result<bool, UpdateError> {
+    let upstream_version = read_wrapper_flake_version(upstream_template)?;
+    let local_version = read_wrapper_flake_version(local_flake)?;
+
+    match (local_version, upstream_version) {
+        (_, None) => Ok(false),
+        (None, Some(_)) => Ok(true),
+        (Some(local), Some(upstream)) => Ok(upstream > local),
+    }
+}
+
 fn normalize_release_tag(version_or_tag: &str) -> Result<String, UpdateError> {
     let trimmed = version_or_tag.trim();
     let tag = if trimmed.starts_with('v') {
@@ -1470,7 +1558,7 @@ async fn fetch_github_text_file(
     git_ref: &str,
 ) -> Result<String, UpdateError> {
     let url = format!("https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={git_ref}");
-    let mut req = reqwest::Client::new()
+    let mut req = github_http_client()?
         .get(&url)
         .header("Accept", "application/vnd.github.v3+json")
         .header("User-Agent", "nasty-engine");
@@ -1502,6 +1590,13 @@ async fn fetch_github_text_file(
         .map_err(|e| UpdateError::CommandFailed(format!("GitHub file is not valid UTF-8: {e}")))
 }
 
+fn github_http_client() -> Result<reqwest::Client, UpdateError> {
+    reqwest::Client::builder()
+        .timeout(GITHUB_FETCH_TIMEOUT)
+        .build()
+        .map_err(|e| UpdateError::CommandFailed(format!("failed to build GitHub HTTP client: {e}")))
+}
+
 /// Check latest commit on a branch via GitHub API.
 async fn check_via_github_api_branch(
     owner: &str,
@@ -1518,7 +1613,7 @@ async fn check_via_github_api_branch(
     }
 
     let url = format!("https://api.github.com/repos/{owner}/{repo}/commits/{branch}");
-    let body: serde_json::Value = reqwest::Client::new()
+    let body: serde_json::Value = github_http_client()?
         .get(&url)
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/vnd.github.v3+json")
@@ -1731,6 +1826,54 @@ fn parse_flake_input_urls(content: &str) -> Result<HashMap<String, ParsedFlakeIn
     Ok(urls)
 }
 
+fn read_wrapper_flake_version(content: &str) -> Result<Option<WrapperFlakeVersion>, UpdateError> {
+    let parsed = rnix::Root::parse(content);
+    if !parsed.errors().is_empty() {
+        return Ok(None);
+    }
+
+    let root = parsed.tree();
+    for node in root
+        .syntax()
+        .descendants()
+        .filter_map(ast::AttrpathValue::cast)
+    {
+        let Some(attrpath) = node.attrpath() else {
+            continue;
+        };
+        let normalized_path = attrpath
+            .syntax()
+            .text()
+            .to_string()
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>();
+        if normalized_path != "wrapperFlakeVersion" {
+            continue;
+        }
+        let Some(value) = node.value() else { continue };
+        let raw_value = value.syntax().text().to_string();
+        let Some(version) = unquote_nix_string(&raw_value) else {
+            continue;
+        };
+        return Ok(parse_wrapper_flake_version(&version));
+    }
+
+    Ok(None)
+}
+
+fn parse_wrapper_flake_version(raw: &str) -> Option<WrapperFlakeVersion> {
+    let trimmed = raw.trim();
+    let raw = trimmed.strip_prefix('v')?;
+    let mut parts = raw.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(WrapperFlakeVersion { major, minor })
+}
+
 fn rewrite_flake_input_urls(
     content: &str,
     replacements: &HashMap<String, String>,
@@ -1864,7 +2007,6 @@ fn official_nasty_release_url(tag: &str) -> String {
     format!("github:{DEFAULT_NASTY_OWNER}/{DEFAULT_NASTY_REPO}/{tag}")
 }
 
-#[cfg(test)]
 fn parse_official_nasty_release_tag(url: &str) -> Option<String> {
     let trimmed = url.trim();
     let rest = trimmed.strip_prefix("github:")?;
@@ -1925,6 +2067,7 @@ async fn read_flake_lock_bcachefs() -> (Option<String>, Option<String>) {
 mod tests {
     use super::{
         normalize_git_tag_ref, parse_official_nasty_release_tag, parse_release_tag_version,
+        parse_wrapper_flake_version, read_wrapper_flake_version, should_rebootstrap_wrapper_flake,
     };
 
     #[test]
@@ -1958,6 +2101,74 @@ mod tests {
         assert_eq!(parse_release_tag_version("v1.2.3"), Some((1, 2, 3)));
         assert_eq!(parse_release_tag_version("v1.2"), None);
         assert_eq!(parse_release_tag_version("main"), None);
+    }
+
+    #[test]
+    fn parses_wrapper_flake_versions() {
+        assert!(parse_wrapper_flake_version("v0.1").is_some());
+        assert!(parse_wrapper_flake_version("v2.7").is_some());
+        assert_eq!(parse_wrapper_flake_version("0.1"), None);
+        assert_eq!(parse_wrapper_flake_version("v0.1.2"), None);
+    }
+
+    #[test]
+    fn reads_wrapper_flake_version_from_source() {
+        let flake = r#"
+{
+  outputs = { self, nixpkgs, nasty, ... }: {
+    wrapperFlakeVersion = "v0.1";
+  };
+}
+"#;
+        assert!(read_wrapper_flake_version(flake)
+            .expect("parsed")
+            .is_some());
+    }
+
+    #[test]
+    fn ignores_unparseable_wrapper_flake_source() {
+        let broken_flake = r#"
+{
+  outputs = { self, nixpkgs, nasty, ... }: {
+    wrapperFlakeVersion = "v0.1"
+"#;
+        assert_eq!(
+            read_wrapper_flake_version(broken_flake).expect("graceful fallback"),
+            None
+        );
+    }
+
+    #[test]
+    fn rebootstrap_when_local_wrapper_version_is_missing_or_older() {
+        let local_without_version = r#"
+{
+  outputs = { self, nixpkgs, nasty, ... }: {
+    nixosConfigurations = {};
+  };
+}
+"#;
+        let local_old = r#"
+{
+  outputs = { self, nixpkgs, nasty, ... }: {
+    wrapperFlakeVersion = "v0.1";
+  };
+}
+"#;
+        let upstream_new = r#"
+{
+  outputs = { self, nixpkgs, nasty, ... }: {
+    wrapperFlakeVersion = "v0.2";
+  };
+}
+"#;
+        assert!(should_rebootstrap_wrapper_flake(local_without_version, upstream_new)
+            .expect("comparison"));
+        assert!(should_rebootstrap_wrapper_flake(local_old, upstream_new).expect("comparison"));
+        assert!(!should_rebootstrap_wrapper_flake(upstream_new, local_old).expect("comparison"));
+        assert!(
+            !should_rebootstrap_wrapper_flake(local_old, "{ invalid")
+                .expect("malformed upstream skips rebootstrap")
+        );
     }
 
     #[test]
