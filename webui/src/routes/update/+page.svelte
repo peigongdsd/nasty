@@ -317,6 +317,11 @@
 
 	async function upgradeTaggedRelease() {
 		if (taggedReleaseBanner.kind !== 'ready' || taggedReleaseBanner.current_is_latest_standard_url) return;
+		if (!await confirm(
+			'Switch to upstream tagged release?',
+			`This will switch this system to the upstream tagged release ${taggedReleaseBanner.latest_tag} and start a rebuild immediately.`,
+			{ confirmLabel: 'Go on', cancelLabel: 'Decline' }
+		)) return;
 		startingUpgrade = true;
 		logCollapsed = false;
 		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };

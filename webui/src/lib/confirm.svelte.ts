@@ -8,6 +8,8 @@ interface ConfirmState {
 	open: boolean;
 	title: string;
 	message: string;
+	confirmLabel: string;
+	cancelLabel: string;
 	resolve: ((v: boolean) => void) | null;
 }
 
@@ -15,13 +17,22 @@ export const confirmState = $state<ConfirmState>({
 	open: false,
 	title: '',
 	message: '',
+	confirmLabel: 'Confirm',
+	cancelLabel: 'Cancel',
 	resolve: null,
 });
 
-export function confirm(title: string, message?: string): Promise<boolean> {
+interface ConfirmOptions {
+	confirmLabel?: string;
+	cancelLabel?: string;
+}
+
+export function confirm(title: string, message?: string, options?: ConfirmOptions): Promise<boolean> {
 	return new Promise((resolve) => {
 		confirmState.title = title;
 		confirmState.message = message ?? '';
+		confirmState.confirmLabel = options?.confirmLabel ?? 'Confirm';
+		confirmState.cancelLabel = options?.cancelLabel ?? 'Cancel';
 		confirmState.resolve = resolve;
 		confirmState.open = true;
 	});
