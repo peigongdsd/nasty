@@ -20,8 +20,8 @@
 			{/if}
 		</DialogHeader>
 		<DialogFooter class="gap-2">
-			<Button variant="outline" onclick={() => confirmRespond(false)}>Cancel</Button>
-			<Button variant="destructive" onclick={() => confirmRespond(true)}>Confirm</Button>
+			<Button variant="outline" onclick={() => confirmRespond(false)}>{confirmState.cancelLabel}</Button>
+			<Button variant="destructive" onclick={() => confirmRespond(true)}>{confirmState.confirmLabel}</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
