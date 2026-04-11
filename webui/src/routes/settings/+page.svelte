@@ -3,11 +3,11 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
-	import type { Settings, SystemInfo, NetworkConfig, TuningConfig } from '$lib/types';
+	import type { Settings, SystemInfo, NetworkConfig, TuningConfig, NutConfig } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Copy, Check, ChevronDown, ChevronRight } from '@lucide/svelte';
 
-	let activeTab: 'general' | 'tls' | 'vpn' | 'metrics' | 'tuning' = $state('general');
+	let activeTab: 'general' | 'tls' | 'vpn' | 'metrics' | 'tuning' | 'ups' = $state('general');
 
 	// ── General tab state ───────────────────────────────────
 	let settings: Settings | null = $state(null);
@@ -51,6 +51,17 @@
 	let tVmDirtyBgRatio = $state('');
 	let tVmDirtyExpire = $state('');
 	let tVmDirtyWriteback = $state('');
+
+	// UPS (NUT)
+	let nutConfig: NutConfig | null = $state(null);
+	let savingNut = $state(false);
+	let nutDriver = $state('');
+	let nutPort = $state('');
+	let nutUpsName = $state('');
+	let nutDescription = $state('');
+	let nutShutdownPercent = $state('');
+	let nutShutdownSeconds = $state('');
+	let nutShutdownCommand = $state('');
 
 	// TLS
 	let tlsDomain = $state('');
@@ -350,13 +361,16 @@
 		collapsedSections[title] = !collapsedSections[title];
 	}
 
-	function switchTab(tab: 'general' | 'tls' | 'vpn' | 'metrics' | 'tuning') {
+	function switchTab(tab: 'general' | 'tls' | 'vpn' | 'metrics' | 'tuning' | 'ups') {
 		activeTab = tab;
 		if (tab === 'metrics' && !metricsText) {
 			loadMetrics();
 		}
 		if (tab === 'tuning' && !tuning) {
 			loadTuning();
+		}
+		if (tab === 'ups' && !nutConfig) {
+			loadNut();
 		}
 	}
 
@@ -400,6 +414,37 @@
 		savingTuning = false;
 		await loadTuning();
 	}
+
+	async function loadNut() {
+		nutConfig = await client.call<NutConfig>('system.nut.config.get');
+		if (nutConfig) {
+			nutDriver = nutConfig.driver;
+			nutPort = nutConfig.port;
+			nutUpsName = nutConfig.ups_name;
+			nutDescription = nutConfig.description;
+			nutShutdownPercent = nutConfig.shutdown_on_battery_percent.toString();
+			nutShutdownSeconds = nutConfig.shutdown_on_battery_seconds.toString();
+			nutShutdownCommand = nutConfig.shutdown_command;
+		}
+	}
+
+	async function saveNut() {
+		savingNut = true;
+		await withToast(
+			() => client.call('system.nut.config.update', {
+				driver: nutDriver,
+				port: nutPort,
+				ups_name: nutUpsName,
+				description: nutDescription || undefined,
+				shutdown_on_battery_percent: parseInt(nutShutdownPercent) || undefined,
+				shutdown_on_battery_seconds: parseInt(nutShutdownSeconds) || undefined,
+				shutdown_command: nutShutdownCommand || undefined,
+			}),
+			'UPS configuration saved'
+		);
+		savingNut = false;
+		await loadNut();
+	}
 </script>
 
 
@@ -429,6 +474,12 @@
 			? 'border-b-2 border-primary text-foreground'
 			: 'text-muted-foreground hover:text-foreground'}"
 	>Tuning</button>
+	<button
+		onclick={() => switchTab('ups')}
+		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'ups'
+			? 'border-b-2 border-primary text-foreground'
+			: 'text-muted-foreground hover:text-foreground'}"
+	>UPS</button>
 	<button
 		onclick={() => switchTab('metrics')}
 		class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'metrics'
@@ -987,6 +1038,79 @@
 				{savingTuning ? 'Applying...' : 'Apply Tuning'}
 			</Button>
 			<p class="mt-1 text-xs text-muted-foreground">All changes take effect immediately without restart.</p>
+		</div>
+	{/if}
+
+{:else if activeTab === 'ups'}
+
+	{#if !nutConfig}
+		<p class="text-muted-foreground">Loading...</p>
+	{:else}
+		<div class="flex flex-col gap-6">
+			<section class="rounded-lg border border-border p-5">
+				<h3 class="mb-4 text-sm font-semibold">UPS Hardware</h3>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					<div>
+						<label for="nut-driver" class="mb-1 block text-xs text-muted-foreground">Driver</label>
+						<select id="nut-driver" bind:value={nutDriver}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm">
+							<option value="usbhid-ups">usbhid-ups (USB HID)</option>
+							<option value="blazer_usb">blazer_usb (Megatec/Q1 USB)</option>
+							<option value="nutdrv_qx">nutdrv_qx (Q* protocol USB)</option>
+							<option value="snmp-ups">snmp-ups (SNMP)</option>
+							<option value="apcsmart">apcsmart (APC Smart serial)</option>
+						</select>
+						<p class="mt-0.5 text-[0.6rem] text-muted-foreground">NUT driver for your UPS hardware.</p>
+					</div>
+					<div>
+						<label for="nut-port" class="mb-1 block text-xs text-muted-foreground">Port</label>
+						<input id="nut-port" type="text" bind:value={nutPort}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm font-mono" />
+						<p class="mt-0.5 text-[0.6rem] text-muted-foreground">"auto" for USB, or a device path like /dev/ttyS0.</p>
+					</div>
+					<div>
+						<label for="nut-name" class="mb-1 block text-xs text-muted-foreground">UPS Name</label>
+						<input id="nut-name" type="text" bind:value={nutUpsName}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+						<p class="mt-0.5 text-[0.6rem] text-muted-foreground">Identifier for upsc (e.g. "ups").</p>
+					</div>
+					<div class="sm:col-span-2 lg:col-span-3">
+						<label for="nut-desc" class="mb-1 block text-xs text-muted-foreground">Description</label>
+						<input id="nut-desc" type="text" bind:value={nutDescription} placeholder="My UPS"
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+					</div>
+				</div>
+			</section>
+
+			<section class="rounded-lg border border-border p-5">
+				<h3 class="mb-4 text-sm font-semibold">Shutdown Policy</h3>
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+					<div>
+						<label for="nut-pct" class="mb-1 block text-xs text-muted-foreground">Battery threshold (%)</label>
+						<input id="nut-pct" type="number" min="0" max="100" bind:value={nutShutdownPercent}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+						<p class="mt-0.5 text-[0.6rem] text-muted-foreground">Shutdown when battery drops below this.</p>
+					</div>
+					<div>
+						<label for="nut-secs" class="mb-1 block text-xs text-muted-foreground">On-battery timeout (s)</label>
+						<input id="nut-secs" type="number" min="0" bind:value={nutShutdownSeconds}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm" />
+						<p class="mt-0.5 text-[0.6rem] text-muted-foreground">Shutdown after N seconds on battery. 0 = disabled.</p>
+					</div>
+					<div>
+						<label for="nut-cmd" class="mb-1 block text-xs text-muted-foreground">Shutdown command</label>
+						<input id="nut-cmd" type="text" bind:value={nutShutdownCommand}
+							class="h-8 w-full rounded-md border border-input bg-background px-2 text-sm font-mono" />
+					</div>
+				</div>
+			</section>
+
+			<div>
+				<Button onclick={saveNut} disabled={savingNut}>
+					{savingNut ? 'Saving...' : 'Save UPS Configuration'}
+				</Button>
+				<span class="ml-2 text-xs text-muted-foreground">If NUT is running, services will be restarted automatically.</span>
+			</div>
 		</div>
 	{/if}
 
