@@ -56,6 +56,7 @@ fn is_operator_allowed(method: &str) -> bool {
                 | "apps.enable"
                 | "apps.disable"
                 | "apps.install"
+                | "apps.update"
                 | "apps.remove"
                 | "apps.install_chart"
                 | "apps.repo.add"
@@ -1779,6 +1780,20 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
+        },
+        "apps.update" => match parse_params(req) {
+            Ok(p) => match state.apps.update(p).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(e) => invalid(req, e),
+        },
+        "apps.config" => match require_str(req, "name") {
+            Ok(name) => match state.apps.get_config(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
         },
         "apps.remove" => match require_str(req, "name") {
             Ok(name) => match state.apps.remove(name).await {

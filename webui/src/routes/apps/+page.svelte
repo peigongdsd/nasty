@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress } from '$lib/types';
+	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -18,6 +18,7 @@
 	let loading = $state(true);
 	let enabling = $state(false);
 	let showInstall = $state(false);
+	let editingApp: string | null = $state(null);
 	let expanded: Record<string, boolean> = $state({});
 	let logsApp: string | null = $state(null);
 	let logsContent = $state('');
@@ -198,6 +199,71 @@
 		}
 		// Always refresh — app may have been partially created even on failure
 		await refresh();
+	}
+
+	async function editApp(name: string) {
+		const config = await withToast(
+			() => client.call<AppConfig>('apps.config', { name }),
+			''
+		);
+		if (!config) return;
+		editingApp = name;
+		newName = config.name;
+		newImage = config.image;
+		newPorts = config.ports.map(p => ({
+			name: p.name,
+			container_port: p.container_port,
+			node_port: p.node_port?.toString() ?? '',
+			protocol: p.protocol,
+		}));
+		newEnvs = config.env.map(e => ({ name: e.name, value: e.value }));
+		newVolumes = config.volumes.map(v => ({ name: v.name, mount_path: v.mount_path, size: v.size }));
+		newCpuLimit = config.cpu_limit ?? '';
+		newMemoryLimit = config.memory_limit ?? '';
+		showInstall = true;
+	}
+
+	async function updateApp() {
+		if (!editingApp || !newImage) return;
+		const params: Record<string, unknown> = {
+			name: editingApp,
+			image: newImage,
+		};
+		if (newPorts.length > 0) {
+			params.ports = newPorts.map(p => ({
+				name: p.name,
+				container_port: p.container_port,
+				node_port: p.node_port ? parseInt(p.node_port) : undefined,
+				protocol: p.protocol,
+			}));
+		}
+		if (newEnvs.length > 0) {
+			params.env = newEnvs.filter(e => e.name);
+		}
+		if (newVolumes.length > 0) {
+			params.volumes = newVolumes.filter(v => v.name && v.mount_path);
+		}
+		if (newCpuLimit) params.cpu_limit = newCpuLimit;
+		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
+
+		const result = await withToast(
+			() => client.call('apps.update', params),
+			'App updated'
+		);
+		if (result !== undefined) {
+			showInstall = false;
+			editingApp = null;
+			newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
+			newCpuLimit = ''; newMemoryLimit = '';
+		}
+		await refresh();
+	}
+
+	function cancelEdit() {
+		showInstall = false;
+		editingApp = null;
+		newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
+		newCpuLimit = ''; newMemoryLimit = '';
 	}
 
 	async function removeApp(name: string) {
@@ -448,7 +514,7 @@
 			>Helm Charts</button>
 		</div>
 		{#if mode === 'easy'}
-			<Button size="sm" onclick={() => showInstall = !showInstall}>
+			<Button size="sm" onclick={() => { if (showInstall) { cancelEdit(); } else { editingApp = null; showInstall = true; } }}>
 				{showInstall ? 'Cancel' : 'Install App'}
 			</Button>
 		{/if}
@@ -459,10 +525,10 @@
 	{#if showInstall}
 		<Card class="mb-6 max-w-xl">
 			<CardContent class="pt-6">
-				<h3 class="mb-4 text-lg font-semibold">Install App</h3>
+				<h3 class="mb-4 text-lg font-semibold">{editingApp ? `Edit ${editingApp}` : 'Install App'}</h3>
 				<div class="mb-4">
 					<Label for="app-name">App Name</Label>
-					<Input id="app-name" value={newName} oninput={(e) => { newName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} placeholder="whoami" class="mt-1" />
+					<Input id="app-name" value={newName} oninput={(e) => { newName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} placeholder="whoami" class="mt-1" disabled={!!editingApp} />
 					{#if newName && !isValidReleaseName(newName)}
 						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
 					{:else}
@@ -547,7 +613,14 @@
 					</div>
 				</div>
 
-				<Button onclick={install} disabled={!newName || !newImage || !isValidReleaseName(newName) || hasInvalidNodePort(newPorts)}>Install</Button>
+				<div class="flex gap-2">
+					{#if editingApp}
+						<Button onclick={updateApp} disabled={!newImage || hasInvalidNodePort(newPorts)}>Save</Button>
+					{:else}
+						<Button onclick={install} disabled={!newName || !newImage || !isValidReleaseName(newName) || hasInvalidNodePort(newPorts)}>Install</Button>
+					{/if}
+					<Button variant="secondary" onclick={cancelEdit}>Cancel</Button>
+				</div>
 			</CardContent>
 		</Card>
 	{/if}
@@ -585,6 +658,9 @@
 										Open
 									</a>
 								{/if}
+								<Button variant="outline" size="xs" onclick={() => editApp(app.name)}>
+									Edit
+								</Button>
 								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>
 									Logs
 								</Button>

@@ -112,6 +112,18 @@ pub struct App {
     pub updated: String,
 }
 
+/// Current configuration of an installed app, parsed from Helm values.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct AppConfig {
+    pub name: String,
+    pub image: String,
+    pub ports: Vec<AppPort>,
+    pub env: Vec<AppEnv>,
+    pub volumes: Vec<AppVolume>,
+    pub cpu_limit: Option<String>,
+    pub memory_limit: Option<String>,
+}
+
 /// Request to install a simple app via the bjw-s app-template chart.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstallAppRequest {
@@ -613,6 +625,191 @@ impl AppsService {
         apps.into_iter()
             .find(|a| a.name == name)
             .ok_or_else(|| AppsError::AppNotFound(name.to_string()))
+    }
+
+    /// Get the current configuration of an installed app by parsing its Helm values.
+    pub async fn get_config(&self, name: &str) -> Result<AppConfig, AppsError> {
+        self.require_ready().await?;
+
+        // Verify app exists
+        let _ = self.get(name).await?;
+
+        let output = Command::new("helm")
+            .args([
+                "get", "values", name,
+                "--namespace", NAMESPACE,
+                "--kubeconfig", KUBECONFIG,
+                "-o", "json",
+            ])
+            .output()
+            .await
+            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AppsError::HelmFailed(stderr.to_string()));
+        }
+
+        let values: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_default();
+
+        // Parse image
+        let container = &values["controllers"]["main"]["containers"]["main"];
+        let repo = container["image"]["repository"].as_str().unwrap_or("");
+        let tag = container["image"]["tag"].as_str().unwrap_or("latest");
+        let image = if repo.is_empty() { String::new() } else { format!("{repo}:{tag}") };
+
+        // Parse ports
+        let mut ports = Vec::new();
+        if let Some(svc_ports) = values["service"]["main"]["ports"].as_object() {
+            for (port_name, port_def) in svc_ports {
+                ports.push(AppPort {
+                    name: port_name.clone(),
+                    container_port: port_def["port"].as_u64().unwrap_or(80) as u16,
+                    node_port: port_def["nodePort"].as_u64().map(|v| v as u16),
+                    protocol: port_def["protocol"].as_str().unwrap_or("TCP").to_string(),
+                });
+            }
+        }
+
+        // Parse env
+        let mut env = Vec::new();
+        if let Some(env_map) = container["env"].as_object() {
+            for (k, v) in env_map {
+                env.push(AppEnv {
+                    name: k.clone(),
+                    value: v.as_str().unwrap_or("").to_string(),
+                });
+            }
+        }
+
+        // Parse volumes
+        let mut volumes = Vec::new();
+        if let Some(persistence) = values["persistence"].as_object() {
+            for (vol_name, vol_def) in persistence {
+                if vol_def["type"].as_str() == Some("persistentVolumeClaim") {
+                    let mount_path = vol_def["globalMounts"]
+                        .as_array()
+                        .and_then(|a| a.first())
+                        .and_then(|m| m["path"].as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    volumes.push(AppVolume {
+                        name: vol_name.clone(),
+                        mount_path,
+                        size: vol_def["size"].as_str().unwrap_or("1Gi").to_string(),
+                        storage_class: vol_def["storageClass"].as_str().unwrap_or("local-path").to_string(),
+                    });
+                }
+            }
+        }
+
+        // Parse resource limits
+        let limits = &container["resources"]["limits"];
+        let cpu_limit = limits["cpu"].as_str().map(String::from);
+        let memory_limit = limits["memory"].as_str().map(String::from);
+
+        Ok(AppConfig {
+            name: name.to_string(),
+            image,
+            ports,
+            env,
+            volumes,
+            cpu_limit,
+            memory_limit,
+        })
+    }
+
+    /// Update an existing app with new configuration via helm upgrade.
+    pub async fn update(&self, mut req: InstallAppRequest) -> Result<App, AppsError> {
+        self.require_ready().await?;
+
+        // Verify app exists
+        let _ = self.get(&req.name).await?;
+
+        // Validate and assign NodePorts (same logic as install)
+        let mut used = self.used_node_ports().await;
+        // Exclude ports currently used by this app (they can be reused)
+        if let Ok(current) = self.get_config(&req.name).await {
+            for p in &current.ports {
+                if let Some(np) = p.node_port {
+                    used.remove(&np);
+                }
+            }
+        }
+        for p in &req.ports {
+            if let Some(np) = p.node_port {
+                if !(30000..=32767).contains(&np) {
+                    return Err(AppsError::HelmFailed(format!(
+                        "NodePort {} is out of range (must be 30000-32767)", np
+                    )));
+                }
+                if used.contains(&np) {
+                    return Err(AppsError::HelmFailed(format!(
+                        "NodePort {} is already in use", np
+                    )));
+                }
+            }
+        }
+        let mut next_free = 30000u16;
+        for p in &mut req.ports {
+            if p.node_port.is_none() {
+                while used.contains(&next_free) {
+                    next_free += 1;
+                    if next_free > 32767 {
+                        return Err(AppsError::HelmFailed(
+                            "no free NodePort available in 30000-32767 range".into(),
+                        ));
+                    }
+                }
+                p.node_port = Some(next_free);
+                used.insert(next_free);
+                next_free += 1;
+            }
+        }
+
+        let values = generate_app_template_values(&req);
+        let values_json = serde_json::to_string(&values)
+            .map_err(|e| AppsError::HelmFailed(format!("serialize values: {e}")))?;
+
+        let values_path = format!("/tmp/nasty-app-{}.json", req.name);
+        tokio::fs::write(&values_path, &values_json).await?;
+
+        let output = Command::new("helm")
+            .args([
+                "upgrade", &req.name,
+                &format!("bjw-s/{APP_TEMPLATE_CHART}"),
+                "--namespace", NAMESPACE,
+                "--values", &values_path,
+                "--kubeconfig", KUBECONFIG,
+            ])
+            .output()
+            .await
+            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
+
+        let _ = tokio::fs::remove_file(&values_path).await;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(AppsError::HelmFailed(stderr.to_string()));
+        }
+
+        info!("Updated app '{}'", req.name);
+
+        // Update ingress
+        if let Some(first_port) = req.ports.first() {
+            if let Some(node_port) = first_port.node_port {
+                let _ = self.ingress_set(SetIngressRequest {
+                    name: req.name.clone(),
+                    node_port,
+                }).await;
+            }
+        } else {
+            // No ports — remove ingress
+            let _ = self.ingress_remove(&req.name).await;
+        }
+
+        self.get(&req.name).await
     }
 
     pub async fn logs(&self, name: &str, tail: Option<u32>) -> Result<String, AppsError> {

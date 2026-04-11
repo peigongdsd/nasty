@@ -588,6 +588,16 @@ export interface App {
 	updated: string;
 }
 
+export interface AppConfig {
+	name: string;
+	image: string;
+	ports: { name: string; container_port: number; node_port: number | null; protocol: string }[];
+	env: { name: string; value: string }[];
+	volumes: { name: string; mount_path: string; size: string; storage_class: string }[];
+	cpu_limit: string | null;
+	memory_limit: string | null;
+}
+
 export interface HelmRepo {
 	name: string;
 	url: string;
