@@ -136,7 +136,7 @@
 	}
 
 	function addPort() {
-		newPorts = [...newPorts, { name: newPorts.length === 0 ? 'http' : `port-${newPorts.length}`, container_port: 8080, node_port: '', protocol: 'TCP' }];
+		newPorts = [...newPorts, { name: newPorts.length === 0 ? 'http' : `port-${newPorts.length}`, container_port: 80, node_port: '', protocol: 'TCP' }];
 	}
 
 	function removePort(i: number) {
@@ -581,8 +581,8 @@
 						<td class="p-3">
 							<div class="flex gap-2">
 								{#if getIngress(app.name)}
-									<a href="/apps/{app.name}/" target="_blank" class="text-xs text-blue-500 hover:underline self-center">
-										/apps/{app.name}/
+									<a href="/apps/{app.name}/" target="_blank" class="inline-flex items-center whitespace-nowrap rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400 hover:bg-blue-500/20">
+										Open
 									</a>
 								{/if}
 								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>
@@ -740,8 +740,8 @@
 						<td class="p-3">
 							<div class="flex gap-2">
 								{#if getIngress(app.name)}
-									<a href="/apps/{app.name}/" target="_blank" class="text-xs text-blue-500 hover:underline self-center">
-										/apps/{app.name}/
+									<a href="/apps/{app.name}/" target="_blank" class="inline-flex items-center whitespace-nowrap rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400 hover:bg-blue-500/20">
+										Open
 									</a>
 								{/if}
 								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>Logs</Button>
