@@ -36,7 +36,7 @@ impl Protocol {
     ];
 
     pub fn is_system_service(&self) -> bool {
-        matches!(self, Protocol::Ssh | Protocol::Avahi | Protocol::Smart)
+        matches!(self, Protocol::Nut | Protocol::Ssh | Protocol::Avahi | Protocol::Smart)
     }
 
     pub fn name(&self) -> &'static str {
