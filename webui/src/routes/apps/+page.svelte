@@ -54,6 +54,11 @@
 
 	const client = getClient();
 	let startupPoll: ReturnType<typeof setInterval> | null = null;
+	const HELM_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+
+	function isValidReleaseName(name: string): boolean {
+		return name.length > 0 && name.length <= 53 && HELM_NAME_RE.test(name);
+	}
 
 	onMount(async () => {
 		await Promise.all([refresh(), loadFilesystems()]);
@@ -152,8 +157,13 @@
 
 	async function install() {
 		if (!newName || !newImage) return;
+		const releaseName = newName.toLowerCase();
+		if (!isValidReleaseName(releaseName)) {
+			await withToast(async () => { throw new Error('Invalid app name: use lowercase letters, numbers, hyphens, and dots (max 53 chars)'); }, '');
+			return;
+		}
 		const params: Record<string, unknown> = {
-			name: newName,
+			name: releaseName,
 			image: newImage,
 		};
 		if (newPorts.length > 0) {
@@ -271,8 +281,13 @@
 
 	async function installChart() {
 		if (!expertInstall || !expertReleaseName) return;
+		const releaseName = expertReleaseName.toLowerCase();
+		if (!isValidReleaseName(releaseName)) {
+			await withToast(async () => { throw new Error('Invalid release name: use lowercase letters, numbers, hyphens, and dots (max 53 chars)'); }, '');
+			return;
+		}
 		const params: Record<string, unknown> = {
-			name: expertReleaseName,
+			name: releaseName,
 			chart: `${expertInstall.repo}/${expertInstall.name}`,
 			version: expertInstall.version,
 		};
@@ -459,8 +474,12 @@
 				<h3 class="mb-4 text-lg font-semibold">Install App</h3>
 				<div class="mb-4">
 					<Label for="app-name">App Name</Label>
-					<Input id="app-name" bind:value={newName} placeholder="plex" class="mt-1" />
-					<span class="mt-1 block text-xs text-muted-foreground">Must be DNS-safe (lowercase, no spaces).</span>
+					<Input id="app-name" value={newName} oninput={(e) => { newName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} placeholder="plex" class="mt-1" />
+					{#if newName && !isValidReleaseName(newName)}
+						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
+					{:else}
+						<span class="mt-1 block text-xs text-muted-foreground">Must be DNS-safe (lowercase, no spaces).</span>
+					{/if}
 				</div>
 				<div class="mb-4">
 					<Label for="app-image">Container Image</Label>
@@ -536,7 +555,7 @@
 					</div>
 				</div>
 
-				<Button onclick={install} disabled={!newName || !newImage}>Install</Button>
+				<Button onclick={install} disabled={!newName || !newImage || !isValidReleaseName(newName)}>Install</Button>
 			</CardContent>
 		</Card>
 	{/if}
@@ -686,7 +705,10 @@
 				<h3 class="mb-4 text-lg font-semibold">Install {expertInstall.repo}/{expertInstall.name}</h3>
 				<div class="mb-4">
 					<Label for="expert-name">Release Name</Label>
-					<Input id="expert-name" bind:value={expertReleaseName} class="mt-1" />
+					<Input id="expert-name" value={expertReleaseName} oninput={(e) => { expertReleaseName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} class="mt-1" />
+					{#if expertReleaseName && !isValidReleaseName(expertReleaseName)}
+						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
+					{/if}
 				</div>
 				<div class="mb-4">
 					<Label for="expert-values">Values (JSON, optional)</Label>
@@ -699,7 +721,7 @@
 					<span class="mt-1 block text-xs text-muted-foreground">Override default chart values. Must be valid JSON.</span>
 				</div>
 				<div class="flex gap-2">
-					<Button onclick={installChart} disabled={!expertReleaseName}>Install</Button>
+					<Button onclick={installChart} disabled={!expertReleaseName || !isValidReleaseName(expertReleaseName)}>Install</Button>
 					<Button variant="ghost" onclick={() => expertInstall = null}>Cancel</Button>
 				</div>
 			</CardContent>
