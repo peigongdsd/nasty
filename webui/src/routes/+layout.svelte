@@ -41,7 +41,6 @@
 		Bug,
 		Monitor,
 		Box,
-		BatteryCharging,
 		FolderOpen,
 		CircleHelp,
 		ExternalLink,
@@ -277,7 +276,6 @@
 		items.push(
 			{ href: '/apps',          label: 'Apps',             icon: Box },
 			{ href: '/disks',         label: 'Disks',           icon: HardDrive },
-			{ href: '/ups',           label: 'UPS',             icon: BatteryCharging },
 			{ href: '/alerts',        label: 'Alerts',          icon: Bell },
 			{ href: '/services',      label: 'Services',        icon: Network },
 			{ href: '/update',        label: 'Update',          icon: RefreshCw },

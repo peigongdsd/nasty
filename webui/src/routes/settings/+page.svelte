@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { sysInfoRefresh } from '$lib/sysInfoRefresh.svelte';
-	import type { Settings, SystemInfo, NetworkConfig, TuningConfig, NutConfig } from '$lib/types';
+	import type { Settings, SystemInfo, NetworkConfig, TuningConfig, NutConfig, UpsStatus } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Copy, Check, ChevronDown, ChevronRight } from '@lucide/svelte';
 
@@ -55,6 +55,8 @@
 	// UPS (NUT)
 	let nutConfig: NutConfig | null = $state(null);
 	let savingNut = $state(false);
+	let upsStatus: UpsStatus | null = $state(null);
+	let upsStatusInterval: ReturnType<typeof setInterval> | null = null;
 	let nutDriver = $state('');
 	let nutPort = $state('');
 	let nutUpsName = $state('');
@@ -369,8 +371,11 @@
 		if (tab === 'tuning' && !tuning) {
 			loadTuning();
 		}
-		if (tab === 'ups' && !nutConfig) {
-			loadNut();
+		if (tab === 'ups') {
+			if (!nutConfig) loadNut();
+			else startUpsPolling();
+		} else {
+			stopUpsPolling();
 		}
 	}
 
@@ -426,6 +431,8 @@
 			nutShutdownSeconds = nutConfig.shutdown_on_battery_seconds.toString();
 			nutShutdownCommand = nutConfig.shutdown_command;
 		}
+		await refreshUpsStatus();
+		startUpsPolling();
 	}
 
 	async function saveNut() {
@@ -445,6 +452,70 @@
 		savingNut = false;
 		await loadNut();
 	}
+
+	async function refreshUpsStatus() {
+		try {
+			upsStatus = await client.call<UpsStatus>('system.nut.status');
+		} catch {
+			upsStatus = null;
+		}
+	}
+
+	function startUpsPolling() {
+		stopUpsPolling();
+		upsStatusInterval = setInterval(refreshUpsStatus, 5000);
+	}
+
+	function stopUpsPolling() {
+		if (upsStatusInterval) {
+			clearInterval(upsStatusInterval);
+			upsStatusInterval = null;
+		}
+	}
+
+	function upsStatusColor(s: string): string {
+		if (s === 'OL' || s.startsWith('OL ')) return 'text-green-500';
+		if (s.includes('OB')) return 'text-yellow-500';
+		if (s.includes('LB')) return 'text-red-500';
+		return 'text-muted-foreground';
+	}
+
+	function upsStatusLabel(s: string): string {
+		return s.split(' ').map(code => {
+			switch (code) {
+				case 'OL': return 'Online';
+				case 'OB': return 'On Battery';
+				case 'LB': return 'Low Battery';
+				case 'HB': return 'High Battery';
+				case 'RB': return 'Replace Battery';
+				case 'CHRG': return 'Charging';
+				case 'DISCHRG': return 'Discharging';
+				case 'BYPASS': return 'Bypass';
+				case 'CAL': return 'Calibrating';
+				case 'OFF': return 'Offline';
+				case 'OVER': return 'Overloaded';
+				case 'TRIM': return 'Trimming';
+				case 'BOOST': return 'Boosting';
+				case 'FSD': return 'Forced Shutdown';
+				default: return code;
+			}
+		}).join(' / ');
+	}
+
+	function formatUpsRuntime(seconds: number): string {
+		if (seconds >= 3600) {
+			const h = Math.floor(seconds / 3600);
+			const m = Math.floor((seconds % 3600) / 60);
+			return `${h}h ${m}m`;
+		}
+		const m = Math.floor(seconds / 60);
+		const s = seconds % 60;
+		return `${m}m ${s}s`;
+	}
+
+	onDestroy(() => {
+		stopUpsPolling();
+	});
 </script>
 
 
@@ -1047,6 +1118,62 @@
 		<p class="text-muted-foreground">Loading...</p>
 	{:else}
 		<div class="flex flex-col gap-6">
+			{#if upsStatus?.available}
+				<section class="rounded-lg border border-border p-5">
+					<h3 class="mb-4 text-sm font-semibold">UPS Status</h3>
+					<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+						<div>
+							<p class="text-xs text-muted-foreground">Status</p>
+							<p class="text-lg font-semibold {upsStatusColor(upsStatus.status)}">
+								{upsStatusLabel(upsStatus.status)}
+							</p>
+						</div>
+						{#if upsStatus.battery_charge != null}
+							<div>
+								<p class="text-xs text-muted-foreground">Battery</p>
+								<p class="text-lg font-semibold">{upsStatus.battery_charge.toFixed(0)}%</p>
+							</div>
+						{/if}
+						{#if upsStatus.battery_runtime != null}
+							<div>
+								<p class="text-xs text-muted-foreground">Runtime</p>
+								<p class="text-lg font-semibold">{formatUpsRuntime(upsStatus.battery_runtime)}</p>
+							</div>
+						{/if}
+						{#if upsStatus.ups_load != null}
+							<div>
+								<p class="text-xs text-muted-foreground">Load</p>
+								<p class="text-lg font-semibold">{upsStatus.ups_load.toFixed(0)}%</p>
+							</div>
+						{/if}
+						{#if upsStatus.input_voltage != null}
+							<div>
+								<p class="text-xs text-muted-foreground">Input Voltage</p>
+								<p class="text-sm">{upsStatus.input_voltage.toFixed(1)} V</p>
+							</div>
+						{/if}
+						{#if upsStatus.output_voltage != null}
+							<div>
+								<p class="text-xs text-muted-foreground">Output Voltage</p>
+								<p class="text-sm">{upsStatus.output_voltage.toFixed(1)} V</p>
+							</div>
+						{/if}
+						{#if upsStatus.ups_model}
+							<div>
+								<p class="text-xs text-muted-foreground">Model</p>
+								<p class="text-sm">{upsStatus.ups_model}</p>
+							</div>
+						{/if}
+						{#if upsStatus.ups_serial}
+							<div>
+								<p class="text-xs text-muted-foreground">Serial</p>
+								<p class="text-sm font-mono">{upsStatus.ups_serial}</p>
+							</div>
+						{/if}
+					</div>
+				</section>
+			{/if}
+
 			<section class="rounded-lg border border-border p-5">
 				<h3 class="mb-4 text-sm font-semibold">UPS Hardware</h3>
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
