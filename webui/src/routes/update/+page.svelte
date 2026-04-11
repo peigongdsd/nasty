@@ -47,6 +47,9 @@
 	);
 
 	let info: UpdateInfo | null = $state(null);
+	let checkInfo: UpdateInfo | null = $state(null);
+	let checking = $state(false);
+	let startingDevUpgrade = $state(false);
 	let taggedReleaseBanner: TaggedReleaseBannerState = $state({ kind: 'loading' });
 	let versionRows: VersionRow[] = $state([]);
 	let status: UpdateStatus | null = $state(null);
@@ -107,8 +110,13 @@
 		versionRows.some((row) => row.url.trim() !== row.initialUrl || row.update)
 	);
 
+	const isDevBuild = $derived.by(() => {
+		if (taggedReleaseBanner.kind !== 'ready') return false;
+		return !isOfficialTaggedReleaseUrl(taggedReleaseBanner.current_url);
+	});
+
 	const upstreamBusy = $derived.by(() =>
-		startingSwitch || startingUpgrade || status?.state === 'running'
+		startingSwitch || startingUpgrade || startingDevUpgrade || status?.state === 'running'
 	);
 
 	const versionSelectionCount = $derived.by(() =>
@@ -337,6 +345,46 @@
 		startingUpgrade = false;
 	}
 
+	async function checkForUpdates() {
+		checking = true;
+		try {
+			checkInfo = await client.call<UpdateInfo>('system.update.check');
+		} catch {
+			checkInfo = null;
+		}
+		checking = false;
+	}
+
+	async function upgradeDevBuild() {
+		if (!await confirm(
+			'Update to latest development build?',
+			`This will fetch the latest commit from the nasty input and rebuild the system if there are changes.`
+		)) return;
+
+		startingDevUpgrade = true;
+		logCollapsed = false;
+		status = { state: 'running', log: '', reboot_required: false, webui_changed: false };
+		writeVersionPageAction('version-switch');
+		taggedReleaseBanner = { kind: 'switching' };
+		const result = await withToast(
+			() => client.call('system.version.switch', {
+				inputs: versionRows.map((row) => ({
+					name: row.name,
+					url: row.url.trim(),
+					update: row.name === 'nasty'
+				}))
+			}),
+			'Development build update started'
+		);
+		if (result !== undefined) {
+			startPolling();
+		} else {
+			writeVersionPageAction(null);
+			void loadTaggedReleaseBanner();
+		}
+		startingDevUpgrade = false;
+	}
+
 	function startPolling() {
 		stopPolling();
 		pollInterval = setInterval(async () => {
@@ -487,12 +535,52 @@
 	{#if activeTab === 'version'}
 		<Card class="mb-6">
 			<CardContent class="space-y-4 pt-6">
+				{#if isDevBuild}
+					<div class="rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-4 text-sm">
+						<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+							<div class="min-w-0 flex-1">
+								<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Development Build</div>
+								<div class="mt-1 text-xs text-muted-foreground">
+									Tracking <code class="font-mono">{taggedReleaseBanner.kind === 'ready' ? taggedReleaseBanner.current_url : ''}</code>
+								</div>
+								{#if checkInfo?.update_available === true}
+									<div class="mt-2 text-sm font-medium text-blue-400">
+										Update available: <code class="font-mono">{checkInfo.latest_version}</code>
+									</div>
+								{:else if checkInfo?.update_available === false}
+									<div class="mt-2 text-sm text-muted-foreground">Already at latest commit.</div>
+								{/if}
+							</div>
+							<div class="flex flex-wrap items-start justify-end gap-3">
+								{#if info}
+									<div class="min-w-[11rem] rounded-lg border border-border/60 bg-background/60 px-4 py-3 text-sm">
+										<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed NASty</div>
+										<div class="mt-1 font-mono text-lg font-semibold">{info.current_version}</div>
+									</div>
+								{/if}
+								<div class="flex flex-col gap-2">
+									<Button size="sm" variant="secondary" onclick={checkForUpdates} disabled={checking || upstreamBusy}>
+										{checking ? 'Checking...' : 'Refresh'}
+									</Button>
+									{#if checkInfo?.update_available}
+										<Button size="sm" onclick={upgradeDevBuild} disabled={startingDevUpgrade || status?.state === 'running'}>
+											{startingDevUpgrade ? 'Starting...' : 'Upgrade'}
+										</Button>
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<div
-					class="rounded-lg border px-4 py-4 text-sm {taggedReleaseBanner.kind === 'failure'
-						? 'border-amber-500/40 bg-amber-500/10'
-						: taggedReleaseBanner.kind === 'ready' && !taggedReleaseBanner.current_is_latest_standard_url
-							? 'border-emerald-500/40 bg-emerald-500/10'
-							: 'border-border/60 bg-muted/20'}"
+					class="rounded-lg border px-4 py-4 text-sm {isDevBuild
+						? 'border-border/60 bg-muted/20'
+						: taggedReleaseBanner.kind === 'failure'
+							? 'border-amber-500/40 bg-amber-500/10'
+							: taggedReleaseBanner.kind === 'ready' && !taggedReleaseBanner.current_is_latest_standard_url
+								? 'border-emerald-500/40 bg-emerald-500/10'
+								: 'border-border/60 bg-muted/20'}"
 				>
 					<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 						<div class="min-w-0 flex-1">
@@ -500,7 +588,7 @@
 							{#if taggedReleaseBanner.kind === 'loading'}
 								<div class="mt-1 font-medium">Fetching newest version...</div>
 							{:else if taggedReleaseBanner.kind === 'switching'}
-								<div class="mt-1 font-medium">Switching to another Version...</div>
+								<div class="mt-1 font-medium">Switching...</div>
 							{:else if taggedReleaseBanner.kind === 'failure'}
 								<div class="mt-1 font-medium">Network failure, unable to fetch newest tagged release</div>
 							{:else if taggedReleaseBanner.current_is_latest_standard_url}
@@ -508,16 +596,16 @@
 								<div class="mt-1 text-xs text-muted-foreground">
 									<code class="font-mono">{taggedReleaseBanner.latest_tag}</code>
 								</div>
-							{:else if !isOfficialTaggedReleaseUrl(taggedReleaseBanner.current_url)}
+							{:else if isDevBuild}
 								<div class="mt-1 font-medium">
-									You are using a custom build of nasty. Click to switch back to upstream release.
+									Switch to official tagged release
 								</div>
 								<div class="mt-1 text-xs text-muted-foreground">
-									<code class="font-mono">{taggedReleaseBanner.latest_url}</code>
+									Latest: <code class="font-mono">{taggedReleaseBanner.latest_tag}</code>
 								</div>
 							{:else}
 								<div class="mt-1 font-medium">
-									The newest tagged release is {taggedReleaseBanner.latest_tag}, click to switch
+									Newer tagged release available: {taggedReleaseBanner.latest_tag}
 								</div>
 								<div class="mt-1 text-xs text-muted-foreground">
 									<code class="font-mono">{taggedReleaseBanner.latest_url}</code>
@@ -525,15 +613,15 @@
 							{/if}
 						</div>
 						<div class="flex flex-wrap items-start justify-end gap-3">
-							{#if info}
+							{#if !isDevBuild && info}
 								<div class="min-w-[11rem] rounded-lg border border-border/60 bg-background/60 px-4 py-3 text-sm">
 									<div class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Installed NASty</div>
 									<div class="mt-1 font-mono text-lg font-semibold">{info.current_version}</div>
 								</div>
 							{/if}
 							{#if taggedReleaseBanner.kind === 'ready' && !taggedReleaseBanner.current_is_latest_standard_url}
-								<Button size="sm" onclick={upgradeTaggedRelease} disabled={startingUpgrade || status?.state === 'running'}>
-									{startingUpgrade ? 'Starting...' : 'Upgrade'}
+								<Button size="sm" variant={isDevBuild ? 'secondary' : 'default'} onclick={upgradeTaggedRelease} disabled={startingUpgrade || status?.state === 'running'}>
+									{startingUpgrade ? 'Starting...' : 'Switch to release'}
 								</Button>
 							{/if}
 						</div>
