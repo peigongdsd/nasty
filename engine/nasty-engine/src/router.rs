@@ -445,13 +445,39 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         "system.tailscale.get" => ok(req, state.tailscale.get().await),
         "system.tailscale.connect" => match parse_params(req) {
             Ok(p) => match state.tailscale.connect(p).await {
-                Ok(v) => ok(req, v),
+                Ok(v) => {
+                    // Sync NVMe-oF ports for the new Tailscale IP
+                    if let Some(ref ip) = v.ip {
+                        let nvmeof = state.nvmeof.clone();
+                        let ip = ip.clone();
+                        tokio::spawn(async move {
+                            nvmeof.ensure_tailscale_ports(&ip).await;
+                        });
+                    }
+                    ok(req, v)
+                }
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
         },
         "system.tailscale.disconnect" => match state.tailscale.disconnect().await {
-            Ok(v) => ok(req, v),
+            Ok(v) => {
+                // Clean up NVMe-oF ports that were on the Tailscale IP
+                // (Tailscale IPs are in the 100.x.y.z range)
+                let nvmeof = state.nvmeof.clone();
+                tokio::spawn(async move {
+                    let subsystems = nvmeof.list().await.unwrap_or_default();
+                    for subsys in &subsystems {
+                        for port in &subsys.ports {
+                            if port.addr.starts_with("100.") {
+                                nvmeof.remove_ports_for_ip(&port.addr).await;
+                                return; // All Tailscale ports share the same IP
+                            }
+                        }
+                    }
+                });
+                ok(req, v)
+            }
             Err(e) => err(req, e),
         },
 

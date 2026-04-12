@@ -143,6 +143,16 @@ async fn main() -> anyhow::Result<()> {
     state.apps.restore().await;
     state.tailscale.restore().await;
 
+    // Sync NVMe-oF ports with Tailscale IP (if Tailscale reconnected on boot)
+    {
+        let ts_status = state.tailscale.get().await;
+        if ts_status.connected {
+            if let Some(ref ip) = ts_status.ip {
+                state.nvmeof.ensure_tailscale_ports(ip).await;
+            }
+        }
+    }
+
     // Pre-warm caches so first page loads are fast.
     // Runs before sd_notify_ready() — nginx won't serve until this completes.
     info!("Warming caches...");

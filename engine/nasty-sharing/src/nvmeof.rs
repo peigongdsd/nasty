@@ -643,6 +643,66 @@ impl NvmeofService {
         Ok(subsys)
     }
 
+    // ── Tailscale integration ────────────────────────────────
+
+    /// Ensure every NVMe-oF subsystem has a port bound to the Tailscale IP.
+    /// Called after Tailscale connects (or at boot when Tailscale is already up).
+    pub async fn ensure_tailscale_ports(&self, tailscale_ip: &str) {
+        let subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
+        if subsystems.is_empty() {
+            return;
+        }
+
+        info!("Syncing NVMe-oF ports for Tailscale IP {tailscale_ip}");
+
+        for subsys in &subsystems {
+            // Skip if this subsystem already has a port on the Tailscale IP
+            if subsys.ports.iter().any(|p| p.addr == tailscale_ip) {
+                continue;
+            }
+
+            // Pick transport/service_id from existing port, or use defaults
+            let (transport, svc_id) = subsys.ports.first()
+                .map(|p| (p.transport.clone(), p.service_id.clone()))
+                .unwrap_or_else(|| ("tcp".to_string(), "4420".to_string()));
+
+            let svc_port = svc_id.parse::<u16>().unwrap_or(4420);
+
+            match self.add_port(AddPortRequest {
+                subsystem_id: subsys.id.clone(),
+                transport: Some(transport),
+                addr: Some(tailscale_ip.to_string()),
+                service_id: Some(svc_port),
+                addr_family: Some("ipv4".to_string()),
+            }).await {
+                Ok(_) => info!("Added Tailscale port for subsystem '{}'", subsys.nqn),
+                Err(e) => warn!("Failed to add Tailscale port for '{}': {e}", subsys.nqn),
+            }
+        }
+    }
+
+    /// Remove NVMe-oF ports bound to a specific IP (e.g. when Tailscale disconnects).
+    pub async fn remove_ports_for_ip(&self, ip: &str) {
+        let subsystems: Vec<NvmeofSubsystem> = state_dir().load_all().await;
+
+        for subsys in &subsystems {
+            let tailscale_ports: Vec<u16> = subsys.ports.iter()
+                .filter(|p| p.addr == ip)
+                .map(|p| p.port_id)
+                .collect();
+
+            for port_id in tailscale_ports {
+                match self.remove_port(RemovePortRequest {
+                    subsystem_id: subsys.id.clone(),
+                    port_id,
+                }).await {
+                    Ok(_) => info!("Removed port {port_id} (IP {ip}) from '{}'", subsys.nqn),
+                    Err(e) => warn!("Failed to remove port {port_id} from '{}': {e}", subsys.nqn),
+                }
+            }
+        }
+    }
+
     pub async fn add_host(
         &self,
         req: AddHostRequest,
