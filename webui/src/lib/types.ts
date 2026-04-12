@@ -598,6 +598,10 @@ export interface AppConfig {
 	memory_limit: string | null;
 }
 
+export interface ImageInspectResult {
+	ports: { name: string; container_port: number; node_port: number | null; protocol: string }[];
+}
+
 export interface HelmRepo {
 	name: string;
 	url: string;

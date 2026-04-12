@@ -124,6 +124,12 @@ pub struct AppConfig {
     pub memory_limit: Option<String>,
 }
 
+/// Detected ports from inspecting a container image's EXPOSE directives.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct ImageInspectResult {
+    pub ports: Vec<AppPort>,
+}
+
 /// Request to install a simple app via the bjw-s app-template chart.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstallAppRequest {
@@ -1063,6 +1069,16 @@ impl AppsService {
         Ok(())
     }
 
+    // ── Image inspection ─────────────────────────────────────
+
+    /// Inspect a container image's EXPOSE directives via the Docker Registry API.
+    pub async fn inspect_image(&self, image: &str) -> Result<ImageInspectResult, AppsError> {
+        let ports = inspect_image_ports(image).await.map_err(|e| {
+            AppsError::CommandFailed(format!("image inspect failed: {e}"))
+        })?;
+        Ok(ImageInspectResult { ports })
+    }
+
     // ── Port Forwarding ──────────────────────────────────────
 
     /// Start a port-forward to an app's pod.
@@ -1537,4 +1553,113 @@ async fn ensure_k3s_symlink(fs_name: &str) {
         Ok(()) => info!("Symlinked {default_path} → {k3s_data}"),
         Err(e) => error!("Failed to symlink k3s data: {e}"),
     }
+}
+
+// ── Container image inspection ──────────────────────────────
+
+/// Parse an image reference like "traefik/whoami:latest" or "ghcr.io/org/repo:v1"
+/// into (registry, repository, tag).
+fn parse_image_ref(image: &str) -> (String, String, String) {
+    let (image_no_tag, tag) = if let Some((img, tag)) = image.rsplit_once(':') {
+        (img.to_string(), tag.to_string())
+    } else {
+        (image.to_string(), "latest".to_string())
+    };
+
+    // If the first component has a dot or colon, it's a registry
+    let parts: Vec<&str> = image_no_tag.splitn(2, '/').collect();
+    if parts.len() == 1 {
+        // e.g. "nginx" → Docker Hub library image
+        ("registry-1.docker.io".to_string(), format!("library/{}", parts[0]), tag)
+    } else if parts[0].contains('.') || parts[0].contains(':') {
+        // e.g. "ghcr.io/org/repo"
+        (parts[0].to_string(), parts[1].to_string(), tag)
+    } else {
+        // e.g. "traefik/whoami" → Docker Hub user image
+        ("registry-1.docker.io".to_string(), image_no_tag, tag)
+    }
+}
+
+/// Fetch EXPOSE ports from a container image via the Docker Registry HTTP API.
+async fn inspect_image_ports(image: &str) -> Result<Vec<AppPort>, String> {
+    let (registry, repo, tag) = parse_image_ref(image);
+    let client = reqwest::Client::new();
+
+    // Step 1: Get auth token (Docker Hub uses token auth, others may not)
+    let token = if registry == "registry-1.docker.io" {
+        let token_url = format!(
+            "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
+            repo
+        );
+        let resp: serde_json::Value = client.get(&token_url)
+            .send().await.map_err(|e| e.to_string())?
+            .json().await.map_err(|e| e.to_string())?;
+        resp["token"].as_str().map(String::from)
+    } else {
+        None
+    };
+
+    let registry_url = if registry.starts_with("http") {
+        registry.clone()
+    } else {
+        format!("https://{registry}")
+    };
+
+    // Step 2: Fetch manifest to get config digest
+    let manifest_url = format!("{registry_url}/v2/{repo}/manifests/{tag}");
+    let mut req = client.get(&manifest_url)
+        .header("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json");
+    if let Some(ref t) = token {
+        req = req.bearer_auth(t);
+    }
+    let manifest: serde_json::Value = req
+        .send().await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+
+    let config_digest = manifest["config"]["digest"]
+        .as_str()
+        .ok_or("no config digest in manifest")?;
+
+    // Step 3: Fetch config blob
+    let config_url = format!("{registry_url}/v2/{repo}/blobs/{config_digest}");
+    let mut req = client.get(&config_url);
+    if let Some(ref t) = token {
+        req = req.bearer_auth(t);
+    }
+    let config: serde_json::Value = req
+        .send().await.map_err(|e| e.to_string())?
+        .json().await.map_err(|e| e.to_string())?;
+
+    // Step 4: Parse ExposedPorts from config
+    // Format: {"80/tcp": {}, "443/tcp": {}}
+    let exposed = config["config"]["ExposedPorts"]
+        .as_object()
+        .or_else(|| config["container_config"]["ExposedPorts"].as_object());
+
+    let mut ports = Vec::new();
+    if let Some(exposed_ports) = exposed {
+        for (key, _) in exposed_ports {
+            // key is like "80/tcp" or "8080/udp"
+            let parts: Vec<&str> = key.split('/').collect();
+            if let Some(port_str) = parts.first() {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    let protocol = parts.get(1)
+                        .map(|p| p.to_uppercase())
+                        .unwrap_or_else(|| "TCP".to_string());
+                    let name = if ports.is_empty() { "http".to_string() } else { format!("port-{}", ports.len()) };
+                    ports.push(AppPort {
+                        name,
+                        container_port: port,
+                        node_port: None,
+                        protocol,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by port number for consistency
+    ports.sort_by_key(|p| p.container_port);
+
+    Ok(ports)
 }

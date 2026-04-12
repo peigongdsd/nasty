@@ -11,3 +11,4 @@ tokio.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 schemars.workspace = true
+reqwest.workspace = true

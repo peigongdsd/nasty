@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig } from '$lib/types';
+	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig, ImageInspectResult } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -51,7 +51,8 @@
 	let newVolumes = $state<{ name: string; mount_path: string; size: string }[]>([]);
 	let newCpuLimit = $state('');
 	let newMemoryLimit = $state('');
-
+	let inspecting = $state(false);
+	let lastInspectedImage = '';
 
 	const client = getClient();
 	let startupPoll: ReturnType<typeof setInterval> | null = null;
@@ -63,6 +64,27 @@
 
 	function hasInvalidNodePort(ports: { node_port: string }[]): boolean {
 		return ports.some(p => p.node_port && (parseInt(p.node_port) < 30000 || parseInt(p.node_port) > 32767));
+	}
+
+	async function inspectImage() {
+		const image = newImage.trim();
+		if (!image || image === lastInspectedImage) return;
+		lastInspectedImage = image;
+		inspecting = true;
+		try {
+			const result = await client.call<ImageInspectResult>('apps.inspect_image', { image });
+			if (result.ports.length > 0) {
+				newPorts = result.ports.map(p => ({
+					name: p.name,
+					container_port: p.container_port,
+					node_port: '',
+					protocol: p.protocol,
+				}));
+			}
+		} catch {
+			// Inspection failed — keep whatever ports the user has
+		}
+		inspecting = false;
 	}
 
 	onMount(async () => {
@@ -514,7 +536,7 @@
 			>Helm Charts</button>
 		</div>
 		{#if mode === 'easy'}
-			<Button size="sm" onclick={() => { if (showInstall) { cancelEdit(); } else { editingApp = null; showInstall = true; } }}>
+			<Button size="sm" onclick={() => { if (showInstall) { cancelEdit(); } else { editingApp = null; newPorts = [{ name: 'http', container_port: 80, node_port: '', protocol: 'TCP' }]; showInstall = true; } }}>
 				{showInstall ? 'Cancel' : 'Install App'}
 			</Button>
 		{/if}
@@ -537,7 +559,10 @@
 				</div>
 				<div class="mb-4">
 					<Label for="app-image">Container Image</Label>
-					<Input id="app-image" bind:value={newImage} placeholder="traefik/whoami:latest" class="mt-1" />
+					<Input id="app-image" bind:value={newImage} placeholder="traefik/whoami:latest" class="mt-1" onblur={inspectImage} />
+					{#if inspecting}
+						<span class="mt-1 block text-xs text-muted-foreground">Detecting exposed ports...</span>
+					{/if}
 				</div>
 
 				<!-- Ports -->

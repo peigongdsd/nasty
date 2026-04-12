@@ -1788,6 +1788,13 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(e) => invalid(req, e),
         },
+        "apps.inspect_image" => match require_str(req, "image") {
+            Ok(image) => match state.apps.inspect_image(image).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
         "apps.config" => match require_str(req, "name") {
             Ok(name) => match state.apps.get_config(name).await {
                 Ok(v) => ok(req, v),
