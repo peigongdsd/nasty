@@ -36,6 +36,7 @@
 		bcachefs_io_errors: 'bcachefs IO Errors',
 		bcachefs_scrub_errors: 'bcachefs Scrub Corruption',
 		bcachefs_reconcile_stalled: 'bcachefs Reconcile Stalled',
+		kernel_errors: 'Kernel Errors',
 	};
 
 	const conditionLabels: Record<AlertCondition, string> = {
