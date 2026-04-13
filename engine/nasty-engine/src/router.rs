@@ -1687,7 +1687,29 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                         }
                     }
                     match state.nvmeof.create(p).await {
-                        Ok(v) => ok(req, v),
+                        Ok(v) => {
+                            // If Tailscale is connected, add a port for its IP too
+                            if !v.ports.is_empty() {
+                                let ts = state.tailscale.get().await;
+                                if ts.connected {
+                                    if let Some(ref ip) = ts.ip {
+                                        let nvmeof = state.nvmeof.clone();
+                                        let id = v.id.clone();
+                                        let ip = ip.clone();
+                                        tokio::spawn(async move {
+                                            let _ = nvmeof.add_port(nasty_sharing::nvmeof::AddPortRequest {
+                                                subsystem_id: id,
+                                                transport: Some("tcp".to_string()),
+                                                addr: Some(ip),
+                                                service_id: Some(4420),
+                                                addr_family: Some("ipv4".to_string()),
+                                            }).await;
+                                        });
+                                    }
+                                }
+                            }
+                            ok(req, v)
+                        }
                         Err(e) => err(req, e),
                     }
                 }
