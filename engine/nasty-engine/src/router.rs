@@ -1539,6 +1539,9 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Err(r) => r,
         },
         "share.iscsi.create" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
             match parse_params::<nasty_sharing::iscsi::CreateTargetRequest>(req) {
                 Ok(p) => {
                     if let Some(ref dp) = p.device_path {
@@ -1556,49 +1559,74 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => invalid(req, e),
             }
         }
-        "share.iscsi.delete" => match parse_params(req) {
-            Ok(p) => match state.iscsi.delete(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.iscsi.add_lun" => match parse_params::<nasty_sharing::iscsi::AddLunRequest>(req) {
-            Ok(p) => {
-                if let Some(conflict) =
-                    check_block_device_conflict(state, &p.backstore_path, "iscsi").await
-                {
-                    err(req, conflict)
-                } else {
-                    match state.iscsi.add_lun(p).await {
-                        Ok(v) => ok(req, v),
-                        Err(e) => err(req, e),
+        "share.iscsi.delete" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.iscsi.delete(p).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.iscsi.add_lun" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
+            match parse_params::<nasty_sharing::iscsi::AddLunRequest>(req) {
+                Ok(p) => {
+                    if let Some(conflict) =
+                        check_block_device_conflict(state, &p.backstore_path, "iscsi").await
+                    {
+                        err(req, conflict)
+                    } else {
+                        match state.iscsi.add_lun(p).await {
+                            Ok(v) => ok(req, v),
+                            Err(e) => err(req, e),
+                        }
                     }
                 }
+                Err(e) => invalid(req, e),
             }
-            Err(e) => invalid(req, e),
-        },
-        "share.iscsi.remove_lun" => match parse_params(req) {
-            Ok(p) => match state.iscsi.remove_lun(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.iscsi.add_acl" => match parse_params(req) {
-            Ok(p) => match state.iscsi.add_acl(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.iscsi.remove_acl" => match parse_params(req) {
-            Ok(p) => match state.iscsi.remove_acl(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
+        }
+        "share.iscsi.remove_lun" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.iscsi.remove_lun(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.iscsi.add_acl" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.iscsi.add_acl(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.iscsi.remove_acl" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Iscsi).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.iscsi.remove_acl(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── NVMe-oF Subsystems ─────────────────────────────────
         "share.nvmeof.list" => match state.nvmeof.list().await {
@@ -1613,6 +1641,9 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             Err(r) => r,
         },
         "share.nvmeof.create" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
             match parse_params::<nasty_sharing::nvmeof::CreateSubsystemRequest>(req) {
                 Ok(p) => {
                     if let Some(ref device_path) = p.device_path {
@@ -1630,14 +1661,22 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => invalid(req, e),
             }
         }
-        "share.nvmeof.delete" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.delete(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
+        "share.nvmeof.delete" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.delete(p).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
         "share.nvmeof.add_namespace" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
             match parse_params::<nasty_sharing::nvmeof::AddNamespaceRequest>(req) {
                 Ok(p) => {
                     if let Some(conflict) =
@@ -1654,41 +1693,66 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => invalid(req, e),
             }
         }
-        "share.nvmeof.remove_namespace" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.remove_namespace(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nvmeof.add_port" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.add_port(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nvmeof.remove_port" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.remove_port(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nvmeof.add_host" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.add_host(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nvmeof.remove_host" => match parse_params(req) {
-            Ok(p) => match state.nvmeof.remove_host(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
+        "share.nvmeof.remove_namespace" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.remove_namespace(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nvmeof.add_port" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.add_port(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nvmeof.remove_port" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.remove_port(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nvmeof.add_host" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.add_host(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nvmeof.remove_host" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nvmeof).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nvmeof.remove_host(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── Virtual Machines ───────────────────────────────────
         "vm.capabilities" => match state.vms.capabilities().await {
@@ -1953,6 +2017,26 @@ fn invalid(req: &Request, msg: impl std::fmt::Display) -> Response {
         ErrorCode::InvalidParams,
         format!("Invalid params: {msg}"),
     )
+}
+
+/// Return an error response if the given protocol is not enabled.
+async fn require_protocol(
+    state: &AppState,
+    req: &Request,
+    proto: nasty_system::protocol::Protocol,
+) -> Option<Response> {
+    if !state.protocols.is_enabled(proto).await {
+        Some(Response::error(
+            req.id.clone(),
+            ErrorCode::InternalError,
+            format!(
+                "{} protocol is not enabled — enable it first via service.protocol.enable",
+                proto.display_name()
+            ),
+        ))
+    } else {
+        None
+    }
 }
 
 fn require_str<'a>(req: &'a Request, key: &str) -> Result<&'a str, Response> {
