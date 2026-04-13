@@ -397,7 +397,7 @@
 				<div class="shrink-0 border-t border-border px-4 py-3">
 					{#if sysInfo}
 						<div class="flex items-center justify-between">
-							<span class="text-[0.68rem] text-muted-foreground/50">NASty</span>
+							<a href="/licenses" class="text-[0.68rem] text-muted-foreground/50 hover:text-muted-foreground transition-colors">NASty</a>
 							<span class="text-[0.68rem] font-mono text-muted-foreground/70">{sysInfo.version}</span>
 						</div>
 						<div class="flex items-center justify-between mt-0.5">
