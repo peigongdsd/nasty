@@ -18,7 +18,6 @@ const LOCAL_REPO: &str = "/etc/nixos";
 const NIXOS_FLAKE_DIR: &str = "/etc/nixos";
 const UPDATE_WEBUI_CHANGED: &str = "/var/lib/nasty/update-webui-changed";
 const RELEASE_CHANNEL_PATH: &str = "/var/lib/nasty/release-channel";
-const GC_CONFIG_PATH: &str = "/var/lib/nasty/gc-config.json";
 const VERSION_SWITCH_BACKUP_DIR: &str = "/var/lib/nasty/etc-nixos-backup";
 const DEFAULT_NASTY_OWNER: &str = "nasty-project";
 const DEFAULT_NASTY_REPO: &str = "nasty";
@@ -26,50 +25,6 @@ const DEFAULT_NASTY_REF: &str = "main";
 const VERSION_INPUT_NAMES: [&str; 3] = ["nixpkgs", "bcachefs-tools", "nasty"];
 const SYSTEM_FLAKE_TEMPLATE_PATH: &str = "nixos/system-flake/flake.nix.template";
 const GITHUB_FETCH_TIMEOUT: Duration = Duration::from_secs(60);
-
-// ── Garbage collection config ────────────────────────────────────
-
-/// Configuration for NixOS generation garbage collection.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct GcConfig {
-    /// Minimum number of generations to keep (default 10).
-    #[serde(default = "default_keep_generations")]
-    pub keep_generations: u32,
-    /// Delete generations older than this many days (0 = disabled).
-    /// `keep_generations` is always respected as a minimum.
-    #[serde(default)]
-    pub max_age_days: u32,
-}
-
-fn default_keep_generations() -> u32 {
-    20
-}
-
-impl Default for GcConfig {
-    fn default() -> Self {
-        Self {
-            keep_generations: 20,
-            max_age_days: 0,
-        }
-    }
-}
-
-impl GcConfig {
-    pub fn load() -> Self {
-        std::fs::read_to_string(GC_CONFIG_PATH)
-            .ok()
-            .and_then(|c| serde_json::from_str(&c).ok())
-            .unwrap_or_default()
-    }
-
-    pub async fn save(&self) -> Result<(), UpdateError> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| UpdateError::CommandFailed(e.to_string()))?;
-        tokio::fs::write(GC_CONFIG_PATH, json)
-            .await
-            .map_err(|e| UpdateError::CommandFailed(e.to_string()))
-    }
-}
 
 // ── Release channels ────────────────────────────────────────────
 

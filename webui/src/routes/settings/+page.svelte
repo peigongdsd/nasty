@@ -80,12 +80,7 @@
 	// Telemetry
 	let sendingTelemetry = $state(false);
 
-	// GC config
-	let gcKeep = $state(20);
-	let gcMaxAge = $state(0);
-	let savingGc = $state(false);
-
-	// VPN (Tailscale)
+// VPN (Tailscale)
 	interface TailscaleStatus {
 		enabled: boolean;
 		daemon_running: boolean;
@@ -199,14 +194,7 @@
 			// Load ACME status
 			try { acmeStatus = await client.call('system.acme.status'); } catch { /* ignore */ }
 
-			// Load GC config
-			try {
-				const gc = await client.call<{ keep_generations: number; max_age_days: number }>('system.gc.get');
-				gcKeep = gc.keep_generations;
-				gcMaxAge = gc.max_age_days;
-			} catch { /* ignore */ }
-
-			// Load Tailscale status
+// Load Tailscale status
 			try {
 				tsStatus = await client.call<TailscaleStatus>('system.tailscale.get');
 			} catch { /* ignore — tailscale module may not be enabled */ }
@@ -221,15 +209,6 @@
 		netGateway = network.gateway ?? '';
 		netNameservers = network.nameservers.join(', ');
 		netChanged = false;
-	}
-
-	async function saveGc() {
-		savingGc = true;
-		await withToast(
-			() => client.call('system.gc.set', { keep_generations: gcKeep, max_age_days: gcMaxAge }),
-			'Cleanup settings saved'
-		);
-		savingGc = false;
 	}
 
 	async function saveHostname() {
@@ -672,41 +651,11 @@
 					</Button>
 				</section>
 
-				<!-- System Cleanup -->
-				<section class="rounded-lg border border-border p-5">
-					<h2 class="mb-4 text-base font-semibold">System Cleanup</h2>
-					<p class="mb-3 text-xs text-muted-foreground">
-						Old NixOS generations are cleaned up before each update to free disk space.
-						The booted generation is always protected — if it falls outside the keep range, the range is automatically expanded to include it.
-						You can roll back to any kept generation via the bootloader.
-					</p>
-					<div class="flex flex-wrap gap-4 mb-3">
-						<div>
-							<label for="gc-keep" class="mb-1 block text-xs text-muted-foreground">Keep last N generations</label>
-							<input id="gc-keep" type="number" min="1" max="50" bind:value={gcKeep}
-								class="h-9 w-24 rounded-md border border-input bg-transparent px-3 text-sm" />
-						</div>
-						<div>
-							<label for="gc-age" class="mb-1 block text-xs text-muted-foreground">Max age (days, 0 = no limit)</label>
-							<input id="gc-age" type="number" min="0" max="365" bind:value={gcMaxAge}
-								class="h-9 w-24 rounded-md border border-input bg-transparent px-3 text-sm" />
-						</div>
-					</div>
-					<p class="mb-3 text-xs text-muted-foreground">
-						{#if gcMaxAge > 0}
-							Generations older than {gcMaxAge} days will be deleted, but at least {gcKeep} will always be kept. The booted generation is never removed.
-						{:else}
-							The {gcKeep} most recent generations will be kept. Older ones are deleted before each update. The booted generation is never removed even if outside this range.
-						{/if}
-					</p>
-					<Button size="sm" onclick={saveGc} disabled={savingGc || gcKeep < 1}>
-						{savingGc ? 'Saving…' : 'Save'}
-					</Button>
-				</section>
 
 			</div>
 
-			<!-- Right column: Network -->
+			<!-- Right column -->
+			<div class="flex flex-col gap-6">
 			{#if network}
 			<section class="rounded-lg border border-border p-5">
 				<h2 class="mb-4 text-base font-semibold">Network</h2>
@@ -806,31 +755,32 @@
 			</section>
 			{/if}
 
-		<!-- Telemetry -->
-		<section class="rounded-lg border border-border p-5">
-			<h2 class="mb-2 text-base font-semibold">Anonymous Telemetry</h2>
-			<p class="mb-4 text-sm text-muted-foreground">
-				Help improve NASty by sharing anonymous usage data: number of drives and storage capacity.
-				No personal information is collected.
-			</p>
+			<!-- Telemetry -->
+			<section class="rounded-lg border border-border p-5">
+				<h2 class="mb-2 text-base font-semibold">Anonymous Telemetry</h2>
+				<p class="mb-4 text-sm text-muted-foreground">
+					Help improve NASty by sharing anonymous usage data: number of drives and storage capacity.
+					No personal information is collected.
+				</p>
 
-			<div class="mb-4">
-				<label class="flex items-center gap-2 text-sm cursor-pointer">
-					<input
-						type="checkbox"
-						checked={settings.telemetry_enabled}
-						onchange={(e) => saveTelemetry(e.currentTarget.checked)}
-						class="rounded border-input"
-					/>
-					<span class="font-medium">Enable telemetry</span>
-				</label>
+				<div class="mb-4">
+					<label class="flex items-center gap-2 text-sm cursor-pointer">
+						<input
+							type="checkbox"
+							checked={settings.telemetry_enabled}
+							onchange={(e) => saveTelemetry(e.currentTarget.checked)}
+							class="rounded border-input"
+						/>
+						<span class="font-medium">Enable telemetry</span>
+					</label>
+				</div>
+
+				<Button size="sm" onclick={sendTelemetry} disabled={sendingTelemetry || !settings.telemetry_enabled}>
+					{sendingTelemetry ? 'Sending…' : 'Send Now'}
+				</Button>
+			</section>
+
 			</div>
-
-			<Button size="sm" onclick={sendTelemetry} disabled={sendingTelemetry || !settings.telemetry_enabled}>
-				{sendingTelemetry ? 'Sending…' : 'Send Now'}
-			</Button>
-		</section>
-
 		</div>
 	{/if}
 
