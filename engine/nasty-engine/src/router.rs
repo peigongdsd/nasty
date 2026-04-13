@@ -1436,27 +1436,42 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(r) => r,
         },
-        "share.nfs.create" => match parse_params(req) {
-            Ok(p) => match state.nfs.create(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nfs.update" => match parse_params(req) {
-            Ok(p) => match state.nfs.update(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.nfs.delete" => match parse_params(req) {
-            Ok(p) => match state.nfs.delete(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
+        "share.nfs.create" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nfs).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nfs.create(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nfs.update" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nfs).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nfs.update(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.nfs.delete" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Nfs).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.nfs.delete(p).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── SMB Shares ──────────────────────────────────────────
         "share.smb.list" => match state.smb.list().await {
@@ -1470,48 +1485,76 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
             },
             Err(r) => r,
         },
-        "share.smb.create" => match parse_params(req) {
-            Ok(p) => match state.smb.create(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.smb.update" => match parse_params(req) {
-            Ok(p) => match state.smb.update(p).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "share.smb.delete" => match parse_params(req) {
-            Ok(p) => match state.smb.delete(p).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
+        "share.smb.create" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.smb.create(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.smb.update" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.smb.update(p).await {
+                    Ok(v) => ok(req, v),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "share.smb.delete" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
+            match parse_params(req) {
+                Ok(p) => match state.smb.delete(p).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
 
         // ── SMB Users ──────────────────────────────────────────
         "smb.user.list" => match state.smb.list_users().await {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
         },
-        "smb.user.create" => match parse_params::<nasty_sharing::smb::CreateSmbUserRequest>(req) {
-            Ok(p) => match state.smb.create_user(p).await {
-                Ok(u) => ok(req, u),
-                Err(e) => err(req, e),
-            },
-            Err(e) => invalid(req, e),
-        },
-        "smb.user.delete" => match require_str(req, "username") {
-            Ok(username) => match state.smb.delete_user(username).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(r) => r,
-        },
+        "smb.user.create" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
+            match parse_params::<nasty_sharing::smb::CreateSmbUserRequest>(req) {
+                Ok(p) => match state.smb.create_user(p).await {
+                    Ok(u) => ok(req, u),
+                    Err(e) => err(req, e),
+                },
+                Err(e) => invalid(req, e),
+            }
+        }
+        "smb.user.delete" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
+            match require_str(req, "username") {
+                Ok(username) => match state.smb.delete_user(username).await {
+                    Ok(()) => ok(req, "ok"),
+                    Err(e) => err(req, e),
+                },
+                Err(r) => r,
+            }
+        }
         "smb.user.set_password" => {
+            if let Some(r) = require_protocol(state, req, nasty_system::protocol::Protocol::Smb).await {
+                return r;
+            }
             #[derive(Deserialize)]
             struct P {
                 username: String,
