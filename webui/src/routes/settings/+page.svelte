@@ -1303,8 +1303,26 @@
 			</div>
 
 			<div class="space-y-4">
+				{#if tsStatus?.has_auth_key}
+					<p class="text-xs text-muted-foreground">A stored auth key is available. Click Reconnect to use it, or enter a new key below.</p>
+					<Button
+						disabled={tsLoading}
+						onclick={async () => {
+							tsLoading = true;
+							const result = await withToast(
+								() => client.call('system.tailscale.connect', { auth_key: '' }),
+								'Tailscale connected'
+							);
+							if (result) tsStatus = result as TailscaleStatus;
+							tsLoading = false;
+						}}
+					>
+						{tsLoading ? 'Connecting...' : 'Reconnect'}
+					</Button>
+				{/if}
+
 				<div>
-					<label for="ts-authkey" class="block text-sm font-medium mb-1">Auth Key</label>
+					<label for="ts-authkey" class="block text-sm font-medium mb-1">{tsStatus?.has_auth_key ? 'New Auth Key (optional)' : 'Auth Key'}</label>
 					<input
 						id="ts-authkey"
 						type="password"
@@ -1332,7 +1350,7 @@
 						tsLoading = false;
 					}}
 				>
-					{tsLoading ? 'Connecting...' : 'Connect'}
+					{tsLoading ? 'Connecting...' : 'Connect with new key'}
 				</Button>
 			</div>
 		{/if}

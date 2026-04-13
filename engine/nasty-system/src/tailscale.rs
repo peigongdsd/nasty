@@ -103,16 +103,20 @@ impl TailscaleService {
 
     /// Connect to Tailscale with the given auth key.
     /// Starts the daemon, authenticates, and persists the config.
+    /// If no key is provided, falls back to the previously stored key.
     pub async fn connect(&self, req: TailscaleConnectRequest) -> Result<TailscaleStatus, String> {
-        if req.auth_key.is_empty() {
-            return Err("Auth key is required".to_string());
-        }
-
         let mut config = self.config.write().await;
+
+        let key = if req.auth_key.is_empty() {
+            config.auth_key.clone().ok_or_else(|| "Auth key is required".to_string())?
+        } else {
+            req.auth_key
+        };
+
         info!("Connecting to Tailscale");
-        start_tailscale(Some(req.auth_key.as_str())).await?;
+        start_tailscale(Some(key.as_str())).await?;
         config.enabled = true;
-        config.auth_key = Some(req.auth_key);
+        config.auth_key = Some(key);
         save_config(&config).await.map_err(|e| format!("Failed to save config: {e}"))?;
         drop(config);
 
