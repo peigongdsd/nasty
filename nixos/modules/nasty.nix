@@ -868,21 +868,22 @@ in {
           "server min protocol" = "SMB2";
           # macOS Finder requires SMB signing as optional for guest access.
           "server signing" = "auto";
-          # Include NASty-managed shares from the global section.
-          # Must NOT be a separate [share] section — Samba merges the first
-          # included share into its parent section, inheriting path/options.
+          # Include NASty-managed shares and tuning from the global section.
+          # The nasty-tuning.conf include must use "include" NOT "config file" —
+          # Samba's "config file" directive replaces the entire config, which
+          # prevents any subsequent directives (like our share includes) from
+          # being processed. NixOS sorts keys alphabetically, so "config file"
+          # would be emitted before "include", breaking share loading entirely.
           "include" = "/etc/samba/smb.nasty.conf";
-          # Include engine-managed performance tuning (thread counts, timeouts, etc).
-          # The file is written by nasty-engine's TuningService.
-          "config file" = "/etc/samba/nasty-tuning.conf";
         };
       };
     };
 
     # Ensure the SMB tuning config exists (empty) so Samba doesn't fail on startup
-    # before the engine has written any tuning settings.
+    # before the engine has written any tuning settings. No [global] header needed —
+    # this file is included from within the [global] section of smb.nasty.conf.
     environment.etc."samba/nasty-tuning.conf" = mkIf cfg.smb.enable {
-      text = "";
+      text = "# Engine-managed tuning — written by nasty-engine TuningService\n";
       mode = "0644";
     };
 

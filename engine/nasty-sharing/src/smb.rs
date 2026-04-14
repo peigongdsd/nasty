@@ -355,11 +355,18 @@ async fn remove_share_conf(id: &str) {
 }
 
 /// Rebuild smb.nasty.conf as a list of includes from per-share files.
+/// Also includes the engine-managed tuning config — this must be an `include`
+/// directive here rather than a `config file` in smb.conf, because Samba's
+/// `config file` replaces the entire config and prevents subsequent directives
+/// (like share includes) from being processed.
 async fn rebuild_include_list() -> Result<(), SmbError> {
     tokio::fs::create_dir_all(NASTY_SMB_SHARE_DIR).await?;
 
     let mut includes = String::from("# Managed by NASty — do not edit manually\n");
     includes.push_str("# Per-share configs in /etc/samba/nasty.d/\n\n");
+
+    // Include engine-managed performance tuning (thread counts, timeouts, etc)
+    includes.push_str("include = /etc/samba/nasty-tuning.conf\n\n");
 
     let mut dir = tokio::fs::read_dir(NASTY_SMB_SHARE_DIR).await?;
     while let Ok(Some(entry)) = dir.next_entry().await {
@@ -380,11 +387,14 @@ fn share_conf_path(id: &str) -> String {
 }
 
 /// Wait for an SMB share to be visible after smbcontrol reload.
-/// Polls `smbclient -L localhost` up to 5 seconds.
+/// Uses `testparm` to verify the share is in the loaded config — this works
+/// for all shares regardless of authentication settings (unlike smbclient -L
+/// which requires guest access to list shares).
 async fn wait_for_share_ready(share_name: &str) {
     for attempt in 1..=10 {
-        let output = tokio::process::Command::new("smbclient")
-            .args(["-L", "localhost", "-N"])
+        let output = tokio::process::Command::new("testparm")
+            .args(["-s", "--section-name", share_name])
+            .stderr(std::process::Stdio::null())
             .output()
             .await;
         if let Ok(out) = output {
