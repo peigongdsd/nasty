@@ -548,7 +548,7 @@
 				journal_flush_disabled: editJournalFlushDisabled || undefined,
 				journal_flush_delay: editJournalFlushDelay ? parseInt(editJournalFlushDelay) : undefined,
 				io_scheduler: editIoScheduler || undefined,
-			}),
+			}, 60_000),
 			`Options updated for "${fsName}"`
 		);
 		editOptionsFs = null;
@@ -975,6 +975,7 @@
 					<label class="flex cursor-pointer items-center gap-2 text-sm">
 						<input type="checkbox" bind:checked={erasureCode} disabled={selectedPaths.length < 3} class="h-4 w-4" />
 						<span class="font-medium">Erasure Coding</span>
+						<span class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">Tech Preview</span>
 						{#if erasureCode}
 							<span class="text-xs text-amber-400">({replicas === 2 ? 'RAID-5' : 'RAID-6'}, {replicas}+1 across {selectedPaths.length} devices)</span>
 						{:else}
@@ -1229,6 +1230,7 @@
 							<label class="mt-2 flex cursor-pointer items-center gap-2 text-sm">
 								<input id="edit-erasure-{fs.name}" type="checkbox" bind:checked={editErasureCode} class="h-4 w-4" />
 								<span class="text-xs">Erasure coding</span>
+								<span class="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">Tech Preview</span>
 							</label>
 							<div class="mt-3 grid grid-cols-2 gap-3">
 								<div>
