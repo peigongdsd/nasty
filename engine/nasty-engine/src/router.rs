@@ -707,6 +707,16 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         }
 
         "system.alerts" => {
+            // Return cached result if fresh (< 10s old)
+            {
+                let cache = state.alerts_cache.lock().await;
+                if let Some((ts, ref cached)) = *cache {
+                    if ts.elapsed() < std::time::Duration::from_secs(20) {
+                        return ok(req, cached.clone());
+                    }
+                }
+            }
+
             // Evaluate current alert rules against live system state
             let stats = match fetch_metrics_json::<nasty_system::SystemStats>(
                 &state.metrics_client,
@@ -842,6 +852,11 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                     &kernel_alert,
                 )
                 .await;
+
+            // Cache for subsequent polls
+            let value = serde_json::to_value(&alerts).unwrap_or_default();
+            *state.alerts_cache.lock().await = Some((std::time::Instant::now(), value));
+
             ok(req, alerts)
         }
         "alert.rules.list" => ok(req, state.alerts.list_rules().await),

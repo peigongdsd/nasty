@@ -224,14 +224,19 @@ impl TuningService {
     async fn apply_all(&self) {
         let config = self.state.read().await.clone();
 
-        if let Err(e) = apply_nfs_threads(config.nfs_threads).await {
-            warn!("Failed to apply nfs_threads: {e}");
-        }
-        if let Err(e) = apply_proc_value("/proc/fs/nfsd/nfsv4leasetime", config.nfs_lease_time).await {
-            warn!("Failed to apply nfs_lease_time: {e}");
-        }
-        if let Err(e) = apply_proc_value("/proc/fs/nfsd/nfsv4gracetime", config.nfs_grace_time).await {
-            warn!("Failed to apply nfs_grace_time: {e}");
+        // NFS tuning only applies when nfsd is running
+        if std::path::Path::new("/proc/fs/nfsd/threads").exists() {
+            if let Err(e) = apply_nfs_threads(config.nfs_threads).await {
+                warn!("Failed to apply nfs_threads: {e}");
+            }
+            if let Err(e) = apply_proc_value("/proc/fs/nfsd/nfsv4leasetime", config.nfs_lease_time).await {
+                warn!("Failed to apply nfs_lease_time: {e}");
+            }
+            if let Err(e) = apply_proc_value("/proc/fs/nfsd/nfsv4gracetime", config.nfs_grace_time).await {
+                warn!("Failed to apply nfs_grace_time: {e}");
+            }
+        } else {
+            info!("nfsd not running, skipping NFS tuning");
         }
         if let Err(e) = apply_smb_tuning(&config).await {
             warn!("Failed to apply SMB tuning: {e}");

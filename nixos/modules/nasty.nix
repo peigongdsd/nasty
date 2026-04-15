@@ -805,6 +805,8 @@ in {
         config.services.k3s.package  # k3s for apps runtime
         kubernetes-helm              # Helm for app deployment
         lego                         # ACME client for Let's Encrypt
+        rsync                        # config backup to bcachefs
+        procps                       # sysctl (vm.dirty_* tuning)
       ] ++ lib.optionals cfg.nfs.enable [ nfs-utils ]
         ++ lib.optionals cfg.smb.enable [ samba shadow.out ]
         ++ lib.optionals cfg.iscsi.enable [ targetcli-fixed ]

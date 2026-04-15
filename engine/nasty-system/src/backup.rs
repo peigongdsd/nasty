@@ -41,6 +41,7 @@ async fn run_backup() {
         return;
     }
 
+    let mut ok = true;
     for (src, dest_name) in BACKUP_DIRS {
         if !Path::new(src).is_dir() {
             continue;
@@ -59,12 +60,20 @@ async fn run_backup() {
 
         match output {
             Ok(o) if o.status.success() => {}
-            Ok(o) => warn!("rsync {src} → {dest} failed: {}", String::from_utf8_lossy(&o.stderr)),
-            Err(e) => warn!("Failed to run rsync for {src}: {e}"),
+            Ok(o) => {
+                warn!("rsync {src} → {dest} failed: {}", String::from_utf8_lossy(&o.stderr));
+                ok = false;
+            }
+            Err(e) => {
+                warn!("Failed to run rsync for {src}: {e}");
+                ok = false;
+            }
         }
     }
 
-    info!("Config backup complete → /fs/{fs_name}/.nasty/");
+    if ok {
+        info!("Config backup complete → /fs/{fs_name}/.nasty/");
+    }
 }
 
 /// Spawn the periodic backup task. Runs immediately then every hour.

@@ -56,6 +56,9 @@ pub struct AppState {
     pub vms: nasty_vm::VmService,
     pub apps: nasty_apps::AppsService,
     pub firmware: nasty_system::firmware::FirmwareService,
+    /// Cached alerts result (timestamp, json value). Avoids re-evaluating
+    /// all alert checks on every WebUI poll (called every few seconds).
+    pub alerts_cache: tokio::sync::Mutex<Option<(std::time::Instant, serde_json::Value)>>,
 }
 
 /// Base URL for the nasty-metrics service.
@@ -121,6 +124,7 @@ async fn main() -> anyhow::Result<()> {
         vms: nasty_vm::VmService::new(),
         apps: nasty_apps::AppsService::new(),
         firmware: nasty_system::firmware::FirmwareService::new(),
+        alerts_cache: tokio::sync::Mutex::new(None),
     });
 
     // Restore state from previous session:
