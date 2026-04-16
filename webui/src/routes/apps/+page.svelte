@@ -988,8 +988,8 @@
 	{/if}
 	{/if}
 
-	<!-- Installed apps table (visible in all sub-tabs) -->
-	{#if apps.length > 0}
+	<!-- Installed apps table (TrueCharts and Helm Charts modes; Easy has its own) -->
+	{#if mode !== 'easy' && apps.length > 0}
 		<h3 class="text-lg font-semibold mt-6 mb-3">Installed Apps</h3>
 		<table class="w-full text-sm">
 			<thead>
