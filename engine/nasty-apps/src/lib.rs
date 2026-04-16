@@ -14,6 +14,8 @@ use thiserror::Error;
 use tokio::process::Command;
 use tracing::{info, warn, error};
 
+pub mod truecharts;
+
 const STATE_PATH: &str = "/var/lib/nasty/apps-enabled";
 const KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
 const K3S_SERVICE: &str = "k3s.service";
@@ -1037,6 +1039,20 @@ impl AppsService {
                 description: r["description"].as_str().unwrap_or("").to_string(),
             }
         }).collect())
+    }
+
+    // ── TrueCharts catalog ─────────────────────────────────
+
+    /// Return the cached TrueCharts index. Does not require k3s to be up.
+    pub async fn truecharts_list(&self) -> truecharts::TrueChartsIndex {
+        truecharts::load_cache().await
+    }
+
+    /// Force a refresh of the TrueCharts index from upstream.
+    pub async fn truecharts_refresh(&self) -> Result<truecharts::TrueChartsIndex, AppsError> {
+        truecharts::refresh()
+            .await
+            .map_err(AppsError::CommandFailed)
     }
 
     // ── Ingress management ────────────────────────────────────

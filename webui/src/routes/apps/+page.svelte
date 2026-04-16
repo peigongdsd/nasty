@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig, ImageInspectResult } from '$lib/types';
+	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig, ImageInspectResult, TrueChartsIndex, TrueChartEntry } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -23,7 +23,13 @@
 	let logsApp: string | null = $state(null);
 	let logsContent = $state('');
 	let page: 'apps' | 'runtime' = $state('apps');
-	let mode: 'easy' | 'expert' = $state('easy');
+	let mode: 'easy' | 'truecharts' | 'expert' = $state('easy');
+
+	// TrueCharts catalog
+	let trueChartsIndex: TrueChartsIndex | null = $state(null);
+	let trueChartsQuery = $state('');
+	let trueChartsTrain = $state<'all' | 'stable' | 'incubator' | 'library'>('stable');
+	let trueChartsRefreshing = $state(false);
 
 	// Setup wizard state
 	let filesystems: Filesystem[] = $state([]);
@@ -355,6 +361,37 @@
 		searching = false;
 	}
 
+	async function loadTrueCharts() {
+		try {
+			trueChartsIndex = await client.call<TrueChartsIndex>('apps.truecharts.list');
+		} catch {
+			trueChartsIndex = null;
+		}
+	}
+
+	async function refreshTrueCharts() {
+		trueChartsRefreshing = true;
+		const result = await withToast(
+			() => client.call<TrueChartsIndex>('apps.truecharts.refresh'),
+			'TrueCharts catalog refreshed'
+		);
+		if (result) trueChartsIndex = result;
+		trueChartsRefreshing = false;
+	}
+
+	function selectTrueChart(chart: TrueChartEntry) {
+		// Open the expert install dialog pre-filled with the OCI chart ref
+		expertInstall = {
+			name: chart.name,
+			repo: 'oci://tccr.io/truecharts',
+			version: chart.version,
+			app_version: '',
+			description: chart.description,
+		};
+		expertReleaseName = chart.name;
+		expertValues = '';
+	}
+
 	async function installChart() {
 		if (!expertInstall || !expertReleaseName) return;
 		const releaseName = expertReleaseName.toLowerCase();
@@ -390,6 +427,10 @@
 		if (mode === 'expert' && status?.running) loadRepos();
 	});
 
+	$effect(() => {
+		if (mode === 'truecharts' && status?.running && !trueChartsIndex) loadTrueCharts();
+	});
+
 	function formatMemory(bytes: number): string {
 		if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 		if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MiB`;
@@ -408,6 +449,15 @@
 			? apps.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
 			: apps
 	);
+
+	const trueChartsFiltered = $derived.by(() => {
+		const list = trueChartsIndex?.charts ?? [];
+		const q = trueChartsQuery.trim().toLowerCase();
+		return list
+			.filter(c => trueChartsTrain === 'all' || c.train === trueChartsTrain)
+			.filter(c => !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	});
 
 	const sorted = $derived.by(() => {
 		return [...filtered].sort((a, b) => {
@@ -528,6 +578,12 @@
 					: 'text-muted-foreground hover:text-foreground'}"
 				onclick={() => mode = 'easy'}
 			>Easy</button>
+			<button
+				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'truecharts'
+					? 'border-b-2 border-primary text-foreground'
+					: 'text-muted-foreground hover:text-foreground'}"
+				onclick={() => mode = 'truecharts'}
+			>TrueCharts</button>
 			<button
 				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'expert'
 					? 'border-b-2 border-primary text-foreground'
@@ -698,6 +754,90 @@
 				{/each}
 			</tbody>
 		</table>
+	{/if}
+	{:else if mode === 'truecharts'}
+	<!-- TrueCharts catalog -->
+	<Card>
+		<CardContent class="pt-6">
+			<div class="flex flex-wrap items-center gap-3 mb-4">
+				<Input bind:value={trueChartsQuery} placeholder="Search name or description..." class="h-9 w-64" />
+				<select bind:value={trueChartsTrain}
+					class="h-9 rounded-md border border-input bg-background px-3 text-sm">
+					<option value="stable">stable</option>
+					<option value="incubator">incubator</option>
+					<option value="library">library</option>
+					<option value="all">all trains</option>
+				</select>
+				<div class="ml-auto flex items-center gap-3">
+					{#if trueChartsIndex && trueChartsIndex.refreshed_at > 0}
+						<span class="text-xs text-muted-foreground">
+							Updated {new Date(trueChartsIndex.refreshed_at * 1000).toLocaleString()}
+						</span>
+					{/if}
+					<Button size="xs" variant="outline" onclick={refreshTrueCharts} disabled={trueChartsRefreshing}>
+						{trueChartsRefreshing ? 'Refreshing...' : 'Refresh'}
+					</Button>
+				</div>
+			</div>
+
+			{#if !trueChartsIndex || trueChartsIndex.charts.length === 0}
+				<div class="py-8 text-center text-sm text-muted-foreground">
+					Catalog not loaded yet. Click Refresh to fetch.
+				</div>
+			{:else}
+				<div class="text-xs text-muted-foreground mb-2">
+					{trueChartsFiltered.length} of {trueChartsIndex.charts.length} charts
+				</div>
+				<div class="max-h-[60vh] overflow-y-auto rounded border divide-y">
+					{#each trueChartsFiltered as chart (chart.name)}
+						<div class="flex items-start gap-3 px-3 py-2 hover:bg-muted/30 transition-colors">
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2">
+									<span class="font-medium">{chart.name}</span>
+									<Badge variant="outline" class="text-xs">{chart.train}</Badge>
+									<span class="text-xs text-muted-foreground">{chart.version}</span>
+								</div>
+								<div class="text-sm text-muted-foreground truncate">{chart.description}</div>
+							</div>
+							<Button size="xs" onclick={() => selectTrueChart(chart)}>Install</Button>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="mt-4 text-xs text-muted-foreground">
+				Powered by <a href="https://truecharts.org" target="_blank" rel="noopener" class="underline">TrueCharts</a> — charts pulled via OCI from <code>tccr.io/truecharts</code>.
+			</div>
+		</CardContent>
+	</Card>
+
+	{#if expertInstall}
+		<Card class="mt-6 max-w-xl">
+			<CardContent class="pt-6">
+				<h3 class="mb-4 text-lg font-semibold">Install {expertInstall.repo}/{expertInstall.name}</h3>
+				<div class="mb-4">
+					<Label for="tc-name">Release Name</Label>
+					<Input id="tc-name" value={expertReleaseName} oninput={(e) => { expertReleaseName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} class="mt-1" />
+					{#if expertReleaseName && !isValidReleaseName(expertReleaseName)}
+						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
+					{/if}
+				</div>
+				<div class="mb-4">
+					<Label for="tc-values">Values (JSON, optional)</Label>
+					<textarea
+						id="tc-values"
+						bind:value={expertValues}
+						placeholder={'{"key": "value"}'}
+						class="mt-1 w-full h-32 rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono"
+					></textarea>
+					<span class="mt-1 block text-xs text-muted-foreground">Override default chart values. Must be valid JSON.</span>
+				</div>
+				<div class="flex gap-2">
+					<Button onclick={installChart} disabled={!expertReleaseName || !isValidReleaseName(expertReleaseName)}>Install</Button>
+					<Button variant="ghost" onclick={() => expertInstall = null}>Cancel</Button>
+				</div>
+			</CardContent>
+		</Card>
 	{/if}
 	{:else}
 	<!-- Expert mode: Helm repos + chart search -->

@@ -62,6 +62,7 @@ fn is_operator_allowed(method: &str) -> bool {
                 | "apps.repo.add"
                 | "apps.repo.remove"
                 | "apps.repo.update"
+                | "apps.truecharts.refresh"
                 | "apps.ingress.set"
                 | "apps.ingress.remove"
                 | "firmware.update"
@@ -129,6 +130,7 @@ fn is_read_only(method: &str) -> bool {
                 | "system.log.level"
                 | "system.settings.timezones"
                 | "audit.list"
+                | "apps.truecharts.list"
         )
 }
 
@@ -2102,6 +2104,11 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(r) => r,
+        },
+        "apps.truecharts.list" => ok(req, state.apps.truecharts_list().await),
+        "apps.truecharts.refresh" => match state.apps.truecharts_refresh().await {
+            Ok(v) => ok(req, v),
+            Err(e) => err(req, e),
         },
 
         // ── Unknown ─────────────────────────────────────────────

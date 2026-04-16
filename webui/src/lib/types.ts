@@ -620,3 +620,15 @@ export interface HelmChart {
 	app_version: string;
 	description: string;
 }
+
+export interface TrueChartEntry {
+	name: string;
+	version: string;
+	train: string;
+	description: string;
+}
+
+export interface TrueChartsIndex {
+	refreshed_at: number;
+	charts: TrueChartEntry[];
+}
