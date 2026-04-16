@@ -753,8 +753,11 @@
 		<Card>
 			<CardContent class="pt-6">
 				<h3 class="text-lg font-semibold mb-4">Search Charts</h3>
+				<p class="text-sm text-muted-foreground mb-3">
+					Search charts across your configured Helm repos. Add more repos above to widen the selection.
+				</p>
 				<div class="flex gap-2 mb-4">
-					<Input bind:value={searchQuery} placeholder="postgresql, redis, grafana..." class="h-9"
+					<Input bind:value={searchQuery} placeholder="Search chart name (e.g. postgresql, redis)" class="h-9"
 						onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && searchCharts()} />
 					<Button size="sm" onclick={searchCharts} disabled={searching}>
 						{searching ? 'Searching...' : 'Search'}

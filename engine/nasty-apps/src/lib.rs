@@ -19,6 +19,16 @@ const KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
 const K3S_SERVICE: &str = "k3s.service";
 const APP_TEMPLATE_REPO: &str = "https://bjw-s-labs.github.io/helm-charts";
 const APP_TEMPLATE_CHART: &str = "app-template";
+
+/// Helm repos seeded on bootstrap so Search Charts has something to find.
+/// bjw-s provides the app-template chart used by the simple app installer;
+/// bitnami covers general-purpose apps (postgres, redis, nginx, ...);
+/// prometheus-community covers monitoring (Prometheus, Grafana, Alertmanager, ...).
+const DEFAULT_REPOS: &[(&str, &str)] = &[
+    ("bjw-s", APP_TEMPLATE_REPO),
+    ("bitnami", "https://charts.bitnami.com/bitnami"),
+    ("prometheus-community", "https://prometheus-community.github.io/helm-charts"),
+];
 /// Per-app namespace prefix. Each app gets its own namespace: nasty-{name}.
 const NAMESPACE_PREFIX: &str = "nasty-";
 
@@ -385,11 +395,13 @@ impl AppsService {
                 info!("local-path-provisioner configured to use {path}");
             }
 
-            // Add bjw-s Helm repo
-            let _ = tokio::process::Command::new("helm")
-                .args(["repo", "add", "bjw-s", APP_TEMPLATE_REPO, "--kubeconfig", KUBECONFIG])
-                .output()
-                .await;
+            // Add default Helm repos (bjw-s + popular app repos)
+            for (name, url) in DEFAULT_REPOS {
+                let _ = tokio::process::Command::new("helm")
+                    .args(["repo", "add", name, url, "--kubeconfig", KUBECONFIG])
+                    .output()
+                    .await;
+            }
 
             // Update repos
             let _ = tokio::process::Command::new("helm")
