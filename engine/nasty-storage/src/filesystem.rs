@@ -411,13 +411,36 @@ impl FilesystemService {
     /// Uncached implementation of filesystem listing.
     async fn list_uncached(&self) -> Result<Vec<Filesystem>, FilesystemError> {
         let mounts = read_bcachefs_mounts().await?;
-        let mut filesystems = Vec::new();
-        let mut seen_uuids = std::collections::HashSet::new();
 
+        // A single bcachefs filesystem can have multiple mount points — e.g. kubelet
+        // bind-mounts a subvolume under /var/lib/kubelet/... while the canonical
+        // mount lives at /fs/<name>. Deduplicate by UUID, preferring the /fs/ mount.
+        let mut primary_mount: HashMap<String, String> = HashMap::new();
         for (mount_point, devices) in &mounts {
             let uuid = get_fs_uuid(devices.first().map(|s| s.as_str()).unwrap_or(""))
                 .await
                 .unwrap_or_default();
+            if uuid.is_empty() {
+                continue;
+            }
+            let existing = primary_mount.get(&uuid);
+            let is_nasty = mount_point.starts_with(&format!("{NASTY_MOUNT_BASE}/"));
+            let existing_is_nasty = existing
+                .map(|m| m.starts_with(&format!("{NASTY_MOUNT_BASE}/")))
+                .unwrap_or(false);
+            if existing.is_none() || (is_nasty && !existing_is_nasty) {
+                primary_mount.insert(uuid, mount_point.clone());
+            }
+        }
+
+        let mut filesystems = Vec::new();
+        let mut seen_uuids = std::collections::HashSet::new();
+
+        for (uuid, mount_point) in &primary_mount {
+            let devices = match mounts.get(mount_point) {
+                Some(d) => d,
+                None => continue,
+            };
 
             let (total, used, available) = get_mount_usage(mount_point).await.unwrap_or((0, 0, 0));
 
@@ -426,9 +449,8 @@ impl FilesystemService {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            if !uuid.is_empty() {
-                seen_uuids.insert(uuid.clone());
-            }
+            seen_uuids.insert(uuid.clone());
+            let uuid = uuid.clone();
 
             // Read per-device labels and fs options for mounted filesystems
             let fs_devices = read_fs_devices(&uuid, devices).await;
