@@ -471,6 +471,13 @@
 		return null;
 	}
 
+	/// Only app-template-based releases (from the Easy installer) have an editable
+	/// simple config. Everything else (TrueCharts, arbitrary Helm charts) must be
+	/// reconfigured through the chart's own values mechanism.
+	function isEditable(app: App): boolean {
+		return app.chart.startsWith('app-template-');
+	}
+
 	const sorted = $derived.by(() => {
 		return [...filtered].sort((a, b) => {
 			const cmp = a.name.localeCompare(b.name);
@@ -720,52 +727,6 @@
 
 	{#if apps.length === 0 && !showInstall}
 		<p class="text-muted-foreground">No apps installed.</p>
-	{:else if apps.length > 0}
-		<table class="w-full text-sm">
-			<thead>
-				<tr>
-					<SortTh label="Name" active={true} dir={sortDir} onclick={toggleSort} />
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Chart</th>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each sorted as app}
-					<tr class="border-b border-border hover:bg-muted/30 transition-colors">
-						<td class="p-3">
-							<span class="font-semibold">{app.name}</span>
-						</td>
-						<td class="p-3 text-xs text-muted-foreground font-mono">
-							{app.chart}
-						</td>
-						<td class="p-3">
-							<Badge variant={app.status === 'deployed' ? 'default' : 'secondary'}>
-								{app.status}
-							</Badge>
-						</td>
-						<td class="p-3">
-							<div class="flex gap-2">
-								{#if getIngress(app.name)}
-									<a href="/apps/{app.name}/" target="_blank" class="inline-flex items-center whitespace-nowrap rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400 hover:bg-blue-500/20">
-										Open
-									</a>
-								{/if}
-								<Button variant="outline" size="xs" onclick={() => editApp(app.name)}>
-									Edit
-								</Button>
-								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>
-									Logs
-								</Button>
-								<Button variant="destructive" size="xs" onclick={() => removeApp(app.name)}>
-									Remove
-								</Button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
 	{/if}
 	{:else if mode === 'truecharts'}
 	<!-- TrueCharts catalog -->
@@ -988,30 +949,37 @@
 	{/if}
 	{/if}
 
-	<!-- Installed apps table (TrueCharts and Helm Charts modes; Easy has its own) -->
-	{#if mode !== 'easy' && apps.length > 0}
+	<!-- Unified installed apps table — shared across all sub-tabs -->
+	{#if apps.length > 0}
 		<h3 class="text-lg font-semibold mt-6 mb-3">Installed Apps</h3>
 		<table class="w-full text-sm">
 			<thead>
 				<tr>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Name</th>
+					<SortTh label="Name" active={true} dir={sortDir} onclick={toggleSort} />
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Chart</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each apps as app}
-					<tr class="border-b border-border hover:bg-muted/30">
+				{#each sorted as app}
+					<tr class="border-b border-border hover:bg-muted/30 transition-colors">
 						<td class="p-3 font-semibold">{app.name}</td>
 						<td class="p-3 text-xs text-muted-foreground font-mono">{app.chart}</td>
-						<td class="p-3"><Badge variant={app.status === 'deployed' ? 'default' : 'secondary'}>{app.status}</Badge></td>
+						<td class="p-3">
+							<Badge variant={app.status === 'deployed' ? 'default' : 'secondary'}>
+								{app.status}
+							</Badge>
+						</td>
 						<td class="p-3">
 							<div class="flex gap-2">
 								{#if getIngress(app.name)}
 									<a href="/apps/{app.name}/" target="_blank" class="inline-flex items-center whitespace-nowrap rounded-md border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400 hover:bg-blue-500/20">
 										Open
 									</a>
+								{/if}
+								{#if isEditable(app)}
+									<Button variant="outline" size="xs" onclick={() => editApp(app.name)}>Edit</Button>
 								{/if}
 								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>Logs</Button>
 								<Button variant="destructive" size="xs" onclick={() => removeApp(app.name)}>Remove</Button>
