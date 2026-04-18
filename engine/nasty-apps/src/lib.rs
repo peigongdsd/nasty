@@ -511,11 +511,14 @@ impl AppsService {
 
         // Auto-create ingress for the first port
         if let Some(first_port) = req.ports.first() {
-            let host_port = first_port.host_port.unwrap_or_else(|| {
+            let host_port = if let Some(hp) = first_port.host_port {
+                hp
+            } else {
                 // Look up the actual assigned port from Docker
-                self.get_mapped_port_sync(&cname, first_port.container_port)
+                self.get_mapped_port(&cname, first_port.container_port)
+                    .await
                     .unwrap_or(first_port.container_port)
-            });
+            };
             if let Err(e) = self
                 .ingress_set(SetIngressRequest {
                     name: req.name.clone(),
@@ -727,39 +730,47 @@ impl AppsService {
 
         let config = info.config.unwrap_or_default();
         let host_config = info.host_config.unwrap_or_default();
+        let network_ports = info
+            .network_settings
+            .and_then(|ns| ns.ports)
+            .unwrap_or_default();
 
         // Image
         let image = config.image.unwrap_or_default();
 
-        // Parse ports from port bindings
+        // Parse ports — prefer network_settings.ports (has actual runtime mappings)
+        // over host_config.port_bindings (may have None for auto-assigned ports)
         let mut ports = Vec::new();
-        if let Some(ref pb) = host_config.port_bindings {
-            let mut idx = 0;
-            for (key, bindings) in pb {
-                let parts: Vec<&str> = key.split('/').collect();
-                let container_port: u16 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-                let protocol = parts
-                    .get(1)
-                    .map(|p| p.to_uppercase())
-                    .unwrap_or_else(|| "TCP".to_string());
-                let host_port = bindings
-                    .as_ref()
-                    .and_then(|b| b.first())
-                    .and_then(|b| b.host_port.as_ref())
-                    .and_then(|p| p.parse::<u16>().ok());
-                let port_name = if idx == 0 {
-                    "http".to_string()
-                } else {
-                    format!("port-{idx}")
-                };
-                ports.push(AppPort {
-                    name: port_name,
-                    container_port,
-                    host_port,
-                    protocol,
-                });
-                idx += 1;
-            }
+        let port_source = if !network_ports.is_empty() {
+            &network_ports
+        } else {
+            host_config.port_bindings.as_ref().unwrap_or(&network_ports)
+        };
+        let mut idx = 0;
+        for (key, bindings) in port_source {
+            let parts: Vec<&str> = key.split('/').collect();
+            let container_port: u16 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let protocol = parts
+                .get(1)
+                .map(|p| p.to_uppercase())
+                .unwrap_or_else(|| "TCP".to_string());
+            let host_port = bindings
+                .as_ref()
+                .and_then(|b| b.first())
+                .and_then(|b| b.host_port.as_ref())
+                .and_then(|p| p.parse::<u16>().ok());
+            let port_name = if idx == 0 {
+                "http".to_string()
+            } else {
+                format!("port-{idx}")
+            };
+            ports.push(AppPort {
+                name: port_name,
+                container_port,
+                host_port,
+                protocol,
+            });
+            idx += 1;
         }
         ports.sort_by_key(|p| p.container_port);
 
@@ -1150,10 +1161,18 @@ impl AppsService {
         Ok(())
     }
 
-    fn get_mapped_port_sync(&self, _container: &str, container_port: u16) -> Option<u16> {
-        // This is a best-effort sync lookup — in practice the host_port from the
-        // request is used. If auto-assigned, Docker picks a random port.
-        Some(container_port)
+    /// Look up the host port Docker actually assigned for a given container port.
+    async fn get_mapped_port(&self, container: &str, container_port: u16) -> Option<u16> {
+        let info = self.docker.inspect_container(container, None).await.ok()?;
+        let ports = info.network_settings?.ports?;
+        let key = format!("{container_port}/tcp");
+        let bindings = ports.get(&key)?.as_ref()?;
+        bindings
+            .first()?
+            .host_port
+            .as_ref()?
+            .parse::<u16>()
+            .ok()
     }
 
     async fn label_compose_containers(&self, project_name: &str) {
