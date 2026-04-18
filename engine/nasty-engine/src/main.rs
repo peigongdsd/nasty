@@ -175,9 +175,6 @@ async fn main() -> anyhow::Result<()> {
     // Periodic config backup to bcachefs
     nasty_system::backup::spawn_periodic();
 
-    // Periodic TrueCharts catalog refresh (initial fetch + daily)
-    nasty_apps::truecharts::spawn_periodic_refresh();
-
     // Signal systemd that startup is complete
     sd_notify_ready();
 

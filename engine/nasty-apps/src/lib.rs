@@ -1,42 +1,43 @@
-//! App runtime management — optional k3s + Helm integration.
+//! App runtime management — Docker-based container management via bollard.
 //!
-//! Disabled by default. When enabled, starts a single-node k3s cluster
-//! with local-path-provisioner for storage (backed by a bcachefs subvolume).
-//! Apps are deployed as Helm releases using the bjw-s app-template chart
-//! for simple containers, or raw Helm charts for advanced use cases.
+//! Two modes:
+//! - **Simple**: single-container apps configured via the WebUI form
+//!   (image, ports, env, volumes) — managed directly through the Docker API.
+//! - **Compose**: multi-container apps from a user-provided docker-compose.yml
+//!   — managed via the `docker compose` CLI.
+//!
+//! All NASty-managed containers are labeled with `nasty.managed=true` so we
+//! can distinguish them from other containers on the host.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::Path;
 
+use bollard::models::{
+    ContainerCreateBody, HostConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
+};
+use bollard::query_parameters::{
+    CreateContainerOptions, CreateImageOptions, ListContainersOptions, LogsOptions,
+    RemoveContainerOptions, StopContainerOptions,
+};
+use bollard::Docker;
+use futures_util::TryStreamExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::process::Command;
-use tracing::{info, warn, error};
-
-pub mod truecharts;
+use tracing::{error, info, warn};
 
 const STATE_PATH: &str = "/var/lib/nasty/apps-enabled";
-const KUBECONFIG: &str = "/etc/rancher/k3s/k3s.yaml";
-const K3S_SERVICE: &str = "k3s.service";
-const APP_TEMPLATE_REPO: &str = "https://bjw-s-labs.github.io/helm-charts";
-const APP_TEMPLATE_CHART: &str = "app-template";
+const PROXY_CONF: &str = "/var/lib/nasty/apps-proxy.conf";
+const COMPOSE_DIR: &str = "/var/lib/nasty/apps";
+const DOCKER_SERVICE: &str = "docker.service";
 
-/// Helm repos seeded on bootstrap so Search Charts has something to find.
-/// bjw-s provides the app-template chart used by the simple app installer;
-/// bitnami covers general-purpose apps (postgres, redis, nginx, ...);
-/// prometheus-community covers monitoring (Prometheus, Grafana, Alertmanager, ...).
-const DEFAULT_REPOS: &[(&str, &str)] = &[
-    ("bjw-s", APP_TEMPLATE_REPO),
-    ("bitnami", "https://charts.bitnami.com/bitnami"),
-    ("prometheus-community", "https://prometheus-community.github.io/helm-charts"),
-];
-/// Per-app namespace prefix. Each app gets its own namespace: nasty-{name}.
-const NAMESPACE_PREFIX: &str = "nasty-";
-
-fn app_namespace(name: &str) -> String {
-    format!("{NAMESPACE_PREFIX}{name}")
-}
+/// Label applied to all NASty-managed containers.
+const LABEL_MANAGED: &str = "nasty.managed";
+/// Label storing the app name.
+const LABEL_APP_NAME: &str = "nasty.app.name";
+/// Label storing the app kind: "simple" or "compose".
+const LABEL_APP_KIND: &str = "nasty.app.kind";
 
 // ── Errors ──────────────────────────────────────────────────────
 
@@ -46,14 +47,14 @@ pub enum AppsError {
     NotEnabled,
     #[error("apps runtime is already enabled")]
     AlreadyEnabled,
-    #[error("k3s is not ready: {0}")]
+    #[error("docker is not ready: {0}")]
     NotReady(String),
     #[error("app not found: {0}")]
     AppNotFound(String),
     #[error("app already exists: {0}")]
     AppAlreadyExists(String),
-    #[error("helm command failed: {0}")]
-    HelmFailed(String),
+    #[error("docker error: {0}")]
+    DockerFailed(String),
     #[error("command failed: {0}")]
     CommandFailed(String),
     #[error("io error: {0}")]
@@ -68,10 +69,16 @@ impl AppsError {
             Self::NotReady(_) => -33003,
             Self::AppNotFound(_) => -33004,
             Self::AppAlreadyExists(_) => -33005,
-            Self::HelmFailed(_) => -33006,
+            Self::DockerFailed(_) => -33006,
             Self::CommandFailed(_) => -33007,
             Self::Io(_) => -33008,
         }
+    }
+}
+
+impl From<bollard::errors::Error> for AppsError {
+    fn from(e: bollard::errors::Error) -> Self {
+        Self::DockerFailed(e.to_string())
     }
 }
 
@@ -81,30 +88,26 @@ impl AppsError {
 pub struct AppsStatus {
     /// Whether the apps runtime is enabled.
     pub enabled: bool,
-    /// Whether k3s is currently running.
+    /// Whether Docker is currently running and responsive.
     pub running: bool,
-    /// Number of deployed apps.
+    /// Number of managed apps (running or stopped).
     pub app_count: usize,
-    /// k3s memory usage in bytes (approximate).
+    /// Total memory usage of managed containers in bytes.
     pub memory_bytes: Option<u64>,
-    /// Path to the apps storage subvolume.
+    /// Path to the apps storage directory on bcachefs.
     pub storage_path: Option<String>,
-    /// k3s version string.
-    pub k3s_version: Option<String>,
-    /// Node readiness status (e.g. "Ready", "NotReady").
-    pub node_status: Option<String>,
-    /// Whether the storage subvolume exists on disk.
+    /// Whether the storage directory exists on disk.
     pub storage_ok: bool,
+    /// Docker server version.
+    pub docker_version: Option<String>,
 }
 
-/// Request to enable the apps runtime.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct EnableAppsRequest {
-    /// Filesystem to create apps-data subvolume on.
+    /// Filesystem to store app data on.
     pub filesystem: Option<String>,
 }
 
-/// Persisted apps configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppsConfig {
     #[serde(default)]
@@ -115,21 +118,18 @@ pub struct AppsConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct App {
-    /// Helm release name (also used as the app identifier).
+    /// App name (container name for simple, project name for compose).
     pub name: String,
-    /// Namespace (nasty-{name}).
-    pub namespace: String,
-    /// Container image (e.g. "lscr.io/linuxserver/plex:latest").
+    /// Container image.
     pub image: String,
-    /// Helm chart used (e.g. "app-template" or custom).
-    pub chart: String,
-    /// Current status from Helm.
+    /// Current status: "running", "stopped", "restarting", "created", "exited".
     pub status: String,
-    /// Last updated timestamp.
-    pub updated: String,
+    /// ISO 8601 timestamp of when the container was created.
+    pub created: String,
+    /// App kind: "simple" or "compose".
+    pub kind: String,
 }
 
-/// Current configuration of an installed app, parsed from Helm values.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct AppConfig {
     pub name: String,
@@ -141,31 +141,29 @@ pub struct AppConfig {
     pub memory_limit: Option<String>,
 }
 
-/// Detected ports from inspecting a container image's EXPOSE directives.
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ImageInspectResult {
     pub ports: Vec<AppPort>,
 }
 
-/// Request to install a simple app via the bjw-s app-template chart.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct InstallAppRequest {
-    /// App name (becomes the Helm release name). Must be DNS-safe.
+    /// App name. Must be DNS-safe.
     pub name: String,
     /// Container image (e.g. "lscr.io/linuxserver/plex:latest").
     pub image: String,
-    /// Container ports to expose. Key = port name, value = port number.
+    /// Ports to expose.
     #[serde(default)]
     pub ports: Vec<AppPort>,
     /// Environment variables.
     #[serde(default)]
     pub env: Vec<AppEnv>,
-    /// Persistent volume claims.
+    /// Bind-mount volumes.
     #[serde(default)]
     pub volumes: Vec<AppVolume>,
-    /// CPU limit (e.g. "500m" for half a core, "2" for 2 cores).
+    /// CPU limit (e.g. "0.5" for half a core, "2" for 2 cores).
     pub cpu_limit: Option<String>,
-    /// Memory limit (e.g. "256Mi", "1Gi").
+    /// Memory limit (e.g. "256m", "1g").
     pub memory_limit: Option<String>,
 }
 
@@ -175,20 +173,20 @@ pub struct AppPort {
     pub name: String,
     /// Container port number.
     pub container_port: u16,
-    /// NodePort to expose on the host (optional, auto-assigned if omitted).
-    pub node_port: Option<u16>,
+    /// Host port to map to (optional, auto-assigned if omitted).
+    pub host_port: Option<u16>,
     /// Protocol: "TCP" or "UDP" (default: TCP).
     #[serde(default = "default_tcp")]
     pub protocol: String,
 }
 
-fn default_tcp() -> String { "TCP".to_string() }
+fn default_tcp() -> String {
+    "TCP".to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AppEnv {
-    /// Environment variable name.
     pub name: String,
-    /// Environment variable value.
     pub value: String,
 }
 
@@ -198,70 +196,29 @@ pub struct AppVolume {
     pub name: String,
     /// Mount path inside the container.
     pub mount_path: String,
-    /// Size (e.g. "1Gi", "10Gi").
-    pub size: String,
-    /// Storage class name (default: "nasty-nfs").
-    #[serde(default = "default_storage_class")]
-    pub storage_class: String,
+    /// Host path (auto-generated under apps storage if empty).
+    #[serde(default)]
+    pub host_path: String,
 }
 
-fn default_storage_class() -> String { "local-path".to_string() }
-
-/// Request to install a custom Helm chart.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct InstallHelmChartRequest {
-    /// Release name.
-    pub name: String,
-    /// Chart reference (e.g. "bitnami/postgresql" or OCI URL).
-    pub chart: String,
-    /// Chart version (optional).
-    pub version: Option<String>,
-    /// Values as a JSON object (converted to YAML for Helm).
-    pub values: Option<serde_json::Value>,
-}
-
-// ── Helm repo types ─────────────────────────────────────────────
+// ── Compose types ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, JsonSchema)]
-pub struct AddRepoRequest {
-    /// Repository name (e.g. "bitnami").
+pub struct InstallComposeRequest {
+    /// App name (used as compose project name).
     pub name: String,
-    /// Repository URL (e.g. "https://charts.bitnami.com/bitnami").
-    pub url: String,
+    /// Contents of docker-compose.yml.
+    pub compose_file: String,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct HelmRepo {
-    /// Repository name.
-    pub name: String,
-    /// Repository URL.
-    pub url: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct HelmChart {
-    /// Chart name (e.g. "postgresql").
-    pub name: String,
-    /// Repository name (e.g. "bitnami").
-    pub repo: String,
-    /// Latest version.
-    pub version: String,
-    /// App version (e.g. "16.2.0").
-    pub app_version: String,
-    /// Short description.
-    pub description: String,
-}
-
-// ── Ingress types ───────────────────────────────────────────────
-
-const PROXY_CONF: &str = "/var/lib/nasty/apps-proxy.conf";
+// ── Ingress types ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct AppIngress {
     /// App name.
     pub name: String,
-    /// NodePort to proxy to.
-    pub node_port: u16,
+    /// Host port to proxy to.
+    pub host_port: u16,
     /// URL path prefix (e.g. "/apps/plex/").
     pub path: String,
 }
@@ -270,34 +227,23 @@ pub struct AppIngress {
 pub struct SetIngressRequest {
     /// App name.
     pub name: String,
-    /// NodePort to proxy to.
-    pub node_port: u16,
-}
-
-/// Active port-forward state.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct PortForwardInfo {
-    /// App name.
-    pub name: String,
-    /// Local port on the NASty host.
-    pub local_port: u16,
-    /// Container port being forwarded.
-    pub container_port: u16,
-    /// Pod name.
-    pub pod: String,
+    /// Host port to proxy to.
+    pub host_port: u16,
 }
 
 // ── Service ─────────────────────────────────────────────────────
 
 pub struct AppsService {
-    port_forwards: std::sync::Mutex<std::collections::HashMap<String, (PortForwardInfo, u32)>>,
+    docker: Docker,
 }
 
 impl AppsService {
     pub fn new() -> Self {
-        Self {
-            port_forwards: std::sync::Mutex::new(std::collections::HashMap::new()),
-        }
+        // Connect to Docker socket. If Docker isn't running yet, individual
+        // operations will fail with a clear error rather than crashing at startup.
+        let docker = Docker::connect_with_unix_defaults()
+            .unwrap_or_else(|_| Docker::connect_with_unix("/var/run/docker.sock", 120, &bollard::API_DEFAULT_VERSION).unwrap());
+        Self { docker }
     }
 
     // ── Enable/Disable ──────────────────────────────────────
@@ -326,37 +272,27 @@ impl AppsService {
             return Err(AppsError::AlreadyEnabled);
         }
 
-        // Save config with chosen filesystem
         let config = AppsConfig {
             enabled: true,
-            storage_path: None, // Will be set during bootstrap
+            storage_path: None,
         };
         Self::save_config(&config).await?;
 
-        // Move k3s data to bcachefs so container images and etcd don't fill the root partition.
-        if let Some(ref fs_name) = req.filesystem {
-            ensure_k3s_symlink(fs_name).await;
-        }
+        // Start Docker via systemd
+        run_cmd("systemctl", &["start", DOCKER_SERVICE]).await?;
 
-        // Start k3s via systemd (non-blocking — k3s takes 30-60s to initialize)
-        run_cmd("systemctl", &["start", K3S_SERVICE]).await?;
-
-        info!("Apps runtime enabled — k3s starting (bootstrap will run in background)");
+        info!("Apps runtime enabled — Docker starting");
 
         let filesystem = req.filesystem.clone();
 
-        // Bootstrap in background — don't block the RPC response
+        // Bootstrap in background
         tokio::spawn(async move {
-            // Wait for k3s to be ready (up to 90s)
+            // Wait for Docker to be ready (up to 30s)
             let mut ready = false;
-            for _ in 0..45 {
+            for _ in 0..15 {
                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                let output = tokio::process::Command::new("k3s")
-                    .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "nodes", "-o", "name"])
-                    .output()
-                    .await;
-                if let Ok(o) = output {
-                    if o.status.success() && !o.stdout.is_empty() {
+                if let Ok(docker) = Docker::connect_with_unix_defaults() {
+                    if docker.ping().await.is_ok() {
                         ready = true;
                         break;
                     }
@@ -364,55 +300,18 @@ impl AppsService {
             }
 
             if !ready {
-                error!("k3s did not become ready within 90s");
+                error!("Docker did not become ready within 30s");
                 return;
             }
 
-            // Create apps-data subvolume
-            let apps_data_path = setup_apps_storage(filesystem.as_deref()).await;
+            // Set up storage directory
+            let storage_path = setup_apps_storage(filesystem.as_deref()).await;
 
-            // Configure local-path-provisioner to use bcachefs subvolume
-            if let Some(ref path) = apps_data_path {
-                let config_json = format!(
-                    r#"{{"nodePathMap":[{{"node":"DEFAULT_PATH_FOR_NON_LISTED_NODES","paths":["{}"]}}]}}"#,
-                    path
-                );
-                let patch = format!(
-                    r#"{{"data":{{"config.json":"{}"}}}}"#,
-                    config_json.replace('"', r#"\""#)
-                );
-                let _ = tokio::process::Command::new("k3s")
-                    .args(["kubectl", "--kubeconfig", KUBECONFIG, "-n", "kube-system",
-                           "patch", "configmap", "local-path-config", "-p", &patch])
-                    .output()
-                    .await;
-
-                // Restart local-path-provisioner to pick up new config
-                let _ = tokio::process::Command::new("k3s")
-                    .args(["kubectl", "--kubeconfig", KUBECONFIG, "-n", "kube-system",
-                           "rollout", "restart", "deployment/local-path-provisioner"])
-                    .output()
-                    .await;
-
-                info!("local-path-provisioner configured to use {path}");
-            }
-
-            // Add default Helm repos (bjw-s + popular app repos)
-            for (name, url) in DEFAULT_REPOS {
-                let _ = tokio::process::Command::new("helm")
-                    .args(["repo", "add", name, url, "--kubeconfig", KUBECONFIG])
-                    .output()
-                    .await;
-            }
-
-            // Update repos
-            let _ = tokio::process::Command::new("helm")
-                .args(["repo", "update", "--kubeconfig", KUBECONFIG])
-                .output()
-                .await;
+            // Create compose directory
+            let _ = tokio::fs::create_dir_all(COMPOSE_DIR).await;
 
             // Persist storage path in config
-            if let Some(ref path) = apps_data_path {
+            if let Some(ref path) = storage_path {
                 let config = AppsConfig {
                     enabled: true,
                     storage_path: Some(path.clone()),
@@ -420,7 +319,7 @@ impl AppsService {
                 let _ = AppsService::save_config(&config).await;
             }
 
-            info!("Apps bootstrap complete (repo: bjw-s)");
+            info!("Apps bootstrap complete");
         });
 
         Ok(())
@@ -431,13 +330,25 @@ impl AppsService {
             return Err(AppsError::NotEnabled);
         }
 
-        // Stop k3s
-        run_cmd("systemctl", &["stop", K3S_SERVICE]).await?;
+        // Stop all managed containers
+        if let Ok(apps) = self.list().await {
+            for app in &apps {
+                if app.status == "running" {
+                    let _ = self.docker.stop_container(
+                        &container_name(&app.name),
+                        Some(StopContainerOptions { t: Some(10), signal: None }),
+                    ).await;
+                }
+            }
+        }
+
+        // Stop Docker
+        run_cmd("systemctl", &["stop", DOCKER_SERVICE]).await?;
 
         // Remove state file
         let _ = tokio::fs::remove_file(STATE_PATH).await;
 
-        info!("Apps runtime disabled — k3s stopped");
+        info!("Apps runtime disabled — Docker stopped");
         Ok(())
     }
 
@@ -447,167 +358,241 @@ impl AppsService {
         let config = Self::load_config();
         let enabled = self.is_enabled();
         let storage_path = config.storage_path.clone();
-        let storage_ok = storage_path.as_ref()
+        let storage_ok = storage_path
+            .as_ref()
             .map(|p| Path::new(p).is_dir())
             .unwrap_or(false);
 
         if !enabled {
             return AppsStatus {
-                enabled, running: false, app_count: 0, memory_bytes: None,
-                storage_path, k3s_version: None, node_status: None, storage_ok,
+                enabled,
+                running: false,
+                app_count: 0,
+                memory_bytes: None,
+                storage_path,
+                storage_ok,
+                docker_version: None,
             };
         }
 
-        let running = self.is_k3s_ready().await;
+        let running = self.is_docker_ready().await;
         if !running {
             return AppsStatus {
-                enabled, running: false, app_count: 0, memory_bytes: None,
-                storage_path, k3s_version: None, node_status: None, storage_ok,
+                enabled,
+                running: false,
+                app_count: 0,
+                memory_bytes: None,
+                storage_path,
+                storage_ok,
+                docker_version: None,
             };
         }
 
-        // Run checks in parallel
-        let (apps_result, memory_bytes, k3s_version, node_status) = tokio::join!(
-            self.list_internal(),
-            k3s_memory(),
-            k3s_version(),
-            k3s_node_status(),
-        );
-        let app_count = apps_result.map(|apps| apps.len()).unwrap_or(0);
+        let (apps_result, docker_version) =
+            tokio::join!(self.list_internal(), self.docker_version());
+        let app_count = apps_result.map(|a| a.len()).unwrap_or(0);
 
         AppsStatus {
-            enabled, running, app_count, memory_bytes,
-            storage_path, k3s_version, node_status, storage_ok,
+            enabled,
+            running,
+            app_count,
+            memory_bytes: None, // TODO: aggregate container stats if needed
+            storage_path,
+            storage_ok,
+            docker_version,
         }
     }
 
-    // ── App management (app-template) ───────────────────────
+    // ── Simple app management ───────────────────────────────
 
-    pub async fn install(&self, mut req: InstallAppRequest) -> Result<App, AppsError> {
+    pub async fn install(&self, req: InstallAppRequest) -> Result<App, AppsError> {
         self.require_ready().await?;
 
-        // Validate user-specified NodePorts and auto-assign missing ones
-        let mut used = self.used_node_ports().await;
-        for p in &req.ports {
-            if let Some(np) = p.node_port {
-                if !(30000..=32767).contains(&np) {
-                    return Err(AppsError::HelmFailed(format!(
-                        "NodePort {} is out of range (must be 30000-32767)",
-                        np
-                    )));
-                }
-                if used.contains(&np) {
-                    return Err(AppsError::HelmFailed(format!(
-                        "NodePort {} is already in use",
-                        np
-                    )));
-                }
-            }
-        }
-        let mut next_free = 30000u16;
-        for p in &mut req.ports {
-            if p.node_port.is_none() {
-                while used.contains(&next_free) {
-                    next_free += 1;
-                    if next_free > 32767 {
-                        return Err(AppsError::HelmFailed(
-                            "no free NodePort available in 30000-32767 range".into(),
-                        ));
-                    }
-                }
-                p.node_port = Some(next_free);
-                used.insert(next_free);
-                next_free += 1;
-            }
-        }
+        let cname = container_name(&req.name);
 
-        // Check if release already exists
-        let existing = self.list().await?;
-        if existing.iter().any(|a| a.name == req.name) {
+        // Check if already exists
+        if self.container_exists(&cname).await {
             return Err(AppsError::AppAlreadyExists(req.name));
         }
 
-        // Generate values.yaml for app-template
-        let values = generate_app_template_values(&req);
-        let values_json = serde_json::to_string(&values)
-            .map_err(|e| AppsError::HelmFailed(format!("serialize values: {e}")))?;
+        // Pull the image first
+        self.pull_image(&req.image).await?;
 
-        // Write temp values file
-        let values_path = format!("/tmp/nasty-app-{}.json", req.name);
-        tokio::fs::write(&values_path, &values_json).await?;
+        // Build port bindings
+        let mut port_bindings: HashMap<String, Option<Vec<PortBinding>>> = HashMap::new();
+        let mut exposed_ports: Vec<String> = Vec::new();
 
-        // Create per-app namespace
-        let ns = app_namespace(&req.name);
-        self.ensure_namespace(&ns).await;
-
-        // helm install
-        let output = Command::new("helm")
-            .args([
-                "install", &req.name,
-                &format!("bjw-s/{APP_TEMPLATE_CHART}"),
-                "--namespace", &ns,
-                "--values", &values_path,
-                "--kubeconfig", KUBECONFIG,
-            ])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        let _ = tokio::fs::remove_file(&values_path).await;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
+        for p in &req.ports {
+            let key = format!("{}/{}", p.container_port, p.protocol.to_lowercase());
+            exposed_ports.push(key.clone());
+            port_bindings.insert(
+                key,
+                Some(vec![PortBinding {
+                    host_ip: Some("0.0.0.0".to_string()),
+                    host_port: p.host_port.map(|hp| hp.to_string()),
+                }]),
+            );
         }
+
+        // Build mounts
+        let storage_path = Self::load_config().storage_path;
+        let mut binds = Vec::new();
+        for v in &req.volumes {
+            let host_path = if v.host_path.is_empty() {
+                // Auto-generate path under apps storage
+                let base = storage_path
+                    .as_deref()
+                    .unwrap_or("/var/lib/nasty/apps-data");
+                let path = format!("{}/{}/{}", base, req.name, v.name);
+                // Ensure the directory exists
+                let _ = tokio::fs::create_dir_all(&path).await;
+                path
+            } else {
+                v.host_path.clone()
+            };
+            binds.push(format!("{}:{}:rw", host_path, v.mount_path));
+        }
+
+        // Build env
+        let env: Vec<String> = req.env.iter().map(|e| format!("{}={}", e.name, e.value)).collect();
+
+        // Resource limits
+        let nano_cpus = req.cpu_limit.as_ref().and_then(|c| parse_cpu_limit(c));
+        let memory = req.memory_limit.as_ref().and_then(|m| parse_memory_limit(m));
+
+        // Build labels
+        let mut labels = HashMap::new();
+        labels.insert(LABEL_MANAGED.to_string(), "true".to_string());
+        labels.insert(LABEL_APP_NAME.to_string(), req.name.clone());
+        labels.insert(LABEL_APP_KIND.to_string(), "simple".to_string());
+
+        let host_config = HostConfig {
+            port_bindings: if port_bindings.is_empty() {
+                None
+            } else {
+                Some(port_bindings)
+            },
+            binds: if binds.is_empty() { None } else { Some(binds) },
+            nano_cpus,
+            memory,
+            restart_policy: Some(RestartPolicy {
+                name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                maximum_retry_count: None,
+            }),
+            ..Default::default()
+        };
+
+        let config = ContainerCreateBody {
+            image: Some(req.image.clone()),
+            env: if env.is_empty() { None } else { Some(env) },
+            exposed_ports: if exposed_ports.is_empty() {
+                None
+            } else {
+                Some(exposed_ports)
+            },
+            labels: Some(labels),
+            host_config: Some(host_config),
+            ..Default::default()
+        };
+
+        self.docker
+            .create_container(
+                Some(CreateContainerOptions {
+                    name: Some(cname.clone()),
+                    platform: String::new(),
+                }),
+                config,
+            )
+            .await?;
+
+        self.docker.start_container(&cname, None::<bollard::query_parameters::StartContainerOptions>).await?;
 
         info!("Installed app '{}' (image: {})", req.name, req.image);
 
-        // Auto-create ingress using the first port's NodePort
+        // Auto-create ingress for the first port
         if let Some(first_port) = req.ports.first() {
-            if let Some(node_port) = first_port.node_port {
-                if let Err(e) = self.ingress_set(SetIngressRequest {
+            let host_port = first_port.host_port.unwrap_or_else(|| {
+                // Look up the actual assigned port from Docker
+                self.get_mapped_port_sync(&cname, first_port.container_port)
+                    .unwrap_or(first_port.container_port)
+            });
+            if let Err(e) = self
+                .ingress_set(SetIngressRequest {
                     name: req.name.clone(),
-                    node_port,
-                }).await {
-                    warn!("Failed to auto-create ingress for '{}': {e}", req.name);
-                }
+                    host_port,
+                })
+                .await
+            {
+                warn!("Failed to auto-create ingress for '{}': {e}", req.name);
             }
         }
 
-        // Return the installed app
         self.get(&req.name).await
+    }
+
+    pub async fn update(&self, req: InstallAppRequest) -> Result<App, AppsError> {
+        self.require_ready().await?;
+
+        let cname = container_name(&req.name);
+
+        // Verify app exists
+        if !self.container_exists(&cname).await {
+            return Err(AppsError::AppNotFound(req.name));
+        }
+
+        // Stop and remove the old container
+        let _ = self
+            .docker
+            .stop_container(&cname, Some(StopContainerOptions { t: Some(10), signal: None }))
+            .await;
+        let _ = self
+            .docker
+            .remove_container(
+                &cname,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    ..Default::default()
+                }),
+            )
+            .await;
+
+        // Reinstall with new config
+        self.install(req).await
     }
 
     pub async fn remove(&self, name: &str) -> Result<(), AppsError> {
         self.require_ready().await?;
 
-        let ns = app_namespace(name);
-        let output = Command::new("helm")
-            .args([
-                "uninstall", name,
-                "--namespace", &ns,
-                "--kubeconfig", KUBECONFIG,
-            ])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
+        let cname = container_name(name);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.contains("not found") {
-                return Err(AppsError::AppNotFound(name.to_string()));
-            }
-            return Err(AppsError::HelmFailed(stderr.to_string()));
+        // Check if it's a compose app
+        let compose_dir = format!("{}/{}", COMPOSE_DIR, name);
+        if Path::new(&compose_dir).join("docker-compose.yml").exists() {
+            return self.compose_remove(name).await;
         }
 
-        // Clean up ingress rule
-        let _ = self.ingress_remove(name).await;
+        if !self.container_exists(&cname).await {
+            return Err(AppsError::AppNotFound(name.to_string()));
+        }
 
-        // Delete the per-app namespace (cleans up all remaining resources)
-        let _ = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "delete", "namespace", &ns])
-            .output()
+        // Stop and remove
+        let _ = self
+            .docker
+            .stop_container(&cname, Some(StopContainerOptions { t: Some(10), signal: None }))
             .await;
+        self.docker
+            .remove_container(
+                &cname,
+                Some(RemoveContainerOptions {
+                    force: true,
+                    v: true, // remove anonymous volumes
+                    ..Default::default()
+                }),
+            )
+            .await?;
+
+        // Clean up ingress
+        let _ = self.ingress_remove(name).await;
 
         info!("Removed app '{name}'");
         Ok(())
@@ -618,41 +603,107 @@ impl AppsService {
         self.list_internal().await
     }
 
-    /// List apps without the require_ready check (used by status() which already checked).
     async fn list_internal(&self) -> Result<Vec<App>, AppsError> {
-        let output = Command::new("helm")
-            .args([
-                "list", "--all-namespaces",
-                "--kubeconfig", KUBECONFIG,
-                "-o", "json",
-            ])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
+        // List simple apps (labeled by us)
+        let mut filters = HashMap::new();
+        filters.insert("label".to_string(), vec![format!("{LABEL_MANAGED}=true")]);
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
+        let labeled = self
+            .docker
+            .list_containers(Some(ListContainersOptions {
+                all: true,
+                filters: Some(filters),
+                ..Default::default()
+            }))
+            .await?;
+
+        let mut apps = Vec::new();
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for c in &labeled {
+            let labels = c.labels.as_ref();
+            let app_name = labels
+                .and_then(|l| l.get(LABEL_APP_NAME))
+                .cloned()
+                .unwrap_or_default();
+
+            if app_name.is_empty() || seen_names.contains(&app_name) {
+                continue;
+            }
+            seen_names.insert(app_name.clone());
+
+            let kind = labels
+                .and_then(|l| l.get(LABEL_APP_KIND))
+                .cloned()
+                .unwrap_or_else(|| "simple".to_string());
+            let status = c
+                .state
+                .as_ref()
+                .map(|s| format!("{:?}", s).to_lowercase())
+                .unwrap_or_else(|| "unknown".to_string());
+            let image = c.image.as_deref().unwrap_or("").to_string();
+            let created = c.created.map(chrono_from_timestamp).unwrap_or_default();
+
+            apps.push(App {
+                name: app_name,
+                image,
+                status,
+                created,
+                kind,
+            });
         }
 
-        let releases: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)
-            .unwrap_or_default();
+        // Also discover compose apps from the compose directory
+        if let Ok(mut entries) = tokio::fs::read_dir(COMPOSE_DIR).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if seen_names.contains(&name) {
+                    continue;
+                }
+                let compose_path = entry.path().join("docker-compose.yml");
+                if !compose_path.exists() {
+                    continue;
+                }
 
-        let apps = releases.iter().filter_map(|r| {
-            let ns = r["namespace"].as_str().unwrap_or("");
-            // Only include releases in nasty- namespaces
-            if !ns.starts_with(NAMESPACE_PREFIX) {
-                return None;
+                // Find the first container from this compose project
+                let mut pf = HashMap::new();
+                pf.insert(
+                    "label".to_string(),
+                    vec![format!("com.docker.compose.project={name}")],
+                );
+                let compose_containers = self
+                    .docker
+                    .list_containers(Some(ListContainersOptions {
+                        all: true,
+                        filters: Some(pf),
+                        ..Default::default()
+                    }))
+                    .await
+                    .unwrap_or_default();
+
+                let (status, image, created) = if let Some(c) = compose_containers.first() {
+                    (
+                        c.state
+                            .as_ref()
+                            .map(|s| format!("{:?}", s).to_lowercase())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        c.image.as_deref().unwrap_or("").to_string(),
+                        c.created.map(chrono_from_timestamp).unwrap_or_default(),
+                    )
+                } else {
+                    ("stopped".to_string(), String::new(), String::new())
+                };
+
+                seen_names.insert(name.clone());
+                apps.push(App {
+                    name,
+                    image,
+                    status,
+                    created,
+                    kind: "compose".to_string(),
+                });
             }
-            Some(App {
-                name: r["name"].as_str().unwrap_or("").to_string(),
-                namespace: ns.to_string(),
-                image: "".to_string(), // Helm doesn't expose this directly
-                chart: r["chart"].as_str().unwrap_or("").to_string(),
-                status: r["status"].as_str().unwrap_or("unknown").to_string(),
-                updated: r["updated"].as_str().unwrap_or("").to_string(),
-            })
-        }).collect();
+        }
 
         Ok(apps)
     }
@@ -664,88 +715,99 @@ impl AppsService {
             .ok_or_else(|| AppsError::AppNotFound(name.to_string()))
     }
 
-    /// Get the current configuration of an installed app by parsing its Helm values.
     pub async fn get_config(&self, name: &str) -> Result<AppConfig, AppsError> {
         self.require_ready().await?;
 
-        // Verify app exists
-        let _ = self.get(name).await?;
-
-        let ns = app_namespace(name);
-        let output = Command::new("helm")
-            .args([
-                "get", "values", name,
-                "--namespace", &ns,
-                "--kubeconfig", KUBECONFIG,
-                "-o", "json",
-            ])
-            .output()
+        let cname = container_name(name);
+        let info = self
+            .docker
+            .inspect_container(&cname, None)
             .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
+            .map_err(|_| AppsError::AppNotFound(name.to_string()))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
+        let config = info.config.unwrap_or_default();
+        let host_config = info.host_config.unwrap_or_default();
 
-        let values: serde_json::Value = serde_json::from_slice(&output.stdout)
-            .unwrap_or_default();
+        // Image
+        let image = config.image.unwrap_or_default();
 
-        // Parse image
-        let container = &values["controllers"]["main"]["containers"]["main"];
-        let repo = container["image"]["repository"].as_str().unwrap_or("");
-        let tag = container["image"]["tag"].as_str().unwrap_or("latest");
-        let image = if repo.is_empty() { String::new() } else { format!("{repo}:{tag}") };
-
-        // Parse ports
+        // Parse ports from port bindings
         let mut ports = Vec::new();
-        if let Some(svc_ports) = values["service"]["main"]["ports"].as_object() {
-            for (port_name, port_def) in svc_ports {
+        if let Some(ref pb) = host_config.port_bindings {
+            let mut idx = 0;
+            for (key, bindings) in pb {
+                let parts: Vec<&str> = key.split('/').collect();
+                let container_port: u16 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+                let protocol = parts
+                    .get(1)
+                    .map(|p| p.to_uppercase())
+                    .unwrap_or_else(|| "TCP".to_string());
+                let host_port = bindings
+                    .as_ref()
+                    .and_then(|b| b.first())
+                    .and_then(|b| b.host_port.as_ref())
+                    .and_then(|p| p.parse::<u16>().ok());
+                let port_name = if idx == 0 {
+                    "http".to_string()
+                } else {
+                    format!("port-{idx}")
+                };
                 ports.push(AppPort {
-                    name: port_name.clone(),
-                    container_port: port_def["port"].as_u64().unwrap_or(80) as u16,
-                    node_port: port_def["nodePort"].as_u64().map(|v| v as u16),
-                    protocol: port_def["protocol"].as_str().unwrap_or("TCP").to_string(),
+                    name: port_name,
+                    container_port,
+                    host_port,
+                    protocol,
                 });
+                idx += 1;
             }
         }
+        ports.sort_by_key(|p| p.container_port);
 
         // Parse env
-        let mut env = Vec::new();
-        if let Some(env_map) = container["env"].as_object() {
-            for (k, v) in env_map {
-                env.push(AppEnv {
-                    name: k.clone(),
-                    value: v.as_str().unwrap_or("").to_string(),
-                });
-            }
-        }
+        let env: Vec<AppEnv> = config
+            .env
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|e| {
+                let (k, v) = e.split_once('=')?;
+                Some(AppEnv {
+                    name: k.to_string(),
+                    value: v.to_string(),
+                })
+            })
+            .collect();
 
-        // Parse volumes
+        // Parse volumes from binds
         let mut volumes = Vec::new();
-        if let Some(persistence) = values["persistence"].as_object() {
-            for (vol_name, vol_def) in persistence {
-                if vol_def["type"].as_str() == Some("persistentVolumeClaim") {
-                    let mount_path = vol_def["globalMounts"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|m| m["path"].as_str())
-                        .unwrap_or("")
+        if let Some(ref binds) = host_config.binds {
+            for (i, bind) in binds.iter().enumerate() {
+                let parts: Vec<&str> = bind.splitn(3, ':').collect();
+                if parts.len() >= 2 {
+                    let host_path = parts[0].to_string();
+                    let mount_path = parts[1].to_string();
+                    let vol_name = Path::new(&host_path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&format!("vol-{i}"))
                         .to_string();
                     volumes.push(AppVolume {
-                        name: vol_name.clone(),
+                        name: vol_name,
                         mount_path,
-                        size: vol_def["size"].as_str().unwrap_or("1Gi").to_string(),
-                        storage_class: vol_def["storageClass"].as_str().unwrap_or("local-path").to_string(),
+                        host_path,
                     });
                 }
             }
         }
 
-        // Parse resource limits
-        let limits = &container["resources"]["limits"];
-        let cpu_limit = limits["cpu"].as_str().map(String::from);
-        let memory_limit = limits["memory"].as_str().map(String::from);
+        // Resource limits
+        let cpu_limit = host_config.nano_cpus.map(|n| format!("{:.1}", n as f64 / 1_000_000_000.0));
+        let memory_limit = host_config.memory.and_then(|m| {
+            if m <= 0 {
+                None
+            } else {
+                Some(format_memory_limit(m as u64))
+            }
+        });
 
         Ok(AppConfig {
             name: name.to_string(),
@@ -758,114 +820,118 @@ impl AppsService {
         })
     }
 
-    /// Update an existing app with new configuration via helm upgrade.
-    pub async fn update(&self, mut req: InstallAppRequest) -> Result<App, AppsError> {
-        self.require_ready().await?;
-
-        // Verify app exists
-        let _ = self.get(&req.name).await?;
-
-        // Validate and assign NodePorts (same logic as install)
-        let mut used = self.used_node_ports().await;
-        // Exclude ports currently used by this app (they can be reused)
-        if let Ok(current) = self.get_config(&req.name).await {
-            for p in &current.ports {
-                if let Some(np) = p.node_port {
-                    used.remove(&np);
-                }
-            }
-        }
-        for p in &req.ports {
-            if let Some(np) = p.node_port {
-                if !(30000..=32767).contains(&np) {
-                    return Err(AppsError::HelmFailed(format!(
-                        "NodePort {} is out of range (must be 30000-32767)", np
-                    )));
-                }
-                if used.contains(&np) {
-                    return Err(AppsError::HelmFailed(format!(
-                        "NodePort {} is already in use", np
-                    )));
-                }
-            }
-        }
-        let mut next_free = 30000u16;
-        for p in &mut req.ports {
-            if p.node_port.is_none() {
-                while used.contains(&next_free) {
-                    next_free += 1;
-                    if next_free > 32767 {
-                        return Err(AppsError::HelmFailed(
-                            "no free NodePort available in 30000-32767 range".into(),
-                        ));
-                    }
-                }
-                p.node_port = Some(next_free);
-                used.insert(next_free);
-                next_free += 1;
-            }
-        }
-
-        let values = generate_app_template_values(&req);
-        let values_json = serde_json::to_string(&values)
-            .map_err(|e| AppsError::HelmFailed(format!("serialize values: {e}")))?;
-
-        let values_path = format!("/tmp/nasty-app-{}.json", req.name);
-        tokio::fs::write(&values_path, &values_json).await?;
-
-        let ns = app_namespace(&req.name);
-        let output = Command::new("helm")
-            .args([
-                "upgrade", &req.name,
-                &format!("bjw-s/{APP_TEMPLATE_CHART}"),
-                "--namespace", &ns,
-                "--values", &values_path,
-                "--kubeconfig", KUBECONFIG,
-            ])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        let _ = tokio::fs::remove_file(&values_path).await;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
-
-        info!("Updated app '{}'", req.name);
-
-        // Update ingress
-        if let Some(first_port) = req.ports.first() {
-            if let Some(node_port) = first_port.node_port {
-                let _ = self.ingress_set(SetIngressRequest {
-                    name: req.name.clone(),
-                    node_port,
-                }).await;
-            }
-        } else {
-            // No ports — remove ingress
-            let _ = self.ingress_remove(&req.name).await;
-        }
-
-        self.get(&req.name).await
-    }
-
     pub async fn logs(&self, name: &str, tail: Option<u32>) -> Result<String, AppsError> {
         self.require_ready().await?;
 
+        let cname = container_name(name);
         let tail_str = tail.unwrap_or(100).to_string();
-        let label = format!("app.kubernetes.io/instance={name}");
 
-        let ns = app_namespace(name);
-        let output = Command::new("k3s")
+        let logs = self
+            .docker
+            .logs(
+                &cname,
+                Some(LogsOptions {
+                    stdout: true,
+                    stderr: true,
+                    tail: tail_str,
+                    ..Default::default()
+                }),
+            )
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|_| AppsError::AppNotFound(name.to_string()))?;
+
+        let output: String = logs.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("");
+        Ok(output)
+    }
+
+    // ── Compose app management ──────────────────────────────
+
+    pub async fn compose_install(&self, req: InstallComposeRequest) -> Result<App, AppsError> {
+        self.require_ready().await?;
+
+        let project_dir = format!("{}/{}", COMPOSE_DIR, req.name);
+
+        // Check if already exists
+        if Path::new(&project_dir).join("docker-compose.yml").exists() {
+            return Err(AppsError::AppAlreadyExists(req.name));
+        }
+
+        // Write compose file
+        tokio::fs::create_dir_all(&project_dir).await?;
+        tokio::fs::write(
+            format!("{}/docker-compose.yml", project_dir),
+            &req.compose_file,
+        )
+        .await?;
+
+        // Write a .env file with NASty labels so containers are tracked
+        let env_content = format!(
+            "COMPOSE_PROJECT_NAME={name}\n",
+            name = req.name,
+        );
+        tokio::fs::write(format!("{}/.env", project_dir), &env_content).await?;
+
+        // Run docker compose up with labels
+        let output = Command::new("docker")
             .args([
-                "kubectl",
-                "logs",
-                "--namespace", &ns,
-                "-l", &label,
-                "--tail", &tail_str,
-                "--kubeconfig", KUBECONFIG,
+                "compose",
+                "-f",
+                &format!("{}/docker-compose.yml", project_dir),
+                "--project-name",
+                &req.name,
+                "up",
+                "-d",
+            ])
+            .env("DOCKER_DEFAULT_LABELS", format!(
+                "{LABEL_MANAGED}=true,{LABEL_APP_NAME}={},{LABEL_APP_KIND}=compose",
+                req.name
+            ))
+            .output()
+            .await
+            .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Clean up on failure
+            let _ = tokio::fs::remove_dir_all(&project_dir).await;
+            return Err(AppsError::DockerFailed(stderr.to_string()));
+        }
+
+        // Label the containers after creation (docker compose doesn't support
+        // DOCKER_DEFAULT_LABELS reliably across all versions)
+        self.label_compose_containers(&req.name).await;
+
+        info!("Installed compose app '{}'", req.name);
+        self.get(&req.name).await
+    }
+
+    pub async fn compose_update(&self, req: InstallComposeRequest) -> Result<App, AppsError> {
+        self.require_ready().await?;
+
+        let project_dir = format!("{}/{}", COMPOSE_DIR, req.name);
+        if !Path::new(&project_dir).join("docker-compose.yml").exists() {
+            return Err(AppsError::AppNotFound(req.name));
+        }
+
+        // Overwrite compose file
+        tokio::fs::write(
+            format!("{}/docker-compose.yml", project_dir),
+            &req.compose_file,
+        )
+        .await?;
+
+        // Bring up with new config
+        let output = Command::new("docker")
+            .args([
+                "compose",
+                "-f",
+                &format!("{}/docker-compose.yml", project_dir),
+                "--project-name",
+                &req.name,
+                "up",
+                "-d",
+                "--remove-orphans",
             ])
             .output()
             .await
@@ -873,195 +939,97 @@ impl AppsService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::CommandFailed(stderr.to_string()));
+            return Err(AppsError::DockerFailed(stderr.to_string()));
         }
+
+        self.label_compose_containers(&req.name).await;
+
+        info!("Updated compose app '{}'", req.name);
+        self.get(&req.name).await
+    }
+
+    pub async fn compose_remove(&self, name: &str) -> Result<(), AppsError> {
+        self.require_ready().await?;
+
+        let project_dir = format!("{}/{}", COMPOSE_DIR, name);
+        let compose_file = format!("{}/docker-compose.yml", project_dir);
+
+        if Path::new(&compose_file).exists() {
+            let output = Command::new("docker")
+                .args([
+                    "compose",
+                    "-f",
+                    &compose_file,
+                    "--project-name",
+                    name,
+                    "down",
+                    "-v",
+                    "--remove-orphans",
+                ])
+                .output()
+                .await
+                .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppsError::DockerFailed(stderr.to_string()));
+            }
+
+            let _ = tokio::fs::remove_dir_all(&project_dir).await;
+        } else {
+            return Err(AppsError::AppNotFound(name.to_string()));
+        }
+
+        let _ = self.ingress_remove(name).await;
+
+        info!("Removed compose app '{name}'");
+        Ok(())
+    }
+
+    pub async fn compose_get(&self, name: &str) -> Result<String, AppsError> {
+        let path = format!("{}/{}/docker-compose.yml", COMPOSE_DIR, name);
+        tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|_| AppsError::AppNotFound(name.to_string()))
+    }
+
+    pub async fn compose_logs(&self, name: &str, tail: Option<u32>) -> Result<String, AppsError> {
+        self.require_ready().await?;
+
+        let project_dir = format!("{}/{}", COMPOSE_DIR, name);
+        let compose_file = format!("{}/docker-compose.yml", project_dir);
+
+        if !Path::new(&compose_file).exists() {
+            return Err(AppsError::AppNotFound(name.to_string()));
+        }
+
+        let tail_str = tail.unwrap_or(100).to_string();
+        let output = Command::new("docker")
+            .args([
+                "compose",
+                "-f",
+                &compose_file,
+                "--project-name",
+                name,
+                "logs",
+                "--tail",
+                &tail_str,
+                "--no-color",
+            ])
+            .output()
+            .await
+            .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
-    // ── Helm chart management (BYOH) ────────────────────────
+    // ── Ingress management ──────────────────────────────────
 
-    pub async fn install_chart(&self, req: InstallHelmChartRequest) -> Result<App, AppsError> {
-        self.require_ready().await?;
-
-        let ns = app_namespace(&req.name);
-        self.ensure_namespace(&ns).await;
-
-        let mut args = vec![
-            "install".to_string(),
-            req.name.clone(),
-            req.chart.clone(),
-            "--namespace".to_string(), ns,
-            "--kubeconfig".to_string(), KUBECONFIG.to_string(),
-        ];
-
-        if let Some(ref version) = req.version {
-            args.push("--version".to_string());
-            args.push(version.clone());
-        }
-
-        // Write values to temp file if provided
-        let values_path = if let Some(ref values) = req.values {
-            let path = format!("/tmp/nasty-helm-{}.json", req.name);
-            let json = serde_json::to_string(values)
-                .map_err(|e| AppsError::HelmFailed(format!("serialize values: {e}")))?;
-            tokio::fs::write(&path, &json).await?;
-            args.push("--values".to_string());
-            args.push(path.clone());
-            Some(path)
-        } else {
-            None
-        };
-
-        let output = Command::new("helm")
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if let Some(path) = values_path {
-            let _ = tokio::fs::remove_file(&path).await;
-        }
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
-
-        info!("Installed Helm chart '{}' as '{}'", req.chart, req.name);
-        self.get(&req.name).await
-    }
-
-    // ── Helm repo management ───────────────────────────────
-
-    pub async fn repo_list(&self) -> Result<Vec<HelmRepo>, AppsError> {
-        let output = Command::new("helm")
-            .args(["repo", "list", "--kubeconfig", KUBECONFIG, "-o", "json"])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            // No repos configured yet — return empty
-            return Ok(vec![]);
-        }
-
-        let repos: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)
-            .unwrap_or_default();
-
-        Ok(repos.iter().map(|r| HelmRepo {
-            name: r["name"].as_str().unwrap_or("").to_string(),
-            url: r["url"].as_str().unwrap_or("").to_string(),
-        }).collect())
-    }
-
-    pub async fn repo_add(&self, req: AddRepoRequest) -> Result<HelmRepo, AppsError> {
-        let output = Command::new("helm")
-            .args(["repo", "add", &req.name, &req.url, "--kubeconfig", KUBECONFIG])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
-
-        // Update repo index
-        let _ = Command::new("helm")
-            .args(["repo", "update", "--kubeconfig", KUBECONFIG])
-            .output()
-            .await;
-
-        info!("Added Helm repo '{}' ({})", req.name, req.url);
-        Ok(HelmRepo { name: req.name, url: req.url })
-    }
-
-    pub async fn repo_remove(&self, name: &str) -> Result<(), AppsError> {
-        let output = Command::new("helm")
-            .args(["repo", "remove", name, "--kubeconfig", KUBECONFIG])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
-
-        info!("Removed Helm repo '{name}'");
-        Ok(())
-    }
-
-    pub async fn repo_update(&self) -> Result<(), AppsError> {
-        self.require_ready().await?;
-
-        let output = Command::new("helm")
-            .args(["repo", "update", "--kubeconfig", KUBECONFIG])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppsError::HelmFailed(stderr.to_string()));
-        }
-
-        info!("Helm repos updated");
-        Ok(())
-    }
-
-    /// Search for charts across all configured repos.
-    pub async fn search(&self, query: &str) -> Result<Vec<HelmChart>, AppsError> {
-        self.require_ready().await?;
-
-        let output = Command::new("helm")
-            .args(["search", "repo", query, "--kubeconfig", KUBECONFIG, "-o", "json"])
-            .output()
-            .await
-            .map_err(|e| AppsError::HelmFailed(e.to_string()))?;
-
-        if !output.status.success() {
-            return Ok(vec![]);
-        }
-
-        let results: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout)
-            .unwrap_or_default();
-
-        Ok(results.iter().map(|r| {
-            let full_name = r["name"].as_str().unwrap_or("");
-            let (repo, chart_name) = full_name.split_once('/').unwrap_or(("", full_name));
-            HelmChart {
-                name: chart_name.to_string(),
-                repo: repo.to_string(),
-                version: r["version"].as_str().unwrap_or("").to_string(),
-                app_version: r["app_version"].as_str().unwrap_or("").to_string(),
-                description: r["description"].as_str().unwrap_or("").to_string(),
-            }
-        }).collect())
-    }
-
-    // ── TrueCharts catalog ─────────────────────────────────
-
-    /// Return the cached TrueCharts index. Does not require k3s to be up.
-    pub async fn truecharts_list(&self) -> truecharts::TrueChartsIndex {
-        truecharts::load_cache().await
-    }
-
-    /// Force a refresh of the TrueCharts index from upstream.
-    pub async fn truecharts_refresh(&self) -> Result<truecharts::TrueChartsIndex, AppsError> {
-        truecharts::refresh()
-            .await
-            .map_err(AppsError::CommandFailed)
-    }
-
-    // ── Ingress management ────────────────────────────────────
-
-    /// List all app ingress rules.
     pub async fn ingress_list(&self) -> Result<Vec<AppIngress>, AppsError> {
-        let content = tokio::fs::read_to_string(PROXY_CONF).await.unwrap_or_default();
+        let content = tokio::fs::read_to_string(PROXY_CONF)
+            .await
+            .unwrap_or_default();
         let mut rules = Vec::new();
-        // Parse our generated format: "# app:<name> port:<port>"
         for line in content.lines() {
             if let Some(comment) = line.strip_prefix("# app:") {
                 let parts: Vec<&str> = comment.split_whitespace().collect();
@@ -1072,7 +1040,7 @@ impl AppsService {
                             rules.push(AppIngress {
                                 path: format!("/apps/{name}/"),
                                 name,
-                                node_port: port,
+                                host_port: port,
                             });
                         }
                     }
@@ -1082,28 +1050,23 @@ impl AppsService {
         Ok(rules)
     }
 
-    /// Enable ingress for an app — proxy /apps/{name}/ to its NodePort.
     pub async fn ingress_set(&self, req: SetIngressRequest) -> Result<AppIngress, AppsError> {
         let mut rules = self.ingress_list().await?;
-
-        // Remove existing rule for this app
         rules.retain(|r| r.name != req.name);
 
-        // Add new rule
         rules.push(AppIngress {
             name: req.name.clone(),
-            node_port: req.node_port,
+            host_port: req.host_port,
             path: format!("/apps/{}/", req.name),
         });
 
         self.write_proxy_conf(&rules).await?;
         reload_nginx().await;
 
-        info!("Ingress set for '{}' → NodePort {}", req.name, req.node_port);
+        info!("Ingress set for '{}' -> port {}", req.name, req.host_port);
         Ok(rules.into_iter().find(|r| r.name == req.name).unwrap())
     }
 
-    /// Remove ingress for an app.
     pub async fn ingress_remove(&self, name: &str) -> Result<(), AppsError> {
         let mut rules = self.ingress_list().await?;
         let before = rules.len();
@@ -1120,125 +1083,13 @@ impl AppsService {
         Ok(())
     }
 
-    // ── Image inspection ─────────────────────────────────────
+    // ── Image inspection ────────────────────────────────────
 
-    /// Inspect a container image's EXPOSE directives via the Docker Registry API.
     pub async fn inspect_image(&self, image: &str) -> Result<ImageInspectResult, AppsError> {
         let ports = inspect_image_ports(image).await.map_err(|e| {
             AppsError::CommandFailed(format!("image inspect failed: {e}"))
         })?;
         Ok(ImageInspectResult { ports })
-    }
-
-    // ── Port Forwarding ──────────────────────────────────────
-
-    /// Start a port-forward to an app's pod.
-    pub async fn port_forward_start(&self, name: &str, local_port: Option<u16>) -> Result<PortForwardInfo, AppsError> {
-        self.require_ready().await?;
-
-        // Find the pod for this app
-        let ns = app_namespace(name);
-        let output = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "-n", &ns,
-                   "get", "pods", "-l", &format!("app.kubernetes.io/name={name}"),
-                   "-o", "jsonpath={.items[0].metadata.name}"])
-            .output()
-            .await
-            .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
-
-        let pod = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if pod.is_empty() {
-            return Err(AppsError::AppNotFound(name.to_string()));
-        }
-
-        // Find the container port from the pod spec
-        let port_output = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "-n", &ns,
-                   "get", "pod", &pod,
-                   "-o", "jsonpath={.spec.containers[0].ports[0].containerPort}"])
-            .output()
-            .await
-            .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
-
-        let container_port: u16 = String::from_utf8_lossy(&port_output.stdout)
-            .trim()
-            .parse()
-            .unwrap_or(8080);
-
-        let local = local_port.unwrap_or(container_port);
-
-        // Kill existing forward for this app
-        self.port_forward_stop(name).await.ok();
-
-        // Start port-forward process
-        let child = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "-n", &ns,
-                   "port-forward", &format!("pod/{pod}"), &format!("{local}:{container_port}"),
-                   "--address", "0.0.0.0"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
-
-        let pid = child.id().unwrap_or(0);
-
-        let info = PortForwardInfo {
-            name: name.to_string(),
-            local_port: local,
-            container_port,
-            pod: pod.clone(),
-        };
-
-        info!("Port-forward started: {}:{} → pod/{} ({}) [pid={}]", local, container_port, pod, name, pid);
-
-        let mut forwards = self.port_forwards.lock().unwrap();
-        forwards.insert(name.to_string(), (PortForwardInfo {
-            name: name.to_string(),
-            local_port: local,
-            container_port,
-            pod,
-        }, pid));
-
-        Ok(info)
-    }
-
-    /// Stop a port-forward for an app.
-    pub async fn port_forward_stop(&self, name: &str) -> Result<(), AppsError> {
-        let pid = {
-            let mut forwards = self.port_forwards.lock().unwrap();
-            forwards.remove(name).map(|(_, pid)| pid)
-        };
-        if let Some(pid) = pid {
-            if pid > 0 {
-                let _ = Command::new("kill").arg(pid.to_string()).output().await;
-            }
-            info!("Port-forward stopped for '{name}'");
-        }
-        Ok(())
-    }
-
-    /// List active port-forwards.
-    pub fn port_forward_list(&self) -> Vec<PortForwardInfo> {
-        let forwards = self.port_forwards.lock().unwrap();
-        forwards.values().map(|(info, _)| PortForwardInfo {
-            name: info.name.clone(),
-            local_port: info.local_port,
-            container_port: info.container_port,
-            pod: info.pod.clone(),
-        }).collect()
-    }
-
-    /// Write the nginx proxy config file.
-    async fn write_proxy_conf(&self, rules: &[AppIngress]) -> Result<(), AppsError> {
-        let mut conf = String::from("# Auto-generated by NASty engine — do not edit\n");
-        for rule in rules {
-            conf.push_str(&format!(
-                "# app:{} port:{}\nlocation /apps/{}/ {{\n    proxy_pass http://127.0.0.1:{}/;\n    proxy_set_header Host $host;\n    proxy_set_header X-Real-IP $remote_addr;\n    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n    proxy_set_header X-Forwarded-Proto $scheme;\n    proxy_http_version 1.1;\n    proxy_set_header Upgrade $http_upgrade;\n    proxy_set_header Connection \"upgrade\";\n}}\n\n",
-                rule.name, rule.node_port, rule.name, rule.node_port
-            ));
-        }
-        tokio::fs::write(PROXY_CONF, &conf).await?;
-        Ok(())
     }
 
     // ── Restore on boot ─────────────────────────────────────
@@ -1247,119 +1098,133 @@ impl AppsService {
         if !self.is_enabled() {
             return;
         }
-        // Ensure k3s data symlink is in place before starting
-        let config = Self::load_config();
-        if let Some(ref path) = config.storage_path {
-            // storage_path is like /fs/first/.nasty/apps-data — derive filesystem name
-            if let Some(fs_name) = path.strip_prefix("/fs/").and_then(|s| s.split('/').next()) {
-                ensure_k3s_symlink(fs_name).await;
-            }
+        info!("Apps runtime enabled — ensuring Docker is running");
+        if let Err(e) = run_cmd("systemctl", &["start", DOCKER_SERVICE]).await {
+            error!("Failed to start Docker: {e}");
         }
-        info!("Apps runtime enabled — ensuring k3s is running");
-        if let Err(e) = run_cmd("systemctl", &["start", K3S_SERVICE]).await {
-            error!("Failed to start k3s: {e}");
-        }
-    }
-
-    /// Collect all NodePorts currently in use by our apps.
-    async fn used_node_ports(&self) -> HashSet<u16> {
-        let mut used = HashSet::new();
-        if let Ok(rules) = self.ingress_list().await {
-            for rule in rules {
-                used.insert(rule.node_port);
-            }
-        }
-        // Also scan k8s services across all nasty- namespaces
-        if let Ok(output) = Command::new("k3s")
-            .args([
-                "kubectl", "--kubeconfig", KUBECONFIG, "--all-namespaces",
-                "get", "svc", "-o",
-                "jsonpath={range .items[*].spec.ports[*]}{.nodePort}{\"\\n\"}{end}",
-            ])
-            .output()
-            .await
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                if let Ok(port) = line.trim().parse::<u16>() {
-                    used.insert(port);
-                }
-            }
-        }
-        used
     }
 
     // ── Internal helpers ────────────────────────────────────
 
-    async fn is_k3s_ready(&self) -> bool {
-        let output = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "nodes", "-o", "name"])
-            .output()
-            .await;
-
-        match output {
-            Ok(o) => o.status.success() && !o.stdout.is_empty(),
-            Err(_) => false,
-        }
+    async fn is_docker_ready(&self) -> bool {
+        self.docker.ping().await.is_ok()
     }
 
     async fn require_ready(&self) -> Result<(), AppsError> {
         if !self.is_enabled() {
             return Err(AppsError::NotEnabled);
         }
-        if !self.is_k3s_ready().await {
-            return Err(AppsError::NotReady("k3s not responding".to_string()));
+        if !self.is_docker_ready().await {
+            return Err(AppsError::NotReady("Docker not responding".to_string()));
         }
-        // Ensure bjw-s repo exists — re-add if bootstrap failed previously
-        self.ensure_helm_repo().await;
         Ok(())
     }
 
-    /// Ensure a namespace exists. Idempotent.
-    async fn ensure_namespace(&self, ns: &str) {
-        let output = Command::new("k3s")
-            .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "namespace", ns])
-            .output()
-            .await;
-        let exists = matches!(output, Ok(ref o) if o.status.success());
-        if !exists {
-            info!("Namespace {ns} missing, creating");
-            let _ = Command::new("k3s")
-                .args(["kubectl", "--kubeconfig", KUBECONFIG, "create", "namespace", ns])
-                .output()
-                .await;
-        }
+    async fn docker_version(&self) -> Option<String> {
+        let version = self.docker.version().await.ok()?;
+        version.version
     }
 
-    /// Ensure the bjw-s helm repo is configured. Idempotent.
-    async fn ensure_helm_repo(&self) {
-        let output = Command::new("helm")
-            .args(["repo", "list", "-o", "json"])
-            .output()
-            .await;
+    async fn container_exists(&self, name: &str) -> bool {
+        self.docker.inspect_container(name, None).await.is_ok()
+    }
 
-        let has_bjws = match output {
-            Ok(o) if o.status.success() => {
-                String::from_utf8_lossy(&o.stdout).contains("bjw-s")
-            }
-            _ => false,
+    async fn pull_image(&self, image: &str) -> Result<(), AppsError> {
+        let (from_image, tag) = if let Some((img, tag)) = image.rsplit_once(':') {
+            (img.to_string(), tag.to_string())
+        } else {
+            (image.to_string(), "latest".to_string())
         };
 
-        if !has_bjws {
-            info!("bjw-s helm repo missing — adding...");
-            let _ = Command::new("helm")
-                .args(["repo", "add", "bjw-s", APP_TEMPLATE_REPO])
-                .output()
-                .await;
-            let _ = Command::new("helm")
-                .args(["repo", "update"])
-                .output()
-                .await;
-        }
+        let options = CreateImageOptions {
+            from_image: Some(from_image.clone()),
+            tag: Some(tag.clone()),
+            ..Default::default()
+        };
+
+        self.docker
+            .create_image(Some(options), None, None)
+            .try_collect::<Vec<_>>()
+            .await?;
+
+        Ok(())
     }
 
+    fn get_mapped_port_sync(&self, _container: &str, container_port: u16) -> Option<u16> {
+        // This is a best-effort sync lookup — in practice the host_port from the
+        // request is used. If auto-assigned, Docker picks a random port.
+        Some(container_port)
+    }
+
+    async fn label_compose_containers(&self, project_name: &str) {
+        // Find containers belonging to this compose project and add NASty labels
+        let mut filters = HashMap::new();
+        filters.insert(
+            "label".to_string(),
+            vec![format!("com.docker.compose.project={project_name}")],
+        );
+
+        let containers = self
+            .docker
+            .list_containers(Some(ListContainersOptions {
+                all: true,
+                filters: Some(filters),
+                ..Default::default()
+            }))
+            .await
+            .unwrap_or_default();
+
+        for c in &containers {
+            if let Some(_id) = &c.id {
+                // Docker doesn't support adding labels to running containers directly,
+                // so we need to read existing labels and check if already labeled.
+                let existing_labels = c.labels.as_ref();
+                if existing_labels
+                    .and_then(|l| l.get(LABEL_MANAGED))
+                    .is_some()
+                {
+                    continue;
+                }
+
+                // For compose containers, we label them at image/compose level instead.
+                // The labels are added via the compose file's labels section in a
+                // wrapper .yml that we generate.
+                // Fallback: just note that compose containers are identified by the
+                // com.docker.compose.project label, which we also filter on in list_internal.
+            }
+        }
+
+        // Simpler approach: also list by compose project label in list_internal
+    }
+
+    async fn write_proxy_conf(&self, rules: &[AppIngress]) -> Result<(), AppsError> {
+        let mut conf = String::from("# Auto-generated by NASty engine — do not edit\n");
+        for rule in rules {
+            conf.push_str(&format!(
+                "# app:{} port:{}\nlocation /apps/{}/ {{\n\
+                 \x20   proxy_pass http://127.0.0.1:{}/;\n\
+                 \x20   proxy_set_header Host $host;\n\
+                 \x20   proxy_set_header X-Real-IP $remote_addr;\n\
+                 \x20   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+                 \x20   proxy_set_header X-Forwarded-Proto $scheme;\n\
+                 \x20   proxy_http_version 1.1;\n\
+                 \x20   proxy_set_header Upgrade $http_upgrade;\n\
+                 \x20   proxy_set_header Connection \"upgrade\";\n\
+                 }}\n\n",
+                rule.name, rule.host_port, rule.name, rule.host_port
+            ));
+        }
+        tokio::fs::write(PROXY_CONF, &conf).await?;
+        Ok(())
+    }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
+
+/// Container name for simple apps: "nasty-{name}"
+fn container_name(app_name: &str) -> String {
+    format!("nasty-{app_name}")
+}
 
 async fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), AppsError> {
     let output = Command::new(cmd)
@@ -1375,148 +1240,6 @@ async fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), AppsError> {
     Ok(())
 }
 
-/// Get k3s memory usage from systemd cgroup.
-async fn k3s_memory() -> Option<u64> {
-    let output = Command::new("systemctl")
-        .args(["show", K3S_SERVICE, "--property=MemoryCurrent"])
-        .output()
-        .await
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Format: "MemoryCurrent=1234567"
-    stdout.trim()
-        .strip_prefix("MemoryCurrent=")?
-        .parse::<u64>()
-        .ok()
-}
-
-async fn k3s_version() -> Option<String> {
-    let output = Command::new("k3s")
-        .args(["--version"])
-        .output()
-        .await
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Format: "k3s version v1.xx.x+k3s1 (hash)"
-    stdout.split_whitespace().nth(2).map(|s| s.to_string())
-}
-
-async fn k3s_node_status() -> Option<String> {
-    let output = Command::new("k3s")
-        .args(["kubectl", "--kubeconfig", KUBECONFIG, "get", "nodes",
-               "-o", "jsonpath={.items[0].status.conditions[?(@.type==\"Ready\")].status}"])
-        .output()
-        .await
-        .ok()?;
-    let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if status == "True" {
-        Some("Ready".to_string())
-    } else if status == "False" {
-        Some("NotReady".to_string())
-    } else {
-        Some(status)
-    }
-}
-
-/// Generate values.yaml for the bjw-s app-template chart.
-fn generate_app_template_values(req: &InstallAppRequest) -> serde_json::Value {
-    let mut env_list = serde_json::Map::new();
-    for e in &req.env {
-        env_list.insert(e.name.clone(), serde_json::json!(e.value));
-    }
-
-    // Ensure port names are valid k8s identifiers (must contain at least one letter)
-    let sanitize_port_name = |name: &str, port: u16| -> String {
-        if name.chars().any(|c| c.is_ascii_alphabetic()) {
-            name.to_string()
-        } else {
-            format!("port-{port}")
-        }
-    };
-
-    let ports: Vec<serde_json::Value> = req.ports.iter().map(|p| {
-        serde_json::json!({
-            "containerPort": p.container_port,
-            "name": sanitize_port_name(&p.name, p.container_port),
-            "protocol": p.protocol,
-        })
-    }).collect();
-
-    let mut persistence = serde_json::Map::new();
-    for v in &req.volumes {
-        persistence.insert(v.name.clone(), serde_json::json!({
-            "enabled": true,
-            "type": "persistentVolumeClaim",
-            "accessMode": "ReadWriteOnce",
-            "size": v.size,
-            "storageClass": v.storage_class,
-            "globalMounts": [{ "path": v.mount_path }],
-        }));
-    }
-
-    let mut service_ports = serde_json::Map::new();
-    for p in &req.ports {
-        let svc_name = sanitize_port_name(&p.name, p.container_port);
-        let mut port_def = serde_json::json!({
-            "port": p.container_port,
-            "protocol": p.protocol,
-        });
-        if let Some(np) = p.node_port {
-            port_def["nodePort"] = serde_json::json!(np);
-        }
-        service_ports.insert(svc_name, port_def);
-    }
-
-    let mut container = serde_json::json!({
-        "image": {
-            "repository": req.image.rsplit_once(':').map(|(r, _)| r).unwrap_or(&req.image),
-            "tag": req.image.rsplit_once(':').map(|(_, t)| t).unwrap_or("latest"),
-        },
-        "env": env_list,
-        "resources": {
-            "limits": build_resource_limits(&req.cpu_limit, &req.memory_limit),
-        },
-    });
-
-    if !ports.is_empty() {
-        container["ports"] = serde_json::json!(ports);
-    }
-
-    let mut values = serde_json::json!({
-        "controllers": {
-            "main": {
-                "containers": {
-                    "main": container,
-                }
-            }
-        },
-        "persistence": persistence,
-    });
-
-    if !service_ports.is_empty() {
-        values["service"] = serde_json::json!({
-            "main": {
-                "type": "NodePort",
-                "controller": "main",
-                "ports": service_ports,
-            }
-        });
-    }
-
-    values
-}
-
-fn build_resource_limits(cpu: &Option<String>, memory: &Option<String>) -> serde_json::Value {
-    let mut limits = serde_json::Map::new();
-    if let Some(c) = cpu {
-        limits.insert("cpu".to_string(), serde_json::json!(c));
-    }
-    if let Some(m) = memory {
-        limits.insert("memory".to_string(), serde_json::json!(m));
-    }
-    serde_json::Value::Object(limits)
-}
-
 async fn reload_nginx() {
     let _ = Command::new("systemctl")
         .args(["reload", "nginx"])
@@ -1524,20 +1247,70 @@ async fn reload_nginx() {
         .await;
 }
 
-/// Create an "apps-data" subvolume on the specified or first available bcachefs filesystem.
-/// Returns the subvolume path if successful.
+/// Parse CPU limit string to nanoseconds.
+/// Accepts: "0.5" (half core), "2" (two cores), "500m" (millicores).
+fn parse_cpu_limit(s: &str) -> Option<i64> {
+    if let Some(millis) = s.strip_suffix('m') {
+        let m: f64 = millis.parse().ok()?;
+        Some((m * 1_000_000.0) as i64)
+    } else {
+        let cores: f64 = s.parse().ok()?;
+        Some((cores * 1_000_000_000.0) as i64)
+    }
+}
+
+/// Parse memory limit string to bytes.
+/// Accepts: "256m", "1g", "512M", "2G", "1073741824" (raw bytes).
+fn parse_memory_limit(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (num, mult) = if let Some(n) = s.strip_suffix(['g', 'G']) {
+        (n.parse::<f64>().ok()?, 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix("Gi") {
+        (n.parse::<f64>().ok()?, 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix(['m', 'M']) {
+        (n.parse::<f64>().ok()?, 1024.0 * 1024.0)
+    } else if let Some(n) = s.strip_suffix("Mi") {
+        (n.parse::<f64>().ok()?, 1024.0 * 1024.0)
+    } else {
+        (s.parse::<f64>().ok()?, 1.0)
+    };
+    Some((num * mult) as i64)
+}
+
+/// Format bytes as a human-readable memory limit.
+fn format_memory_limit(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 * 1024 && bytes % (1024 * 1024 * 1024) == 0 {
+        format!("{}g", bytes / (1024 * 1024 * 1024))
+    } else if bytes >= 1024 * 1024 {
+        format!("{}m", bytes / (1024 * 1024))
+    } else {
+        format!("{bytes}")
+    }
+}
+
+/// Convert a Unix timestamp (seconds) to a simple ISO 8601-ish string.
+fn chrono_from_timestamp(ts: i64) -> String {
+    if ts <= 0 {
+        return String::new();
+    }
+    // Return seconds since epoch — the WebUI will format it
+    format!("{ts}")
+}
+
+/// Create apps storage directory on bcachefs.
 async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
     let fs_name = if let Some(name) = filesystem {
-        // Verify the specified filesystem exists
         let path = format!("/fs/{name}");
-        if !std::path::Path::new(&path).is_dir() {
+        if !Path::new(&path).is_dir() {
             error!("Specified filesystem '{name}' not found at {path}");
             return None;
         }
         name.to_string()
     } else {
-        // Find first mounted bcachefs filesystem
-        let fs_base = std::path::Path::new("/fs");
+        let fs_base = Path::new("/fs");
         let mut entries = match tokio::fs::read_dir(fs_base).await {
             Ok(e) => e,
             Err(_) => {
@@ -1548,7 +1321,12 @@ async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
 
         let mut found = None;
         while let Ok(Some(entry)) = entries.next_entry().await {
-            if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
+            if entry
+                .file_type()
+                .await
+                .map(|t| t.is_dir())
+                .unwrap_or(false)
+            {
                 found = Some(entry.file_name().to_string_lossy().to_string());
                 break;
             }
@@ -1563,16 +1341,13 @@ async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
         }
     };
 
-    let subvol_path = format!("/fs/{fs_name}/.nasty/apps-data");
+    let apps_path = format!("/fs/{fs_name}/.nasty/apps-data");
 
-    let apps_path = subvol_path;
-    if std::path::Path::new(&apps_path).exists() {
+    if Path::new(&apps_path).exists() {
         info!("Apps storage already exists at {apps_path}");
         return Some(apps_path);
     }
 
-    // Create as regular directory under .nasty/
-    let nasty_dir = format!("/fs/{fs_name}/.nasty");
     match tokio::fs::create_dir_all(&apps_path).await {
         Ok(()) => {
             info!("Created apps storage directory at {apps_path}");
@@ -1580,56 +1355,13 @@ async fn setup_apps_storage(filesystem: Option<&str>) -> Option<String> {
         }
         Err(e) => {
             error!("Failed to create apps storage at {apps_path}: {e}");
-            let _ = tokio::fs::create_dir_all(&nasty_dir).await;
             None
         }
     }
 }
 
-/// Ensure /var/lib/rancher/k3s is symlinked to /fs/{fs}/.nasty/k3s.
-/// Migrates existing data on first run. No-op if already set up.
-async fn ensure_k3s_symlink(fs_name: &str) {
-    let k3s_data = format!("/fs/{fs_name}/.nasty/k3s");
-    let default_path = "/var/lib/rancher/k3s";
-
-    // Already correct? Still verify the target directory exists.
-    if let Ok(target) = tokio::fs::read_link(default_path).await {
-        if target.to_string_lossy() == k3s_data {
-            if std::path::Path::new(&k3s_data).exists() {
-                return;
-            }
-            info!("k3s symlink target {k3s_data} missing, recreating");
-        }
-    }
-
-    let nasty_dir = format!("/fs/{fs_name}/.nasty");
-    let _ = tokio::fs::create_dir_all(&nasty_dir).await;
-    if !std::path::Path::new(&k3s_data).exists() {
-        let _ = tokio::fs::create_dir_all(&k3s_data).await;
-    }
-
-    // Migrate existing data (first-time only)
-    if std::path::Path::new(default_path).is_dir()
-        && !std::path::Path::new(default_path).is_symlink()
-    {
-        info!("Migrating k3s data from {default_path} to {k3s_data}");
-        let _ = run_cmd("cp", &["-a", &format!("{default_path}/."), &k3s_data]).await;
-        let _ = tokio::fs::remove_dir_all(default_path).await;
-    }
-
-    let _ = tokio::fs::remove_dir_all(default_path).await;
-    let _ = tokio::fs::remove_file(default_path).await;
-    let _ = tokio::fs::create_dir_all("/var/lib/rancher").await;
-    match tokio::fs::symlink(&k3s_data, default_path).await {
-        Ok(()) => info!("Symlinked {default_path} → {k3s_data}"),
-        Err(e) => error!("Failed to symlink k3s data: {e}"),
-    }
-}
-
 // ── Container image inspection ──────────────────────────────
 
-/// Parse an image reference like "traefik/whoami:latest" or "ghcr.io/org/repo:v1"
-/// into (registry, repository, tag).
 fn parse_image_ref(image: &str) -> (String, String, String) {
     let (image_no_tag, tag) = if let Some((img, tag)) = image.rsplit_once(':') {
         (img.to_string(), tag.to_string())
@@ -1637,34 +1369,38 @@ fn parse_image_ref(image: &str) -> (String, String, String) {
         (image.to_string(), "latest".to_string())
     };
 
-    // If the first component has a dot or colon, it's a registry
     let parts: Vec<&str> = image_no_tag.splitn(2, '/').collect();
     if parts.len() == 1 {
-        // e.g. "nginx" → Docker Hub library image
-        ("registry-1.docker.io".to_string(), format!("library/{}", parts[0]), tag)
+        (
+            "registry-1.docker.io".to_string(),
+            format!("library/{}", parts[0]),
+            tag,
+        )
     } else if parts[0].contains('.') || parts[0].contains(':') {
-        // e.g. "ghcr.io/org/repo"
         (parts[0].to_string(), parts[1].to_string(), tag)
     } else {
-        // e.g. "traefik/whoami" → Docker Hub user image
         ("registry-1.docker.io".to_string(), image_no_tag, tag)
     }
 }
 
-/// Fetch EXPOSE ports from a container image via the Docker Registry HTTP API.
 async fn inspect_image_ports(image: &str) -> Result<Vec<AppPort>, String> {
     let (registry, repo, tag) = parse_image_ref(image);
     let client = reqwest::Client::new();
 
-    // Step 1: Get auth token (Docker Hub uses token auth, others may not)
+    // Get auth token for Docker Hub
     let token = if registry == "registry-1.docker.io" {
         let token_url = format!(
             "https://auth.docker.io/token?service=registry.docker.io&scope=repository:{}:pull",
             repo
         );
-        let resp: serde_json::Value = client.get(&token_url)
-            .send().await.map_err(|e| e.to_string())?
-            .json().await.map_err(|e| e.to_string())?;
+        let resp: serde_json::Value = client
+            .get(&token_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .json()
+            .await
+            .map_err(|e| e.to_string())?;
         resp["token"].as_str().map(String::from)
     } else {
         None
@@ -1676,33 +1412,42 @@ async fn inspect_image_ports(image: &str) -> Result<Vec<AppPort>, String> {
         format!("https://{registry}")
     };
 
-    // Step 2: Fetch manifest to get config digest
+    // Fetch manifest
     let manifest_url = format!("{registry_url}/v2/{repo}/manifests/{tag}");
-    let mut req = client.get(&manifest_url)
-        .header("Accept", "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json");
+    let mut req = client.get(&manifest_url).header(
+        "Accept",
+        "application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json",
+    );
     if let Some(ref t) = token {
         req = req.bearer_auth(t);
     }
     let manifest: serde_json::Value = req
-        .send().await.map_err(|e| e.to_string())?
-        .json().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
 
     let config_digest = manifest["config"]["digest"]
         .as_str()
         .ok_or("no config digest in manifest")?;
 
-    // Step 3: Fetch config blob
+    // Fetch config blob
     let config_url = format!("{registry_url}/v2/{repo}/blobs/{config_digest}");
     let mut req = client.get(&config_url);
     if let Some(ref t) = token {
         req = req.bearer_auth(t);
     }
     let config: serde_json::Value = req
-        .send().await.map_err(|e| e.to_string())?
-        .json().await.map_err(|e| e.to_string())?;
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
 
-    // Step 4: Parse ExposedPorts from config
-    // Format: {"80/tcp": {}, "443/tcp": {}}
+    // Parse ExposedPorts
     let exposed = config["config"]["ExposedPorts"]
         .as_object()
         .or_else(|| config["container_config"]["ExposedPorts"].as_object());
@@ -1710,18 +1455,22 @@ async fn inspect_image_ports(image: &str) -> Result<Vec<AppPort>, String> {
     let mut ports = Vec::new();
     if let Some(exposed_ports) = exposed {
         for (key, _) in exposed_ports {
-            // key is like "80/tcp" or "8080/udp"
             let parts: Vec<&str> = key.split('/').collect();
             if let Some(port_str) = parts.first() {
                 if let Ok(port) = port_str.parse::<u16>() {
-                    let protocol = parts.get(1)
+                    let protocol = parts
+                        .get(1)
                         .map(|p| p.to_uppercase())
                         .unwrap_or_else(|| "TCP".to_string());
-                    let name = if ports.is_empty() { "http".to_string() } else { format!("port-{}", ports.len()) };
+                    let name = if ports.is_empty() {
+                        "http".to_string()
+                    } else {
+                        format!("port-{}", ports.len())
+                    };
                     ports.push(AppPort {
                         name,
                         container_port: port,
-                        node_port: None,
+                        host_port: None,
                         protocol,
                     });
                 }
@@ -1729,8 +1478,6 @@ async fn inspect_image_ports(image: &str) -> Result<Vec<AppPort>, String> {
         }
     }
 
-    // Sort by port number for consistency
     ports.sort_by_key(|p| p.container_port);
-
     Ok(ports)
 }

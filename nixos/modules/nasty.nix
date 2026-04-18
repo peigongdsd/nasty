@@ -447,23 +447,15 @@ in {
     # ── Firmware updates (fwupd) ────────────────────────────────
     services.fwupd.enable = true;
 
-    # ── k3s (app runtime, disabled by default) ─────────────────
-    # k3s is installed but NOT started automatically. The engine starts it
+    # ── Docker (app runtime, disabled by default) ──────────────
+    # Docker is installed but NOT started automatically. The engine starts it
     # via systemctl when the user enables apps from the WebUI.
-    services.k3s = {
+    virtualisation.docker = {
       enable = true;
-      role = "server";
-      extraFlags = builtins.toString [
-        "--disable=traefik"         # NASty has its own nginx
-        "--disable=servicelb"       # Use NodePort instead
-        "--disable=metrics-server"  # Not needed for app workloads
-        "--write-kubeconfig-mode=644"
-        "--flannel-backend=host-gw" # host-gw avoids VXLAN overlay that hijacks default route
-        "--node-name=nasty-node"    # Fixed name so hostname changes don't break k3s
-      ];
+      autoPrune.enable = true;
     };
-    # Prevent k3s from starting on boot — engine manages this.
-    systemd.services.k3s.wantedBy = lib.mkForce [];
+    # Prevent Docker from starting on boot — engine manages this.
+    systemd.services.docker.wantedBy = lib.mkForce [];
 
     # ── System packages ────────────────────────────────────────
 
@@ -492,9 +484,7 @@ in {
       nano              # quick file editing
       qemu              # QEMU/KVM for virtual machines
       pciutils          # lspci for passthrough device discovery
-      k3s               # lightweight Kubernetes for app runtime (optional)
-      kubernetes-helm   # Helm chart manager for app deployment
-      kubectl           # Kubernetes CLI (also available via k3s kubectl)
+      docker-compose    # Docker Compose for multi-container apps
       lego              # ACME client for Let's Encrypt certificates
       croc              # peer-to-peer file transfer for sending debug reports
 
@@ -802,8 +792,8 @@ in {
         git              # for update check (git ls-remote)
         curl             # for update check (GitHub API, TODO: remove when repo is public)
         qemu             # QEMU/KVM for virtual machines
-        config.services.k3s.package  # k3s for apps runtime
-        kubernetes-helm              # Helm for app deployment
+        docker                       # Docker for apps runtime
+        docker-compose               # Docker Compose for multi-container apps
         lego                         # ACME client for Let's Encrypt
         rsync                        # config backup to bcachefs
         procps                       # sysctl (vm.dirty_* tuning)

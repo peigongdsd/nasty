@@ -58,11 +58,9 @@ fn is_operator_allowed(method: &str) -> bool {
                 | "apps.install"
                 | "apps.update"
                 | "apps.remove"
-                | "apps.install_chart"
-                | "apps.repo.add"
-                | "apps.repo.remove"
-                | "apps.repo.update"
-                | "apps.truecharts.refresh"
+                | "apps.compose.install"
+                | "apps.compose.update"
+                | "apps.compose.remove"
                 | "apps.ingress.set"
                 | "apps.ingress.remove"
                 | "firmware.update"
@@ -130,7 +128,6 @@ fn is_read_only(method: &str) -> bool {
                 | "system.log.level"
                 | "system.settings.timezones"
                 | "audit.list"
-                | "apps.truecharts.list"
         )
 }
 
@@ -1953,9 +1950,7 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
 
         // ── Apps ──────────────────────────────────────────────
-        "apps.status" => match state.apps.status().await {
-            s => ok(req, s),
-        },
+        "apps.status" => ok(req, state.apps.status().await),
         "apps.enable" => {
             let p: nasty_apps::EnableAppsRequest = parse_params(req).unwrap_or_default();
             match state.apps.enable(p).await {
@@ -2029,35 +2024,50 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             }
         }
-        "apps.install_chart" => match parse_params(req) {
-            Ok(p) => match state.apps.install_chart(p).await {
+        "apps.compose.install" => match parse_params(req) {
+            Ok(p) => match state.apps.compose_install(p).await {
                 Ok(v) => ok(req, v),
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
         },
-        "apps.repo.list" => match state.apps.repo_list().await {
-            Ok(v) => ok(req, v),
-            Err(e) => err(req, e),
-        },
-        "apps.repo.add" => match parse_params(req) {
-            Ok(p) => match state.apps.repo_add(p).await {
+        "apps.compose.update" => match parse_params(req) {
+            Ok(p) => match state.apps.compose_update(p).await {
                 Ok(v) => ok(req, v),
                 Err(e) => err(req, e),
             },
             Err(e) => invalid(req, e),
         },
-        "apps.repo.remove" => match require_str(req, "name") {
-            Ok(name) => match state.apps.repo_remove(name).await {
+        "apps.compose.remove" => match require_str(req, "name") {
+            Ok(name) => match state.apps.compose_remove(name).await {
                 Ok(()) => ok(req, "ok"),
                 Err(e) => err(req, e),
             },
             Err(r) => r,
         },
-        "apps.repo.update" => match state.apps.repo_update().await {
-            Ok(()) => ok(req, "ok"),
-            Err(e) => err(req, e),
+        "apps.compose.get" => match require_str(req, "name") {
+            Ok(name) => match state.apps.compose_get(name).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
         },
+        "apps.compose.logs" => {
+            let name = match require_str(req, "name") {
+                Ok(n) => n,
+                Err(r) => return r,
+            };
+            let tail = req
+                .params
+                .as_ref()
+                .and_then(|p| p.get("tail"))
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+            match state.apps.compose_logs(name, tail).await {
+                Ok(v) => ok(req, v),
+                Err(e) => err(req, e),
+            }
+        }
         "apps.ingress.list" => match state.apps.ingress_list().await {
             Ok(v) => ok(req, v),
             Err(e) => err(req, e),
@@ -2075,40 +2085,6 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
                 Err(e) => err(req, e),
             },
             Err(r) => r,
-        },
-        "apps.forward.start" => match parse_params::<serde_json::Value>(req) {
-            Ok(p) => {
-                let name = p.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let local_port = p
-                    .get("local_port")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u16);
-                match state.apps.port_forward_start(name, local_port).await {
-                    Ok(info) => ok(req, info),
-                    Err(e) => err(req, e),
-                }
-            }
-            Err(e) => invalid(req, e),
-        },
-        "apps.forward.stop" => match require_str(req, "name") {
-            Ok(name) => match state.apps.port_forward_stop(name).await {
-                Ok(()) => ok(req, "ok"),
-                Err(e) => err(req, e),
-            },
-            Err(r) => r,
-        },
-        "apps.forward.list" => ok(req, state.apps.port_forward_list()),
-        "apps.search" => match require_str(req, "query") {
-            Ok(q) => match state.apps.search(q).await {
-                Ok(v) => ok(req, v),
-                Err(e) => err(req, e),
-            },
-            Err(r) => r,
-        },
-        "apps.truecharts.list" => ok(req, state.apps.truecharts_list().await),
-        "apps.truecharts.refresh" => match state.apps.truecharts_refresh().await {
-            Ok(v) => ok(req, v),
-            Err(e) => err(req, e),
         },
 
         // ── Unknown ─────────────────────────────────────────────

@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { AppsStatus, App, HelmRepo, HelmChart, AppIngress, AppConfig, ImageInspectResult, TrueChartsIndex, TrueChartEntry } from '$lib/types';
+	import type { AppsStatus, App, AppIngress, AppConfig, ImageInspectResult } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -19,42 +19,27 @@
 	let enabling = $state(false);
 	let showInstall = $state(false);
 	let editingApp: string | null = $state(null);
-	let expanded: Record<string, boolean> = $state({});
 	let logsApp: string | null = $state(null);
 	let logsContent = $state('');
 	let page: 'apps' | 'runtime' = $state('apps');
-	let mode: 'easy' | 'truecharts' | 'expert' = $state('easy');
-
-	// TrueCharts catalog
-	let trueChartsIndex: TrueChartsIndex | null = $state(null);
-	let trueChartsQuery = $state('');
-	let trueChartsTrain = $state<'all' | 'stable' | 'incubator' | 'library'>('stable');
-	let trueChartsRefreshing = $state(false);
+	let mode: 'simple' | 'compose' = $state('simple');
 
 	// Setup wizard state
 	let filesystems: Filesystem[] = $state([]);
 	let selectedFs = $state('');
 
-	// Expert mode state
-	let repos: HelmRepo[] = $state([]);
-	let searchResults: HelmChart[] = $state([]);
-	let searchQuery = $state('');
-	let searching = $state(false);
-	let newRepoName = $state('');
-	let newRepoUrl = $state('');
-	let showAddRepo = $state(false);
-
-	// Expert install
-	let expertInstall: HelmChart | null = $state(null);
-	let expertReleaseName = $state('');
-	let expertValues = $state('');
+	// Compose mode state
+	let composeName = $state('');
+	let composeContent = $state('');
+	let showCompose = $state(false);
+	let editingCompose: string | null = $state(null);
 
 	// Install form
 	let newName = $state('');
 	let newImage = $state('');
-	let newPorts = $state<{ name: string; container_port: number; node_port: string; protocol: string }[]>([]);
+	let newPorts = $state<{ name: string; container_port: number; host_port: string; protocol: string }[]>([]);
 	let newEnvs = $state<{ name: string; value: string }[]>([]);
-	let newVolumes = $state<{ name: string; mount_path: string; size: string }[]>([]);
+	let newVolumes = $state<{ name: string; mount_path: string; host_path: string }[]>([]);
 	let newCpuLimit = $state('');
 	let newMemoryLimit = $state('');
 	let inspecting = $state(false);
@@ -62,14 +47,10 @@
 
 	const client = getClient();
 	let startupPoll: ReturnType<typeof setInterval> | null = null;
-	const HELM_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
+	const APP_NAME_RE = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$/;
 
-	function isValidReleaseName(name: string): boolean {
-		return name.length > 0 && name.length <= 53 && HELM_NAME_RE.test(name);
-	}
-
-	function hasInvalidNodePort(ports: { node_port: string }[]): boolean {
-		return ports.some(p => p.node_port && (parseInt(p.node_port) < 30000 || parseInt(p.node_port) > 32767));
+	function isValidAppName(name: string): boolean {
+		return name.length > 0 && name.length <= 53 && APP_NAME_RE.test(name);
 	}
 
 	async function inspectImage() {
@@ -83,7 +64,7 @@
 				newPorts = result.ports.map(p => ({
 					name: p.name,
 					container_port: p.container_port,
-					node_port: '',
+					host_port: '',
 					protocol: p.protocol,
 				}));
 			}
@@ -145,7 +126,7 @@
 		enabling = true;
 		await withToast(
 			() => client.call('apps.enable', { filesystem: selectedFs || undefined }),
-			'Apps runtime enabled — starting k3s'
+			'Apps runtime enabled — starting Docker'
 		);
 		enabling = false;
 		await refresh();
@@ -155,7 +136,7 @@
 	async function disableApps() {
 		if (!await confirm(
 			'Disable apps runtime?',
-			'All running apps will be stopped. k3s will be shut down to free memory. App configurations are preserved.'
+			'All running apps will be stopped. Docker will be shut down. App data on the filesystem is preserved.'
 		)) return;
 		await withToast(
 			() => client.call('apps.disable'),
@@ -165,7 +146,7 @@
 	}
 
 	function addPort() {
-		newPorts = [...newPorts, { name: newPorts.length === 0 ? 'http' : `port-${newPorts.length}`, container_port: 80, node_port: '', protocol: 'TCP' }];
+		newPorts = [...newPorts, { name: newPorts.length === 0 ? 'http' : `port-${newPorts.length}`, container_port: 80, host_port: '', protocol: 'TCP' }];
 	}
 
 	function removePort(i: number) {
@@ -181,7 +162,7 @@
 	}
 
 	function addVolume() {
-		newVolumes = [...newVolumes, { name: `data${newVolumes.length}`, mount_path: '', size: '1Gi' }];
+		newVolumes = [...newVolumes, { name: `data${newVolumes.length}`, mount_path: '', host_path: '' }];
 	}
 
 	function removeVolume(i: number) {
@@ -190,20 +171,20 @@
 
 	async function install() {
 		if (!newName || !newImage) return;
-		const releaseName = newName.toLowerCase();
-		if (!isValidReleaseName(releaseName)) {
+		const appName = newName.toLowerCase();
+		if (!isValidAppName(appName)) {
 			await withToast(async () => { throw new Error('Invalid app name: use lowercase letters, numbers, hyphens, and dots (max 53 chars)'); }, '');
 			return;
 		}
 		const params: Record<string, unknown> = {
-			name: releaseName,
+			name: appName,
 			image: newImage,
 		};
 		if (newPorts.length > 0) {
 			params.ports = newPorts.map(p => ({
 				name: p.name,
 				container_port: p.container_port,
-				node_port: p.node_port ? parseInt(p.node_port) : undefined,
+				host_port: p.host_port ? parseInt(p.host_port) : undefined,
 				protocol: p.protocol,
 			}));
 		}
@@ -211,7 +192,11 @@
 			params.env = newEnvs.filter(e => e.name);
 		}
 		if (newVolumes.length > 0) {
-			params.volumes = newVolumes.filter(v => v.name && v.mount_path);
+			params.volumes = newVolumes.filter(v => v.name && v.mount_path).map(v => ({
+				name: v.name,
+				mount_path: v.mount_path,
+				host_path: v.host_path || '',
+			}));
 		}
 		if (newCpuLimit) params.cpu_limit = newCpuLimit;
 		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
@@ -222,10 +207,8 @@
 		);
 		if (ok !== undefined) {
 			showInstall = false;
-			newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
-			newCpuLimit = ''; newMemoryLimit = '';
+			resetForm();
 		}
-		// Always refresh — app may have been partially created even on failure
 		await refresh();
 	}
 
@@ -241,11 +224,11 @@
 		newPorts = config.ports.map(p => ({
 			name: p.name,
 			container_port: p.container_port,
-			node_port: p.node_port?.toString() ?? '',
+			host_port: p.host_port?.toString() ?? '',
 			protocol: p.protocol,
 		}));
 		newEnvs = config.env.map(e => ({ name: e.name, value: e.value }));
-		newVolumes = config.volumes.map(v => ({ name: v.name, mount_path: v.mount_path, size: v.size }));
+		newVolumes = config.volumes.map(v => ({ name: v.name, mount_path: v.mount_path, host_path: v.host_path }));
 		newCpuLimit = config.cpu_limit ?? '';
 		newMemoryLimit = config.memory_limit ?? '';
 		showInstall = true;
@@ -261,7 +244,7 @@
 			params.ports = newPorts.map(p => ({
 				name: p.name,
 				container_port: p.container_port,
-				node_port: p.node_port ? parseInt(p.node_port) : undefined,
+				host_port: p.host_port ? parseInt(p.host_port) : undefined,
 				protocol: p.protocol,
 			}));
 		}
@@ -269,7 +252,11 @@
 			params.env = newEnvs.filter(e => e.name);
 		}
 		if (newVolumes.length > 0) {
-			params.volumes = newVolumes.filter(v => v.name && v.mount_path);
+			params.volumes = newVolumes.filter(v => v.name && v.mount_path).map(v => ({
+				name: v.name,
+				mount_path: v.mount_path,
+				host_path: v.host_path || '',
+			}));
 		}
 		if (newCpuLimit) params.cpu_limit = newCpuLimit;
 		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
@@ -281,21 +268,25 @@
 		if (result !== undefined) {
 			showInstall = false;
 			editingApp = null;
-			newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
-			newCpuLimit = ''; newMemoryLimit = '';
+			resetForm();
 		}
 		await refresh();
+	}
+
+	function resetForm() {
+		newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
+		newCpuLimit = ''; newMemoryLimit = '';
+		lastInspectedImage = '';
 	}
 
 	function cancelEdit() {
 		showInstall = false;
 		editingApp = null;
-		newName = ''; newImage = ''; newPorts = []; newEnvs = []; newVolumes = [];
-		newCpuLimit = ''; newMemoryLimit = '';
+		resetForm();
 	}
 
 	async function removeApp(name: string) {
-		if (!await confirm(`Remove app "${name}"?`, 'The app and its resources will be deleted. Persistent volumes may be retained.')) return;
+		if (!await confirm(`Remove app "${name}"?`, 'The app and its containers will be deleted. Persistent data on the filesystem is preserved.')) return;
 		await withToast(
 			() => client.call('apps.remove', { name }),
 			'App removed'
@@ -303,14 +294,54 @@
 		await refresh();
 	}
 
-	async function showLogs(name: string) {
+	async function showLogs(name: string, kind: string) {
 		logsApp = name;
 		logsContent = 'Loading...';
 		try {
-			logsContent = await client.call<string>('apps.logs', { name, tail: 200 });
+			const method = kind === 'compose' ? 'apps.compose.logs' : 'apps.logs';
+			logsContent = await client.call<string>(method, { name, tail: 200 });
 		} catch (e) {
 			logsContent = `Failed to load logs: ${e}`;
 		}
+	}
+
+	// Compose functions
+	async function installCompose() {
+		if (!composeName || !composeContent.trim()) return;
+		const name = composeName.toLowerCase();
+		if (!isValidAppName(name)) {
+			await withToast(async () => { throw new Error('Invalid app name'); }, '');
+			return;
+		}
+		const method = editingCompose ? 'apps.compose.update' : 'apps.compose.install';
+		const ok = await withToast(
+			() => client.call(method, { name, compose_file: composeContent }),
+			editingCompose ? 'Compose app updated' : 'Compose app installed'
+		);
+		if (ok !== undefined) {
+			showCompose = false;
+			editingCompose = null;
+			composeName = ''; composeContent = '';
+		}
+		await refresh();
+	}
+
+	async function editCompose(name: string) {
+		const content = await withToast(
+			() => client.call<string>('apps.compose.get', { name }),
+			''
+		);
+		if (content === undefined) return;
+		editingCompose = name;
+		composeName = name;
+		composeContent = content;
+		showCompose = true;
+	}
+
+	function cancelCompose() {
+		showCompose = false;
+		editingCompose = null;
+		composeName = ''; composeContent = '';
 	}
 
 	// Ingress
@@ -322,119 +353,6 @@
 
 	function getIngress(appName: string) {
 		return ingresses.find(r => r.name === appName);
-	}
-
-	// Expert mode functions
-	async function loadRepos() {
-		try {
-			repos = await client.call<HelmRepo[]>('apps.repo.list');
-		} catch { repos = []; }
-	}
-
-	async function addRepo() {
-		if (!newRepoName || !newRepoUrl) return;
-		await withToast(
-			() => client.call('apps.repo.add', { name: newRepoName, url: newRepoUrl }),
-			'Repo added'
-		);
-		showAddRepo = false;
-		newRepoName = ''; newRepoUrl = '';
-		await loadRepos();
-	}
-
-	async function removeRepo(name: string) {
-		if (!await confirm(`Remove Helm repo "${name}"?`)) return;
-		await withToast(() => client.call('apps.repo.remove', { name }), 'Repo removed');
-		await loadRepos();
-	}
-
-	async function updateRepos() {
-		await withToast(() => client.call('apps.repo.update'), 'Repos updated');
-	}
-
-	async function searchCharts() {
-		if (!searchQuery.trim()) { searchResults = []; return; }
-		searching = true;
-		try {
-			searchResults = await client.call<HelmChart[]>('apps.search', { query: searchQuery });
-		} catch { searchResults = []; }
-		searching = false;
-	}
-
-	async function loadTrueCharts() {
-		try {
-			trueChartsIndex = await client.call<TrueChartsIndex>('apps.truecharts.list');
-		} catch {
-			trueChartsIndex = null;
-		}
-	}
-
-	async function refreshTrueCharts() {
-		trueChartsRefreshing = true;
-		const result = await withToast(
-			() => client.call<TrueChartsIndex>('apps.truecharts.refresh'),
-			'TrueCharts catalog refreshed'
-		);
-		if (result) trueChartsIndex = result;
-		trueChartsRefreshing = false;
-	}
-
-	function selectTrueChart(chart: TrueChartEntry) {
-		// Open the expert install dialog pre-filled with the OCI chart ref
-		expertInstall = {
-			name: chart.name,
-			repo: 'oci://oci.trueforge.org/truecharts',
-			version: chart.version,
-			app_version: '',
-			description: chart.description,
-		};
-		expertReleaseName = chart.name;
-		expertValues = '';
-	}
-
-	async function installChart() {
-		if (!expertInstall || !expertReleaseName) return;
-		const releaseName = expertReleaseName.toLowerCase();
-		if (!isValidReleaseName(releaseName)) {
-			await withToast(async () => { throw new Error('Invalid release name: use lowercase letters, numbers, hyphens, and dots (max 53 chars)'); }, '');
-			return;
-		}
-		const params: Record<string, unknown> = {
-			name: releaseName,
-			chart: `${expertInstall.repo}/${expertInstall.name}`,
-			version: expertInstall.version,
-		};
-		if (expertValues.trim()) {
-			try {
-				params.values = JSON.parse(expertValues);
-			} catch {
-				await withToast(async () => { throw new Error('Invalid JSON values'); }, '');
-				return;
-			}
-		}
-		const ok = await withToast(
-			() => client.call('apps.install_chart', params),
-			'Chart installed'
-		);
-		if (ok !== undefined) {
-			expertInstall = null;
-			expertReleaseName = ''; expertValues = '';
-			await refresh();
-		}
-	}
-
-	$effect(() => {
-		if (mode === 'expert' && status?.running) loadRepos();
-	});
-
-	$effect(() => {
-		if (mode === 'truecharts' && status?.running && !trueChartsIndex) loadTrueCharts();
-	});
-
-	function formatMemory(bytes: number): string {
-		if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-		if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MiB`;
-		return `${bytes} B`;
 	}
 
 	let search = $state('');
@@ -449,34 +367,6 @@
 			? apps.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
 			: apps
 	);
-
-	const trueChartsFiltered = $derived.by(() => {
-		const list = trueChartsIndex?.charts ?? [];
-		const q = trueChartsQuery.trim().toLowerCase();
-		return list
-			.filter(c => trueChartsTrain === 'all' || c.train === trueChartsTrain)
-			.filter(c => !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q))
-			.sort((a, b) => a.name.localeCompare(b.name));
-	});
-
-	/// Helm's list output puts the chart name + version in `chart` like "victoriametrics-5.2.1".
-	/// Return the installed version for a given chart name, or null if not installed.
-	function installedVersion(chartName: string): string | null {
-		const prefix = chartName + '-';
-		for (const a of apps) {
-			if (a.chart.startsWith(prefix)) {
-				return a.chart.slice(prefix.length);
-			}
-		}
-		return null;
-	}
-
-	/// Only app-template-based releases (from the Easy installer) have an editable
-	/// simple config. Everything else (TrueCharts, arbitrary Helm charts) must be
-	/// reconfigured through the chart's own values mechanism.
-	function isEditable(app: App): boolean {
-		return app.chart.startsWith('app-template-');
-	}
 
 	const sorted = $derived.by(() => {
 		return [...filtered].sort((a, b) => {
@@ -494,8 +384,8 @@
 		<CardContent class="pt-6 pb-4">
 			<h3 class="mb-1 text-lg font-semibold">Apps Setup</h3>
 			<p class="mb-4 text-sm text-muted-foreground">
-				NASty runs containerized applications using a lightweight Kubernetes runtime (k3s).
-				Uses approximately 500 MiB–1 GiB of RAM.
+				NASty runs containerized applications using Docker.
+				Lightweight — uses approximately 50 MiB of RAM for the runtime itself.
 			</p>
 
 			<div class="space-y-2">
@@ -535,7 +425,7 @@
 										<option value={fs.name}>{fs.name}</option>
 									{/each}
 								</select>
-								<span class="ml-2 text-xs text-muted-foreground">Subvolume "apps-data" will be created on this filesystem</span>
+								<span class="ml-2 text-xs text-muted-foreground">App data will be stored on this filesystem</span>
 							</div>
 						{:else}
 							<div class="text-xs text-muted-foreground">Requires a filesystem first</div>
@@ -556,7 +446,7 @@
 		<CardContent class="py-8 text-center">
 			<div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-muted border-t-primary"></div>
 			<p class="font-medium">Starting app runtime</p>
-			<p class="mt-1 text-sm text-muted-foreground">k3s is bootstrapping. This can take up to a minute on first start.</p>
+			<p class="mt-1 text-sm text-muted-foreground">Docker is starting up. This should only take a few seconds.</p>
 		</CardContent>
 	</Card>
 {:else}
@@ -592,33 +482,31 @@
 	<div class="mb-4 flex items-center gap-4">
 		<div class="flex border-b border-border">
 			<button
-				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'easy'
+				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'simple'
 					? 'border-b-2 border-primary text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => mode = 'easy'}
-			>Easy</button>
+				onclick={() => mode = 'simple'}
+			>Simple</button>
 			<button
-				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'truecharts'
+				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'compose'
 					? 'border-b-2 border-primary text-foreground'
 					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => mode = 'truecharts'}
-			>TrueCharts</button>
-			<button
-				class="px-3 py-1.5 text-sm font-medium transition-colors {mode === 'expert'
-					? 'border-b-2 border-primary text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				onclick={() => mode = 'expert'}
-			>Helm Charts</button>
+				onclick={() => mode = 'compose'}
+			>Compose</button>
 		</div>
-		{#if mode === 'easy'}
-			<Button size="sm" onclick={() => { if (showInstall) { cancelEdit(); } else { editingApp = null; newPorts = [{ name: 'http', container_port: 80, node_port: '', protocol: 'TCP' }]; showInstall = true; } }}>
+		{#if mode === 'simple'}
+			<Button size="sm" onclick={() => { if (showInstall) { cancelEdit(); } else { editingApp = null; newPorts = [{ name: 'http', container_port: 80, host_port: '', protocol: 'TCP' }]; showInstall = true; } }}>
 				{showInstall ? 'Cancel' : 'Install App'}
+			</Button>
+		{:else}
+			<Button size="sm" onclick={() => { if (showCompose) { cancelCompose(); } else { showCompose = true; } }}>
+				{showCompose ? 'Cancel' : 'Deploy Compose'}
 			</Button>
 		{/if}
 		<Input bind:value={search} placeholder="Search installed..." class="h-9 w-48" />
 	</div>
 
-	{#if mode === 'easy'}
+	{#if mode === 'simple'}
 	{#if showInstall}
 		<Card class="mb-6 max-w-xl">
 			<CardContent class="pt-6">
@@ -626,7 +514,7 @@
 				<div class="mb-4">
 					<Label for="app-name">App Name</Label>
 					<Input id="app-name" value={newName} oninput={(e) => { newName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} placeholder="whoami" class="mt-1" disabled={!!editingApp} />
-					{#if newName && !isValidReleaseName(newName)}
+					{#if newName && !isValidAppName(newName)}
 						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
 					{:else}
 						<span class="mt-1 block text-xs text-muted-foreground">Must be DNS-safe (lowercase, no spaces).</span>
@@ -650,18 +538,15 @@
 						<div class="grid grid-cols-[1fr_80px_90px_60px_auto] gap-2 mt-1 items-center">
 							<Input bind:value={port.name} placeholder="e.g. http" class="h-8 text-xs" />
 							<Input type="number" bind:value={port.container_port} placeholder="Port" class="h-8 text-xs" />
-							<Input bind:value={port.node_port} placeholder="auto" class="h-8 text-xs" />
+							<Input bind:value={port.host_port} placeholder="auto" class="h-8 text-xs" />
 							<select bind:value={port.protocol} class="h-8 rounded-md border border-input bg-transparent px-1 text-xs">
 								<option>TCP</option>
 								<option>UDP</option>
 							</select>
 							<Button size="xs" variant="ghost" onclick={() => removePort(i)}>x</Button>
 						</div>
-						{#if port.node_port && (parseInt(port.node_port) < 30000 || parseInt(port.node_port) > 32767)}
-							<span class="text-xs text-red-500">NodePort must be between 30000 and 32767.</span>
-						{/if}
 					{/each}
-					<p class="mt-1 text-[0.6rem] text-muted-foreground">NodePort is auto-assigned if left empty. App will be accessible at /apps/{'{name}'}/ via reverse proxy.</p>
+					<p class="mt-1 text-[0.6rem] text-muted-foreground">Host port is auto-assigned if left empty. App will be accessible at /apps/{'{name}'}/ via reverse proxy.</p>
 				</div>
 
 				<!-- Environment Variables -->
@@ -686,15 +571,14 @@
 						<Button size="xs" variant="outline" onclick={addVolume}>+ Add Volume</Button>
 					</div>
 					{#each newVolumes as vol, i}
-						<div class="grid grid-cols-[1fr_1fr_80px_auto] gap-2 mt-1 items-center">
-							<Input bind:value={vol.name} placeholder="Name" class="h-8 text-xs" />
+						<div class="grid grid-cols-[1fr_1fr_auto] gap-2 mt-1 items-center">
 							<Input bind:value={vol.mount_path} placeholder="/config" class="h-8 text-xs" />
-							<Input bind:value={vol.size} placeholder="1Gi" class="h-8 text-xs" />
+							<Input bind:value={vol.host_path} placeholder="auto (bcachefs)" class="h-8 text-xs" />
 							<Button size="xs" variant="ghost" onclick={() => removeVolume(i)}>x</Button>
 						</div>
 					{/each}
 					{#if newVolumes.length > 0}
-						<span class="mt-1 block text-xs text-muted-foreground">Storage provided by nasty-csi via bcachefs subvolumes.</span>
+						<span class="mt-1 block text-xs text-muted-foreground">Host path is auto-generated under apps storage if left empty.</span>
 					{/if}
 				</div>
 
@@ -704,20 +588,20 @@
 					<div class="grid grid-cols-2 gap-3 mt-1">
 						<div>
 							<Label class="text-xs">CPU</Label>
-							<Input bind:value={newCpuLimit} placeholder="e.g. 500m or 2" class="mt-1 h-8 text-xs" />
+							<Input bind:value={newCpuLimit} placeholder="e.g. 0.5 or 2" class="mt-1 h-8 text-xs" />
 						</div>
 						<div>
 							<Label class="text-xs">Memory</Label>
-							<Input bind:value={newMemoryLimit} placeholder="e.g. 256Mi or 1Gi" class="mt-1 h-8 text-xs" />
+							<Input bind:value={newMemoryLimit} placeholder="e.g. 256m or 1g" class="mt-1 h-8 text-xs" />
 						</div>
 					</div>
 				</div>
 
 				<div class="flex gap-2">
 					{#if editingApp}
-						<Button onclick={updateApp} disabled={!newImage || hasInvalidNodePort(newPorts)}>Save</Button>
+						<Button onclick={updateApp} disabled={!newImage}>Save</Button>
 					{:else}
-						<Button onclick={install} disabled={!newName || !newImage || !isValidReleaseName(newName) || hasInvalidNodePort(newPorts)}>Install</Button>
+						<Button onclick={install} disabled={!newName || !newImage || !isValidAppName(newName)}>Install</Button>
 					{/if}
 					<Button variant="secondary" onclick={cancelEdit}>Cancel</Button>
 				</div>
@@ -728,235 +612,53 @@
 	{#if apps.length === 0 && !showInstall}
 		<p class="text-muted-foreground">No apps installed.</p>
 	{/if}
-	{:else if mode === 'truecharts'}
-	<!-- TrueCharts catalog -->
-	<Card>
-		<CardContent class="pt-6">
-			<div class="flex flex-wrap items-center gap-3 mb-4">
-				<Input bind:value={trueChartsQuery} placeholder="Search name or description..." class="h-9 w-64" />
-				<select bind:value={trueChartsTrain}
-					class="h-9 rounded-md border border-input bg-background px-3 text-sm">
-					<option value="stable">stable</option>
-					<option value="incubator">incubator</option>
-					<option value="library">library</option>
-					<option value="all">all trains</option>
-				</select>
-				<div class="ml-auto flex items-center gap-3">
-					{#if trueChartsIndex && trueChartsIndex.refreshed_at > 0}
-						<span class="text-xs text-muted-foreground">
-							Updated {new Date(trueChartsIndex.refreshed_at * 1000).toLocaleString()}
-						</span>
-					{/if}
-					<Button size="xs" variant="outline" onclick={refreshTrueCharts} disabled={trueChartsRefreshing}>
-						{trueChartsRefreshing ? 'Refreshing...' : 'Refresh'}
-					</Button>
-				</div>
-			</div>
-
-			{#if !trueChartsIndex || trueChartsIndex.charts.length === 0}
-				<div class="py-8 text-center text-sm text-muted-foreground">
-					Catalog not loaded yet. Click Refresh to fetch.
-				</div>
-			{:else}
-				<div class="text-xs text-muted-foreground mb-2">
-					{trueChartsFiltered.length} of {trueChartsIndex.charts.length} charts
-				</div>
-				<div class="max-h-[60vh] overflow-y-auto rounded border divide-y">
-					{#each trueChartsFiltered as chart (chart.name)}
-						{@const installed = installedVersion(chart.name)}
-						<div class="flex items-start gap-3 px-3 py-2 hover:bg-muted/30 transition-colors">
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center gap-2 flex-wrap">
-									<span class="font-medium">{chart.name}</span>
-									<Badge variant="outline" class="text-xs">{chart.train}</Badge>
-									<span class="text-xs text-muted-foreground">{chart.version}</span>
-									{#if installed}
-										<Badge variant="default" class="text-xs">
-											Installed{installed !== chart.version ? ` (${installed})` : ''}
-										</Badge>
-									{/if}
-								</div>
-								<div class="text-sm text-muted-foreground truncate">{chart.description}</div>
-							</div>
-							{#if installed && installed !== chart.version}
-								<Button size="xs" variant="outline" onclick={() => selectTrueChart(chart)}>Upgrade</Button>
-							{:else if installed}
-								<Button size="xs" variant="outline" disabled>Installed</Button>
-							{:else}
-								<Button size="xs" onclick={() => selectTrueChart(chart)}>Install</Button>
-							{/if}
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			<div class="mt-4 text-xs text-muted-foreground">
-				Powered by <a href="https://truecharts.org" target="_blank" rel="noopener" class="underline">TrueCharts</a> — charts pulled via OCI from <code>oci.trueforge.org/truecharts</code>.
-			</div>
-		</CardContent>
-	</Card>
-
-	{#if expertInstall}
-		<Card class="mt-6 max-w-xl">
-			<CardContent class="pt-6">
-				<h3 class="mb-4 text-lg font-semibold">Install {expertInstall.repo}/{expertInstall.name}</h3>
-				<div class="mb-4">
-					<Label for="tc-name">Release Name</Label>
-					<Input id="tc-name" value={expertReleaseName} oninput={(e) => { expertReleaseName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} class="mt-1" />
-					{#if expertReleaseName && !isValidReleaseName(expertReleaseName)}
-						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
-					{/if}
-				</div>
-				<div class="mb-4">
-					<Label for="tc-values">Values (JSON, optional)</Label>
-					<textarea
-						id="tc-values"
-						bind:value={expertValues}
-						placeholder={'{"key": "value"}'}
-						class="mt-1 w-full h-32 rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono"
-					></textarea>
-					<span class="mt-1 block text-xs text-muted-foreground">Override default chart values. Must be valid JSON.</span>
-				</div>
-				<div class="flex gap-2">
-					<Button onclick={installChart} disabled={!expertReleaseName || !isValidReleaseName(expertReleaseName)}>Install</Button>
-					<Button variant="ghost" onclick={() => expertInstall = null}>Cancel</Button>
-				</div>
-			</CardContent>
-		</Card>
-	{/if}
 	{:else}
-	<!-- Expert mode: Helm repos + chart search -->
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-		<!-- Repos -->
-		<Card>
+	<!-- Compose mode -->
+	{#if showCompose}
+		<Card class="mb-6 max-w-2xl">
 			<CardContent class="pt-6">
-				<div class="flex items-center justify-between mb-4">
-					<h3 class="text-lg font-semibold">Helm Repositories</h3>
-					<div class="flex gap-2">
-						<Button size="xs" variant="outline" onclick={updateRepos}>Refresh</Button>
-						<Button size="xs" onclick={() => showAddRepo = !showAddRepo}>
-							{showAddRepo ? 'Cancel' : 'Add Repo'}
-						</Button>
-					</div>
-				</div>
-
-				{#if showAddRepo}
-					<div class="mb-4 rounded border p-3">
-						<div class="grid grid-cols-2 gap-2 mb-2">
-							<div>
-								<Label class="text-xs">Name</Label>
-								<Input bind:value={newRepoName} placeholder="bitnami" class="mt-1 h-8 text-xs" />
-							</div>
-							<div>
-								<Label class="text-xs">URL</Label>
-								<Input bind:value={newRepoUrl} placeholder="https://charts.bitnami.com/bitnami" class="mt-1 h-8 text-xs" />
-							</div>
-						</div>
-						<Button size="xs" onclick={addRepo} disabled={!newRepoName || !newRepoUrl}>Add</Button>
-					</div>
-				{/if}
-
-				{#if repos.length === 0}
-					<p class="text-sm text-muted-foreground">No repositories configured.</p>
-				{:else}
-					<div class="space-y-1">
-						{#each repos as repo}
-							<div class="flex items-center justify-between rounded bg-secondary/50 px-3 py-2">
-								<div>
-									<span class="font-semibold text-sm">{repo.name}</span>
-									<span class="ml-2 text-xs text-muted-foreground truncate">{repo.url}</span>
-								</div>
-								<Button variant="destructive" size="xs" onclick={() => removeRepo(repo.name)}>Remove</Button>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</CardContent>
-		</Card>
-
-		<!-- Chart Search -->
-		<Card>
-			<CardContent class="pt-6">
-				<h3 class="text-lg font-semibold mb-4">Search Charts</h3>
-				<p class="text-sm text-muted-foreground mb-3">
-					Search charts across your configured Helm repos. Add more repos above to widen the selection.
-				</p>
-				<div class="flex gap-2 mb-4">
-					<Input bind:value={searchQuery} placeholder="Search chart name (e.g. postgresql, redis)" class="h-9"
-						onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && searchCharts()} />
-					<Button size="sm" onclick={searchCharts} disabled={searching}>
-						{searching ? 'Searching...' : 'Search'}
-					</Button>
-				</div>
-
-				{#if searchResults.length > 0}
-					<div class="max-h-80 overflow-y-auto space-y-1">
-						{#each searchResults as chart}
-							<div class="rounded border px-3 py-2 hover:bg-muted/30 transition-colors">
-								<div class="flex items-center justify-between">
-									<div>
-										<span class="font-semibold text-sm">{chart.repo}/{chart.name}</span>
-										<Badge variant="secondary" class="ml-2 text-[0.6rem]">v{chart.version}</Badge>
-										{#if chart.app_version}
-											<span class="ml-1 text-xs text-muted-foreground">app: {chart.app_version}</span>
-										{/if}
-									</div>
-									<Button size="xs" variant="outline" onclick={() => { expertInstall = chart; expertReleaseName = chart.name; expertValues = ''; }}>
-										Install
-									</Button>
-								</div>
-								{#if chart.description}
-									<p class="text-xs text-muted-foreground mt-1">{chart.description}</p>
-								{/if}
-							</div>
-						{/each}
-					</div>
-				{:else if searchQuery && !searching}
-					<p class="text-sm text-muted-foreground">No charts found.</p>
-				{/if}
-			</CardContent>
-		</Card>
-	</div>
-
-	<!-- Expert install dialog -->
-	{#if expertInstall}
-		<Card class="mt-6 max-w-xl">
-			<CardContent class="pt-6">
-				<h3 class="mb-4 text-lg font-semibold">Install {expertInstall.repo}/{expertInstall.name}</h3>
+				<h3 class="mb-4 text-lg font-semibold">{editingCompose ? `Edit ${editingCompose}` : 'Deploy Compose App'}</h3>
 				<div class="mb-4">
-					<Label for="expert-name">Release Name</Label>
-					<Input id="expert-name" value={expertReleaseName} oninput={(e) => { expertReleaseName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} class="mt-1" />
-					{#if expertReleaseName && !isValidReleaseName(expertReleaseName)}
+					<Label for="compose-name">App Name</Label>
+					<Input id="compose-name" value={composeName} oninput={(e) => { composeName = (e.currentTarget as HTMLInputElement).value.toLowerCase(); }} placeholder="my-stack" class="mt-1" disabled={!!editingCompose} />
+					{#if composeName && !isValidAppName(composeName)}
 						<span class="mt-1 block text-xs text-red-500">Must be lowercase letters, numbers, hyphens, dots. Max 53 chars.</span>
 					{/if}
 				</div>
 				<div class="mb-4">
-					<Label for="expert-values">Values (JSON, optional)</Label>
+					<Label for="compose-file">docker-compose.yml</Label>
 					<textarea
-						id="expert-values"
-						bind:value={expertValues}
-						placeholder={'{"key": "value"}'}
-						class="mt-1 w-full h-32 rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono"
+						id="compose-file"
+						bind:value={composeContent}
+						placeholder={"services:\n  web:\n    image: nginx:latest\n    ports:\n      - \"8080:80\""}
+						class="mt-1 w-full h-64 rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono"
 					></textarea>
-					<span class="mt-1 block text-xs text-muted-foreground">Override default chart values. Must be valid JSON.</span>
+					<span class="mt-1 block text-xs text-muted-foreground">Paste a standard docker-compose.yml file. No modifications needed.</span>
 				</div>
 				<div class="flex gap-2">
-					<Button onclick={installChart} disabled={!expertReleaseName || !isValidReleaseName(expertReleaseName)}>Install</Button>
-					<Button variant="ghost" onclick={() => expertInstall = null}>Cancel</Button>
+					<Button onclick={installCompose} disabled={!composeName || !composeContent.trim() || (!editingCompose && !isValidAppName(composeName))}>
+						{editingCompose ? 'Update' : 'Deploy'}
+					</Button>
+					<Button variant="secondary" onclick={cancelCompose}>Cancel</Button>
 				</div>
 			</CardContent>
 		</Card>
 	{/if}
+
+	{#if apps.length === 0 && !showCompose}
+		<p class="text-muted-foreground">No apps installed.</p>
+	{/if}
 	{/if}
 
-	<!-- Unified installed apps table — shared across all sub-tabs -->
+	<!-- Installed apps table -->
 	{#if apps.length > 0}
 		<h3 class="text-lg font-semibold mt-6 mb-3">Installed Apps</h3>
 		<table class="w-full text-sm">
 			<thead>
 				<tr>
 					<SortTh label="Name" active={true} dir={sortDir} onclick={toggleSort} />
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Chart</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Image</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Kind</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
 				</tr>
@@ -965,9 +667,12 @@
 				{#each sorted as app}
 					<tr class="border-b border-border hover:bg-muted/30 transition-colors">
 						<td class="p-3 font-semibold">{app.name}</td>
-						<td class="p-3 text-xs text-muted-foreground font-mono">{app.chart}</td>
+						<td class="p-3 text-xs text-muted-foreground font-mono max-w-[200px] truncate">{app.image}</td>
 						<td class="p-3">
-							<Badge variant={app.status === 'deployed' ? 'default' : 'secondary'}>
+							<Badge variant="outline">{app.kind}</Badge>
+						</td>
+						<td class="p-3">
+							<Badge variant={app.status === 'running' ? 'default' : 'secondary'}>
 								{app.status}
 							</Badge>
 						</td>
@@ -978,10 +683,12 @@
 										Open
 									</a>
 								{/if}
-								{#if isEditable(app)}
+								{#if app.kind === 'simple'}
 									<Button variant="outline" size="xs" onclick={() => editApp(app.name)}>Edit</Button>
+								{:else}
+									<Button variant="outline" size="xs" onclick={() => editCompose(app.name)}>Edit</Button>
 								{/if}
-								<Button variant="outline" size="xs" onclick={() => showLogs(app.name)}>Logs</Button>
+								<Button variant="outline" size="xs" onclick={() => showLogs(app.name, app.kind)}>Logs</Button>
 								<Button variant="destructive" size="xs" onclick={() => removeApp(app.name)}>Remove</Button>
 							</div>
 						</td>
@@ -995,22 +702,18 @@
 	<div class="max-w-2xl space-y-4">
 		<Card>
 			<CardContent class="pt-6">
-				<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cluster</h4>
+				<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Docker</h4>
 				<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-					<span class="text-muted-foreground">k3s Version</span>
-					<span class="font-mono text-xs">{status?.k3s_version ?? 'Unknown'}</span>
-					<span class="text-muted-foreground">Node Status</span>
+					<span class="text-muted-foreground">Docker Version</span>
+					<span class="font-mono text-xs">{status?.docker_version ?? 'Unknown'}</span>
+					<span class="text-muted-foreground">Status</span>
 					<span>
-						<Badge variant={status?.node_status === 'Ready' ? 'default' : 'destructive'}>
-							{status?.node_status ?? 'Unknown'}
+						<Badge variant={status?.running ? 'default' : 'destructive'}>
+							{status?.running ? 'Running' : 'Stopped'}
 						</Badge>
 					</span>
 					<span class="text-muted-foreground">Apps</span>
 					<span>{status?.app_count ?? 0} deployed</span>
-					{#if status?.memory_bytes}
-						<span class="text-muted-foreground">Memory</span>
-						<span>{formatMemory(status.memory_bytes)}</span>
-					{/if}
 				</div>
 			</CardContent>
 		</Card>
@@ -1028,8 +731,8 @@
 					</div>
 					<span class="text-muted-foreground">Status</span>
 					<span>{status?.storage_ok ? 'OK' : 'Not available'}</span>
-					<span class="text-muted-foreground">Provisioner</span>
-					<span>local-path-provisioner</span>
+					<span class="text-muted-foreground">Backend</span>
+					<span>Bind mounts on bcachefs</span>
 				</div>
 			</CardContent>
 		</Card>
@@ -1038,7 +741,7 @@
 			<CardContent class="pt-6">
 				<h4 class="mb-3 text-xs font-semibold uppercase tracking-wide text-destructive">Danger Zone</h4>
 				<p class="mb-3 text-sm text-muted-foreground">
-					Disabling apps stops the k3s runtime and all running containers. App data on the filesystem is preserved.
+					Disabling apps stops Docker and all running containers. App data on the filesystem is preserved.
 				</p>
 				<Button variant="destructive" size="sm" onclick={disableApps}>
 					Disable Apps

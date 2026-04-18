@@ -574,61 +574,34 @@ export interface AppsStatus {
 	app_count: number;
 	memory_bytes?: number;
 	storage_path?: string;
-	k3s_version?: string;
-	node_status?: string;
 	storage_ok: boolean;
+	docker_version?: string;
 }
 
 export interface App {
 	name: string;
-	namespace: string;
 	image: string;
-	chart: string;
 	status: string;
-	updated: string;
+	created: string;
+	kind: string; // "simple" or "compose"
 }
 
 export interface AppConfig {
 	name: string;
 	image: string;
-	ports: { name: string; container_port: number; node_port: number | null; protocol: string }[];
+	ports: { name: string; container_port: number; host_port: number | null; protocol: string }[];
 	env: { name: string; value: string }[];
-	volumes: { name: string; mount_path: string; size: string; storage_class: string }[];
+	volumes: { name: string; mount_path: string; host_path: string }[];
 	cpu_limit: string | null;
 	memory_limit: string | null;
 }
 
 export interface ImageInspectResult {
-	ports: { name: string; container_port: number; node_port: number | null; protocol: string }[];
-}
-
-export interface HelmRepo {
-	name: string;
-	url: string;
+	ports: { name: string; container_port: number; host_port: number | null; protocol: string }[];
 }
 
 export interface AppIngress {
 	name: string;
-	node_port: number;
+	host_port: number;
 	path: string;
-}
-
-export interface HelmChart {
-	name: string;
-	repo: string;
-	version: string;
-	app_version: string;
-	description: string;
-}
-
-export interface TrueChartEntry {
-	name: string;
-	version: string;
-	train: string;
-	description: string;
-}
-
-export interface TrueChartsIndex {
-	refreshed_at: number;
-	charts: TrueChartEntry[];
 }

@@ -12,3 +12,5 @@ thiserror.workspace = true
 tracing.workspace = true
 schemars.workspace = true
 reqwest.workspace = true
+bollard = "0.20"
+futures-util.workspace = true
