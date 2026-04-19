@@ -479,6 +479,7 @@ in {
       python3           # scripting and quick data processing
       file              # file type identification
       tree              # directory structure visualization
+      eza               # modern ls replacement (colors, git, tree)
       strace            # system call tracing for debugging
       dig               # DNS debugging
       nano              # quick file editing
