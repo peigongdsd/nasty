@@ -15,6 +15,7 @@ use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber::{prelude::*, reload};
 
+mod app_deploy;
 mod auth;
 mod router;
 mod telemetry;
@@ -181,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/ws/terminal", get(terminal::terminal_handler))
+        .route("/ws/apps/deploy", get(app_deploy::deploy_handler))
         .route("/ws/vm/{vm_id}/vnc", get(vm_console::vnc_handler))
         .route("/ws/vm/{vm_id}/serial", get(vm_console::serial_handler))
         .route("/api/login", post(login_handler))

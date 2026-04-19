@@ -12,7 +12,80 @@
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import { CircleCheck, Circle } from '@lucide/svelte';
+	import { getToken } from '$lib/auth';
 	import type { Filesystem } from '$lib/types';
+
+	// Deploy stream state
+	let deployLog: string[] = $state([]);
+	let deploying = $state(false);
+	let deployDone = $state(false);
+	let deployError = $state('');
+
+	function streamDeploy(params: Record<string, unknown>): Promise<boolean> {
+		return new Promise((resolve) => {
+			deploying = true;
+			deployDone = false;
+			deployError = '';
+			deployLog = [];
+
+			const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+			const ws = new WebSocket(`${wsProto}//${window.location.host}/ws/apps/deploy`);
+
+			ws.onopen = () => {
+				ws.send(JSON.stringify({ token: getToken(), ...params }));
+			};
+
+			ws.onmessage = (event) => {
+				try {
+					const msg = JSON.parse(event.data);
+					if (msg.type === 'log') {
+						deployLog = [...deployLog, msg.data];
+					} else if (msg.type === 'error') {
+						deployError = msg.data;
+						deployLog = [...deployLog, `ERROR: ${msg.data}`];
+						deploying = false;
+						resolve(false);
+						ws.close();
+					} else if (msg.type === 'done') {
+						deployDone = true;
+						deploying = false;
+						resolve(true);
+						ws.close();
+					}
+				} catch { /* ignore */ }
+			};
+
+			ws.onerror = () => {
+				deployError = 'WebSocket connection failed';
+				deploying = false;
+				resolve(false);
+			};
+
+			ws.onclose = () => {
+				if (!deployDone && !deployError) {
+					deployError = 'Connection closed unexpectedly';
+					deploying = false;
+					resolve(false);
+				}
+			};
+		});
+	}
+
+	function closeDeployLog() {
+		deployLog = [];
+		deployDone = false;
+		deployError = '';
+	}
+
+	$effect(() => {
+		if (deployLog.length > 0) {
+			// Auto-scroll deploy output to bottom
+			requestAnimationFrame(() => {
+				const el = document.getElementById('deploy-output');
+				if (el) el.scrollTop = el.scrollHeight;
+			});
+		}
+	});
 
 	let status: AppsStatus | null = $state(null);
 	let apps: App[] = $state([]);
@@ -202,11 +275,13 @@
 		if (newCpuLimit) params.cpu_limit = newCpuLimit;
 		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
 
-		const ok = await withToast(
-			() => client.call('apps.install', params, 300_000),
-			'App installed'
-		);
-		if (ok !== undefined) {
+		const ok = await streamDeploy({
+			kind: 'simple',
+			name: appName,
+			image: newImage,
+			install_params: params,
+		});
+		if (ok) {
 			showInstall = false;
 			resetForm();
 		}
@@ -311,7 +386,7 @@
 	}
 
 	async function pullApp(name: string) {
-		await withToast(() => client.call('apps.pull', { name }, 300_000), 'Image updated');
+		await streamDeploy({ kind: 'pull', name });
 		await refresh();
 	}
 
@@ -356,12 +431,12 @@
 			await withToast(async () => { throw new Error('Invalid app name'); }, '');
 			return;
 		}
-		const method = editingCompose ? 'apps.compose.update' : 'apps.compose.install';
-		const ok = await withToast(
-			() => client.call(method, { name, compose_file: composeContent }, 300_000),
-			editingCompose ? 'Compose app updated' : 'Compose app installed'
-		);
-		if (ok !== undefined) {
+		const ok = await streamDeploy({
+			kind: 'compose',
+			name,
+			compose_file: composeContent,
+		});
+		if (ok) {
 			showCompose = false;
 			editingCompose = null;
 			composeName = ''; composeContent = '';
@@ -855,6 +930,37 @@
 		</Card>
 	</div>
 	{/if}
+{/if}
+
+<!-- Deploy Output Modal -->
+{#if deployLog.length > 0 || deploying}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+		<div class="flex flex-col w-[90vw] max-w-4xl h-[70vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl">
+			<div class="flex items-center justify-between px-4 py-2 border-b border-border">
+				<div class="flex items-center gap-2">
+					{#if deploying}
+						<div class="h-3 w-3 animate-spin rounded-full border-2 border-muted border-t-green-400"></div>
+					{:else if deployError}
+						<div class="h-3 w-3 rounded-full bg-red-500"></div>
+					{:else}
+						<div class="h-3 w-3 rounded-full bg-green-500"></div>
+					{/if}
+					<span class="text-sm font-semibold text-white">
+						{deploying ? 'Deploying...' : deployError ? 'Deploy Failed' : 'Deploy Complete'}
+					</span>
+				</div>
+				{#if !deploying}
+					<Button variant="ghost" size="xs" onclick={closeDeployLog} class="text-white hover:text-white/80">
+						Close
+					</Button>
+				{/if}
+			</div>
+			<pre
+				class="flex-1 p-4 overflow-auto text-xs font-mono whitespace-pre-wrap {deployError ? 'text-red-400' : 'text-green-400'}"
+				id="deploy-output"
+			>{deployLog.join('\n')}</pre>
+		</div>
+	</div>
 {/if}
 
 <!-- Logs Modal -->
