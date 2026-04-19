@@ -13,6 +13,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import { AlertTriangle } from '@lucide/svelte';
 
 	// ── Share creation wizard ────────────────────────────
 	let shareWizardStep: 0 | 1 | 2 | 3 | 4 = $state(0);
@@ -696,6 +697,7 @@
 
 			<!-- Step 1: Protocol -->
 			{#if shareWizardStep === 1}
+			{@const selectedProto = ({ nfs: nfsProtocol, smb: smbProtocol, iscsi: iscsiProtocol, nvmeof: nvmeProtocol })[shareProtocol]}
 			<div class="mb-4">
 				<Label>Protocol</Label>
 				<select bind:value={shareProtocol} class="mt-1 h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
@@ -705,8 +707,17 @@
 					<option value="nvmeof">NVMe-oF — NVMe over Fabrics (TCP)</option>
 				</select>
 			</div>
+			{#if selectedProto && !selectedProto.enabled}
+				<div class="mb-4 flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+					<AlertTriangle size={16} class="shrink-0 text-amber-500" />
+					<span class="flex-1 text-sm">{selectedProto.display_name} service is not enabled.</span>
+					<Button size="xs" onclick={async () => { await toggleProtocol(shareProtocol === 'nvmeof' ? 'nvmeof' : shareProtocol, false); await ({ nfs: nfsLoadProtocol, smb: smbLoadProtocol, iscsi: iscsiLoadProtocol, nvmeof: nvmeLoadProtocol })[shareProtocol](); }}>
+						Enable
+					</Button>
+				</div>
+			{/if}
 			<div class="flex gap-2">
-				<Button size="sm" onclick={() => shareWizardStep = 2}>Next: Source →</Button>
+				<Button size="sm" onclick={() => shareWizardStep = 2} disabled={selectedProto != null && !selectedProto.enabled}>Next: Source →</Button>
 			</div>
 
 			<!-- Step 2: Source -->
