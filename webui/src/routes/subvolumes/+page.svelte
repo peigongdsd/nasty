@@ -302,7 +302,7 @@
 			name: newName,
 			subvolume_type: newType,
 		};
-		if (newType === 'block' && newVolsize) {
+		if (newVolsize) {
 			params.volsize_bytes = parseFloat(newVolsize) * 1073741824;
 		}
 		if (newCompression) params.compression = newCompression;
