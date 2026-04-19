@@ -202,7 +202,7 @@
 		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
 
 		const ok = await withToast(
-			() => client.call('apps.install', params),
+			() => client.call('apps.install', params, 300_000),
 			'App installed'
 		);
 		if (ok !== undefined) {
@@ -262,7 +262,7 @@
 		if (newMemoryLimit) params.memory_limit = newMemoryLimit;
 
 		const result = await withToast(
-			() => client.call('apps.update', params),
+			() => client.call('apps.update', params, 300_000),
 			'App updated'
 		);
 		if (result !== undefined) {
@@ -315,7 +315,7 @@
 		}
 		const method = editingCompose ? 'apps.compose.update' : 'apps.compose.install';
 		const ok = await withToast(
-			() => client.call(method, { name, compose_file: composeContent }),
+			() => client.call(method, { name, compose_file: composeContent }, 300_000),
 			editingCompose ? 'Compose app updated' : 'Compose app installed'
 		);
 		if (ok !== undefined) {
