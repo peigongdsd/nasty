@@ -195,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
             post(files_upload_handler).layer(DefaultBodyLimit::max(10_737_418_240)),
         )
         .route("/api/files/mkdir", post(files_mkdir_handler))
+        .route("/api/files/content", get(files_content_handler))
         .route("/api/auth/check", get(auth_check_handler))
         .route("/health", get(health))
         .with_state(state);
@@ -986,6 +987,173 @@ async fn files_mkdir_handler(
         )
             .into_response(),
     }
+}
+
+// ── File content/download endpoint ─────────────────────────────
+
+/// Serve file content with appropriate Content-Type for browser preview.
+/// GET /api/files/content?path=first/photos/image.jpg
+/// Accepts auth via Authorization header or ?token= query param (for media tags).
+async fn files_content_handler(
+    headers: axum::http::HeaderMap,
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    // Accept token from query param (for <img>/<video>/<audio> tags) or header
+    let token = params
+        .get("token")
+        .cloned()
+        .or_else(|| {
+            headers
+                .get("authorization")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("Bearer "))
+                .map(|s| s.to_string())
+        });
+    let token = match token {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": "Missing token"})),
+            )
+                .into_response();
+        }
+    };
+    let client_ip = headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+    if state.auth.validate(&token, client_ip).await.is_err() {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "Invalid token"})),
+        )
+            .into_response();
+    }
+
+    let req_path = match params.get("path") {
+        Some(p) if !p.is_empty() => p.as_str(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "path is required"})),
+            )
+                .into_response();
+        }
+    };
+
+    let target = match safe_path(req_path) {
+        Ok(p) => p,
+        Err(status) => {
+            return (status, Json(serde_json::json!({"error": "Invalid path"}))).into_response();
+        }
+    };
+
+    // Don't serve directories or block subvolume contents
+    if target.is_dir() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Cannot serve directory"})),
+        )
+            .into_response();
+    }
+    if is_inside_block_subvolume(&target) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "Cannot access block subvolume contents"})),
+        )
+            .into_response();
+    }
+
+    // Determine content type from extension
+    let content_type = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| match ext.to_lowercase().as_str() {
+            // Images
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "svg" => "image/svg+xml",
+            "ico" => "image/x-icon",
+            "bmp" => "image/bmp",
+            "avif" => "image/avif",
+            // Video
+            "mp4" | "m4v" => "video/mp4",
+            "webm" => "video/webm",
+            "ogv" => "video/ogg",
+            "mkv" => "video/x-matroska",
+            "avi" => "video/x-msvideo",
+            "mov" => "video/quicktime",
+            // Audio
+            "mp3" => "audio/mpeg",
+            "ogg" | "oga" => "audio/ogg",
+            "wav" => "audio/wav",
+            "flac" => "audio/flac",
+            "aac" | "m4a" => "audio/mp4",
+            "wma" => "audio/x-ms-wma",
+            "opus" => "audio/opus",
+            // Documents
+            "pdf" => "application/pdf",
+            // Text
+            "txt" | "log" | "md" | "csv" | "conf" | "cfg" | "ini" | "yml" | "yaml"
+            | "toml" | "json" | "xml" | "html" | "htm" | "css" | "js" | "ts"
+            | "rs" | "py" | "sh" | "bash" | "nix" | "c" | "h" | "cpp" | "go"
+            | "java" | "rb" | "php" | "sql" | "dockerfile" => "text/plain; charset=utf-8",
+            _ => "application/octet-stream",
+        })
+        .unwrap_or("application/octet-stream");
+
+    // Stream the file
+    let file = match tokio::fs::File::open(&target).await {
+        Ok(f) => f,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "File not found"})),
+            )
+                .into_response();
+        }
+    };
+
+    let metadata = file.metadata().await.ok();
+    let file_size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
+    let file_name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file");
+
+    let stream = tokio_util::io::ReaderStream::new(file);
+    let body = axum::body::Body::from_stream(stream);
+
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        axum::http::header::CONTENT_TYPE,
+        content_type.parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_LENGTH,
+        file_size.to_string().parse().unwrap(),
+    );
+    // Inline display for previewable types, attachment for downloads
+    let disposition = if content_type.starts_with("image/")
+        || content_type.starts_with("video/")
+        || content_type.starts_with("audio/")
+        || content_type == "application/pdf"
+        || content_type.starts_with("text/")
+    {
+        format!("inline; filename=\"{file_name}\"")
+    } else {
+        format!("attachment; filename=\"{file_name}\"")
+    };
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap(),
+    );
+
+    (StatusCode::OK, headers, body).into_response()
 }
 
 // ── Login endpoint ──────────────────────────────────────────────

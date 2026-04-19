@@ -29,3 +29,4 @@ futures-util.workspace = true
 schemars.workspace = true
 reqwest.workspace = true
 sha2 = "0.10.9"
+tokio-util = { workspace = true, features = ["io"] }

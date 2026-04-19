@@ -3,7 +3,7 @@
 	import { getToken } from '$lib/auth';
 	import { Card, CardContent } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { FolderOpen, File, ArrowUp, Upload, FolderPlus, Trash2 } from '@lucide/svelte';
+	import { FolderOpen, File, ArrowUp, Upload, FolderPlus, Trash2, Image, Film, Music, FileText, Download } from '@lucide/svelte';
 
 	interface FileEntry {
 		name: string;
@@ -16,6 +16,74 @@
 	let entries: FileEntry[] = $state([]);
 	let loading = $state(true);
 	let showHidden = $state(false);
+
+	// Preview state
+	let previewFile: FileEntry | null = $state(null);
+
+	const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'avif', 'ico']);
+	const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'ogv', 'mkv', 'avi', 'mov']);
+	const AUDIO_EXT = new Set(['mp3', 'ogg', 'oga', 'wav', 'flac', 'aac', 'm4a', 'wma', 'opus']);
+	const TEXT_EXT = new Set(['txt', 'log', 'md', 'csv', 'conf', 'cfg', 'ini', 'yml', 'yaml', 'toml', 'json', 'xml', 'html', 'htm', 'css', 'js', 'ts', 'rs', 'py', 'sh', 'bash', 'nix', 'c', 'h', 'cpp', 'go', 'java', 'rb', 'php', 'sql', 'dockerfile']);
+	const PDF_EXT = new Set(['pdf']);
+
+	function fileExt(name: string): string {
+		const dot = name.lastIndexOf('.');
+		return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+	}
+
+	function fileCategory(name: string): 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'other' {
+		const ext = fileExt(name);
+		if (IMAGE_EXT.has(ext)) return 'image';
+		if (VIDEO_EXT.has(ext)) return 'video';
+		if (AUDIO_EXT.has(ext)) return 'audio';
+		if (PDF_EXT.has(ext)) return 'pdf';
+		if (TEXT_EXT.has(ext)) return 'text';
+		return 'other';
+	}
+
+	function isPreviewable(entry: FileEntry): boolean {
+		return !entry.is_dir && fileCategory(entry.name) !== 'other';
+	}
+
+	function contentUrl(entry: FileEntry): string {
+		const path = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+		const token = getToken();
+		return `/api/files/content?path=${encodeURIComponent(path)}&token=${encodeURIComponent(token ?? '')}`;
+	}
+
+	function openPreview(entry: FileEntry) {
+		if (isPreviewable(entry)) {
+			previewFile = entry;
+		} else {
+			// Non-previewable files — trigger download
+			const a = document.createElement('a');
+			a.href = contentUrl(entry);
+			a.download = entry.name;
+			a.click();
+		}
+	}
+
+	let previewText = $state('');
+	async function loadTextPreview(entry: FileEntry) {
+		try {
+			const token = getToken();
+			const path = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+			const res = await fetch(`/api/files/content?path=${encodeURIComponent(path)}`, {
+				headers: { 'Authorization': `Bearer ${token}` },
+			});
+			previewText = await res.text();
+		} catch {
+			previewText = 'Failed to load file content';
+		}
+	}
+
+	$effect(() => {
+		if (previewFile && fileCategory(previewFile.name) === 'text') {
+			loadTextPreview(previewFile);
+		} else {
+			previewText = '';
+		}
+	});
 
 	const visibleEntries = $derived(
 		showHidden ? entries : entries.filter(e => !e.name.startsWith('.'))
@@ -260,22 +328,44 @@
 								<span class="font-medium">{entry.name}</span>
 							</button>
 						{:else}
-							<div class="flex items-center gap-2">
-								<File size={16} class="text-muted-foreground shrink-0" />
-								<span>{entry.name}</span>
-							</div>
+							{@const cat = fileCategory(entry.name)}
+							<button class="flex items-center gap-2 hover:text-primary transition-colors text-left" onclick={() => openPreview(entry)}>
+								{#if cat === 'image'}
+									<Image size={16} class="text-blue-400 shrink-0" />
+								{:else if cat === 'video'}
+									<Film size={16} class="text-purple-400 shrink-0" />
+								{:else if cat === 'audio'}
+									<Music size={16} class="text-green-400 shrink-0" />
+								{:else if cat === 'pdf' || cat === 'text'}
+									<FileText size={16} class="text-orange-400 shrink-0" />
+								{:else}
+									<File size={16} class="text-muted-foreground shrink-0" />
+								{/if}
+								<span class={isPreviewable(entry) ? '' : 'text-foreground'}>{entry.name}</span>
+							</button>
 						{/if}
 					</td>
 					<td class="p-3 text-right text-muted-foreground tabular-nums">{entry.is_dir ? '—' : formatSize(entry.size)}</td>
 					<td class="p-3 text-right text-muted-foreground text-xs tabular-nums">{formatDate(entry.modified)}</td>
 					{#if !isRoot}
 						<td class="p-3 text-right">
-							<button
-								class="text-muted-foreground/40 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
-								onclick={() => deleteTarget = entry}
-								title="Delete">
-								<Trash2 size={14} />
-							</button>
+							<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100">
+								{#if !entry.is_dir}
+									<a
+										href={contentUrl(entry)}
+										download={entry.name}
+										class="text-muted-foreground/40 hover:text-foreground transition-colors"
+										title="Download">
+										<Download size={14} />
+									</a>
+								{/if}
+								<button
+									class="text-muted-foreground/40 hover:text-destructive transition-colors"
+									onclick={() => deleteTarget = entry}
+									title="Delete">
+									<Trash2 size={14} />
+								</button>
+							</div>
 						</td>
 					{/if}
 				</tr>
@@ -303,5 +393,51 @@
 				</div>
 			</CardContent>
 		</Card>
+	</div>
+{/if}
+
+<!-- File preview modal -->
+{#if previewFile}
+	{@const cat = fileCategory(previewFile.name)}
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onclick={() => previewFile = null}>
+		<div class="relative flex flex-col max-w-[90vw] max-h-[90vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl" onclick={(e) => e.stopPropagation()}>
+			<!-- Header -->
+			<div class="flex items-center justify-between px-4 py-2 border-b border-border">
+				<span class="text-sm font-semibold text-white font-mono">{previewFile.name}</span>
+				<div class="flex items-center gap-2">
+					<a
+						href={contentUrl(previewFile)}
+						download={previewFile.name}
+						class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+						<Download size={12} /> Download
+					</a>
+					<Button variant="ghost" size="xs" onclick={() => previewFile = null} class="text-white hover:text-white/80">
+						Close
+					</Button>
+				</div>
+			</div>
+
+			<!-- Content -->
+			<div class="flex-1 overflow-auto p-4 flex items-center justify-center min-h-[200px]">
+				{#if cat === 'image'}
+					<img src={contentUrl(previewFile)} alt={previewFile.name} class="max-w-full max-h-[80vh] object-contain" />
+				{:else if cat === 'video'}
+					<video controls autoplay class="max-w-full max-h-[80vh]">
+						<source src={contentUrl(previewFile)} />
+						<track kind="captions" />
+					</video>
+				{:else if cat === 'audio'}
+					<div class="flex flex-col items-center gap-4 py-8">
+						<Music size={48} class="text-green-400" />
+						<span class="text-sm text-muted-foreground">{previewFile.name}</span>
+						<audio controls autoplay src={contentUrl(previewFile)} class="w-full max-w-md"></audio>
+					</div>
+				{:else if cat === 'pdf'}
+					<iframe src={contentUrl(previewFile)} class="w-full h-[80vh]" title={previewFile.name}></iframe>
+				{:else if cat === 'text'}
+					<pre class="w-full max-h-[80vh] overflow-auto text-xs text-green-400 font-mono whitespace-pre-wrap p-4">{previewText || 'Loading...'}</pre>
+				{/if}
+			</div>
+		</div>
 	</div>
 {/if}
