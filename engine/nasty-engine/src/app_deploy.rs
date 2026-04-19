@@ -235,6 +235,12 @@ async fn deploy_compose(socket: &mut WebSocket, state: &AppState, req: &DeployRe
         args.push("--remove-orphans");
     }
     if let Err(e) = stream_command(socket, "docker", &args).await {
+        // Clean up partially created containers before removing the compose dir
+        let _ = socket.send(Message::Text(DeployMessage::log("Cleaning up failed deployment...").into())).await;
+        let _ = Command::new("docker")
+            .args(["compose", "-f", &compose_path, "--project-name", &req.name, "down", "-v", "--remove-orphans"])
+            .output()
+            .await;
         if !is_update {
             let _ = tokio::fs::remove_dir_all(&compose_dir).await;
         }

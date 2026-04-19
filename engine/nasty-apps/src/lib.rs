@@ -1046,14 +1046,24 @@ impl AppsService {
         )
         .await;
 
+        let compose_path = format!("{}/docker-compose.yml", project_dir);
+        let cleanup = |project_dir: String, name: String, compose_path: String| async move {
+            // Tear down any partially created containers before removing the dir
+            let _ = Command::new("docker")
+                .args(["compose", "-f", &compose_path, "--project-name", &name, "down", "-v", "--remove-orphans"])
+                .output()
+                .await;
+            let _ = tokio::fs::remove_dir_all(&project_dir).await;
+        };
+
         let output = match result {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => {
-                let _ = tokio::fs::remove_dir_all(&project_dir).await;
+                cleanup(project_dir, req.name, compose_path).await;
                 return Err(AppsError::CommandFailed(e.to_string()));
             }
             Err(_) => {
-                let _ = tokio::fs::remove_dir_all(&project_dir).await;
+                cleanup(project_dir, req.name, compose_path).await;
                 return Err(AppsError::DockerFailed(
                     "docker compose timed out after 5 minutes".to_string(),
                 ));
@@ -1062,8 +1072,7 @@ impl AppsService {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            // Clean up on failure
-            let _ = tokio::fs::remove_dir_all(&project_dir).await;
+            cleanup(project_dir, req.name, compose_path).await;
             return Err(AppsError::DockerFailed(stderr.to_string()));
         }
 
