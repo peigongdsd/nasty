@@ -58,6 +58,8 @@ fn is_operator_allowed(method: &str) -> bool {
                 | "apps.install"
                 | "apps.update"
                 | "apps.remove"
+                | "apps.stop"
+                | "apps.start"
                 | "apps.compose.install"
                 | "apps.compose.update"
                 | "apps.compose.remove"
@@ -2003,6 +2005,20 @@ async fn route(req: &Request, state: &AppState, session: &Session) -> Response {
         },
         "apps.remove" => match require_str(req, "name") {
             Ok(name) => match state.apps.remove(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "apps.stop" => match require_str(req, "name") {
+            Ok(name) => match state.apps.stop(name).await {
+                Ok(()) => ok(req, "ok"),
+                Err(e) => err(req, e),
+            },
+            Err(r) => r,
+        },
+        "apps.start" => match require_str(req, "name") {
+            Ok(name) => match state.apps.start(name).await {
                 Ok(()) => ok(req, "ok"),
                 Err(e) => err(req, e),
             },

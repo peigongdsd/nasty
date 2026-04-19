@@ -120,7 +120,7 @@ pub struct AppsConfig {
 pub struct App {
     /// App name (container name for simple, project name for compose).
     pub name: String,
-    /// Container image.
+    /// Container image (primary image for compose apps).
     pub image: String,
     /// Current status: "running", "stopped", "restarting", "created", "exited".
     pub status: String,
@@ -128,6 +128,32 @@ pub struct App {
     pub created: String,
     /// App kind: "simple" or "compose".
     pub kind: String,
+    /// Individual containers (for compose apps with multiple services).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub containers: Vec<AppContainer>,
+    /// Host ports mapped by this app.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ports: Vec<MappedPort>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AppContainer {
+    /// Container name.
+    pub name: String,
+    /// Container image.
+    pub image: String,
+    /// Container status.
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MappedPort {
+    /// Host port.
+    pub host_port: u16,
+    /// Container port.
+    pub container_port: u16,
+    /// Protocol (tcp/udp).
+    pub protocol: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -639,24 +665,19 @@ impl AppsService {
                 .and_then(|l| l.get(LABEL_APP_KIND))
                 .cloned()
                 .unwrap_or_else(|| "simple".to_string());
-            let status = c
-                .state
-                .as_ref()
-                .map(|s| format!("{:?}", s).to_lowercase())
-                .unwrap_or_else(|| "unknown".to_string());
-            let image = c.image.as_deref().unwrap_or("").to_string();
-            let created = c.created.map(chrono_from_timestamp).unwrap_or_default();
 
             apps.push(App {
                 name: app_name,
-                image,
-                status,
-                created,
+                image: c.image.as_deref().unwrap_or("").to_string(),
+                status: container_status_str(c),
+                created: c.created.map(chrono_from_timestamp).unwrap_or_default(),
                 kind,
+                containers: vec![],
+                ports: extract_ports(c),
             });
         }
 
-        // Also discover compose apps from the compose directory
+        // Discover compose apps from the compose directory
         if let Ok(mut entries) = tokio::fs::read_dir(COMPOSE_DIR).await {
             while let Ok(Some(entry)) = entries.next_entry().await {
                 let name = entry.file_name().to_string_lossy().to_string();
@@ -668,7 +689,7 @@ impl AppsService {
                     continue;
                 }
 
-                // Find the first container from this compose project
+                // Find all containers from this compose project
                 let mut pf = HashMap::new();
                 pf.insert(
                     "label".to_string(),
@@ -684,26 +705,57 @@ impl AppsService {
                     .await
                     .unwrap_or_default();
 
-                let (status, image, created) = if let Some(c) = compose_containers.first() {
-                    (
-                        c.state
-                            .as_ref()
-                            .map(|s| format!("{:?}", s).to_lowercase())
-                            .unwrap_or_else(|| "unknown".to_string()),
-                        c.image.as_deref().unwrap_or("").to_string(),
-                        c.created.map(chrono_from_timestamp).unwrap_or_default(),
-                    )
+                // Collect all containers, ports, and derive overall status
+                let mut containers = Vec::new();
+                let mut all_ports = Vec::new();
+                let mut any_running = false;
+                let mut primary_image = String::new();
+                let mut created = String::new();
+
+                for c in &compose_containers {
+                    let svc_name = c.labels.as_ref()
+                        .and_then(|l| l.get("com.docker.compose.service"))
+                        .cloned()
+                        .unwrap_or_default();
+                    let image = c.image.as_deref().unwrap_or("").to_string();
+                    let status = container_status_str(c);
+
+                    if primary_image.is_empty() {
+                        primary_image = image.clone();
+                        created = c.created.map(chrono_from_timestamp).unwrap_or_default();
+                    }
+                    if status == "running" {
+                        any_running = true;
+                    }
+
+                    all_ports.extend(extract_ports(c));
+                    containers.push(AppContainer {
+                        name: svc_name,
+                        image,
+                        status,
+                    });
+                }
+
+                all_ports.sort_by_key(|p| p.host_port);
+                all_ports.dedup_by_key(|p| p.host_port);
+
+                let overall_status = if compose_containers.is_empty() {
+                    "stopped".to_string()
+                } else if any_running {
+                    "running".to_string()
                 } else {
-                    ("stopped".to_string(), String::new(), String::new())
+                    "exited".to_string()
                 };
 
                 seen_names.insert(name.clone());
                 apps.push(App {
                     name,
-                    image,
-                    status,
+                    image: primary_image,
+                    status: overall_status,
                     created,
                     kind: "compose".to_string(),
+                    containers,
+                    ports: all_ports,
                 });
             }
         }
@@ -856,6 +908,66 @@ impl AppsService {
         Ok(output)
     }
 
+    // ── Stop / Start ────────────────────────────────────────
+
+    pub async fn stop(&self, name: &str) -> Result<(), AppsError> {
+        self.require_ready().await?;
+
+        // Check if it's a compose app
+        let compose_file = format!("{}/{}/docker-compose.yml", COMPOSE_DIR, name);
+        if Path::new(&compose_file).exists() {
+            let output = Command::new("docker")
+                .args(["compose", "-f", &compose_file, "--project-name", name, "stop"])
+                .output()
+                .await
+                .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppsError::DockerFailed(stderr.to_string()));
+            }
+        } else {
+            let cname = container_name(name);
+            if !self.container_exists(&cname).await {
+                return Err(AppsError::AppNotFound(name.to_string()));
+            }
+            self.docker
+                .stop_container(&cname, Some(StopContainerOptions { t: Some(10), signal: None }))
+                .await?;
+        }
+
+        info!("Stopped app '{name}'");
+        Ok(())
+    }
+
+    pub async fn start(&self, name: &str) -> Result<(), AppsError> {
+        self.require_ready().await?;
+
+        // Check if it's a compose app
+        let compose_file = format!("{}/{}/docker-compose.yml", COMPOSE_DIR, name);
+        if Path::new(&compose_file).exists() {
+            let output = Command::new("docker")
+                .args(["compose", "-f", &compose_file, "--project-name", name, "start"])
+                .output()
+                .await
+                .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(AppsError::DockerFailed(stderr.to_string()));
+            }
+        } else {
+            let cname = container_name(name);
+            if !self.container_exists(&cname).await {
+                return Err(AppsError::AppNotFound(name.to_string()));
+            }
+            self.docker
+                .start_container(&cname, None::<bollard::query_parameters::StartContainerOptions>)
+                .await?;
+        }
+
+        info!("Started app '{name}'");
+        Ok(())
+    }
+
     // ── Compose app management ──────────────────────────────
 
     pub async fn compose_install(&self, req: InstallComposeRequest) -> Result<App, AppsError> {
@@ -926,6 +1038,16 @@ impl AppsService {
         // Label the containers after creation (docker compose doesn't support
         // DOCKER_DEFAULT_LABELS reliably across all versions)
         self.label_compose_containers(&req.name).await;
+
+        // Auto-create ingress for the first exposed port
+        if let Ok(app) = self.get(&req.name).await {
+            if let Some(first_port) = app.ports.first() {
+                let _ = self.ingress_set(SetIngressRequest {
+                    name: req.name.clone(),
+                    host_port: first_port.host_port,
+                }).await;
+            }
+        }
 
         info!("Installed compose app '{}'", req.name);
         self.get(&req.name).await
@@ -1339,6 +1461,32 @@ fn format_memory_limit(bytes: u64) -> String {
 }
 
 /// Convert a Unix timestamp (seconds) to a simple ISO 8601-ish string.
+/// Extract host→container port mappings from a container summary.
+fn extract_ports(c: &bollard::models::ContainerSummary) -> Vec<MappedPort> {
+    let mut ports = Vec::new();
+    if let Some(ref p) = c.ports {
+        for port in p {
+            if let (Some(public), Some(_)) = (port.public_port, Some(port.private_port)) {
+                ports.push(MappedPort {
+                    host_port: public as u16,
+                    container_port: port.private_port as u16,
+                    protocol: port.typ.as_ref().map(|t| format!("{:?}", t).to_lowercase()).unwrap_or_else(|| "tcp".to_string()),
+                });
+            }
+        }
+    }
+    ports.sort_by_key(|p| p.host_port);
+    ports.dedup_by_key(|p| p.host_port);
+    ports
+}
+
+fn container_status_str(c: &bollard::models::ContainerSummary) -> String {
+    c.state
+        .as_ref()
+        .map(|s| format!("{:?}", s).to_lowercase())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 fn chrono_from_timestamp(ts: i64) -> String {
     if ts <= 0 {
         return String::new();

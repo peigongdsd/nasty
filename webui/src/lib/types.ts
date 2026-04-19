@@ -584,6 +584,20 @@ export interface App {
 	status: string;
 	created: string;
 	kind: string; // "simple" or "compose"
+	containers?: AppContainer[];
+	ports?: MappedPort[];
+}
+
+export interface AppContainer {
+	name: string;
+	image: string;
+	status: string;
+}
+
+export interface MappedPort {
+	host_port: number;
+	container_port: number;
+	protocol: string;
 }
 
 export interface AppConfig {

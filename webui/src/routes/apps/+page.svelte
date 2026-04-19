@@ -3,7 +3,7 @@
 	import { getClient } from '$lib/client';
 	import { withToast } from '$lib/toast.svelte';
 	import { confirm } from '$lib/confirm.svelte';
-	import type { AppsStatus, App, AppIngress, AppConfig, ImageInspectResult } from '$lib/types';
+	import type { AppsStatus, App, AppIngress, AppConfig, ImageInspectResult, AppContainer, MappedPort } from '$lib/types';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Input } from '$lib/components/ui/input';
@@ -293,6 +293,18 @@
 		);
 		await refresh();
 	}
+
+	async function stopApp(name: string) {
+		await withToast(() => client.call('apps.stop', { name }), 'App stopped');
+		await refresh();
+	}
+
+	async function startApp(name: string) {
+		await withToast(() => client.call('apps.start', { name }), 'App started');
+		await refresh();
+	}
+
+	let expanded: Record<string, boolean> = $state({});
 
 	async function showLogs(name: string, kind: string) {
 		logsApp = name;
@@ -658,18 +670,30 @@
 				<tr>
 					<SortTh label="Name" active={true} dir={sortDir} onclick={toggleSort} />
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Image</th>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Kind</th>
+					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Ports</th>
 					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground">Status</th>
-					<th class="border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground w-px whitespace-nowrap">Actions</th>
+					<th class="w-px border-b-2 border-border p-3 text-left text-xs uppercase text-muted-foreground whitespace-nowrap">Actions</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each sorted as app}
 					<tr class="border-b border-border hover:bg-muted/30 transition-colors">
-						<td class="p-3 font-semibold">{app.name}</td>
-						<td class="p-3 text-xs text-muted-foreground font-mono max-w-[200px] truncate">{app.image}</td>
 						<td class="p-3">
-							<Badge variant="outline">{app.kind}</Badge>
+							<div class="flex items-center gap-2">
+								<span class="font-semibold">{app.name}</span>
+								<Badge variant="outline" class="text-[0.6rem]">{app.kind}</Badge>
+								{#if app.containers && app.containers.length > 1}
+									<button class="text-xs text-muted-foreground hover:text-foreground" onclick={() => expanded[app.name] = !expanded[app.name]}>
+										{app.containers.length} containers {expanded[app.name] ? '▾' : '▸'}
+									</button>
+								{/if}
+							</div>
+						</td>
+						<td class="p-3 text-xs text-muted-foreground font-mono max-w-[200px] truncate">{app.image}</td>
+						<td class="p-3 text-xs font-mono text-muted-foreground">
+							{#if app.ports && app.ports.length > 0}
+								{app.ports.map(p => `${p.host_port}:${p.container_port}`).join(', ')}
+							{/if}
 						</td>
 						<td class="p-3">
 							<Badge variant={app.status === 'running' ? 'default' : 'secondary'}>
@@ -683,6 +707,11 @@
 										Open
 									</a>
 								{/if}
+								{#if app.status === 'running'}
+									<Button variant="outline" size="xs" onclick={() => stopApp(app.name)}>Stop</Button>
+								{:else}
+									<Button variant="outline" size="xs" onclick={() => startApp(app.name)}>Start</Button>
+								{/if}
 								{#if app.kind === 'simple'}
 									<Button variant="outline" size="xs" onclick={() => editApp(app.name)}>Edit</Button>
 								{:else}
@@ -693,6 +722,19 @@
 							</div>
 						</td>
 					</tr>
+					{#if expanded[app.name] && app.containers && app.containers.length > 1}
+						{#each app.containers as ct}
+							<tr class="bg-muted/20">
+								<td class="pl-8 pr-3 py-1.5 text-xs text-muted-foreground">{ct.name}</td>
+								<td class="p-1.5 text-xs text-muted-foreground font-mono">{ct.image}</td>
+								<td class="p-1.5"></td>
+								<td class="p-1.5">
+									<Badge variant={ct.status === 'running' ? 'default' : 'secondary'} class="text-[0.6rem]">{ct.status}</Badge>
+								</td>
+								<td class="p-1.5"></td>
+							</tr>
+						{/each}
+					{/if}
 				{/each}
 			</tbody>
 		</table>
