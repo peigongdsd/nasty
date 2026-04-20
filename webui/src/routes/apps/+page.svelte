@@ -822,7 +822,8 @@
 					{#if portConflicts.length > 0}
 						<div class="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
 							{#each portConflicts as c}
-								<div>Port {c.port} is already in use by <span class="font-semibold">{c.used_by}</span> — change the left side of the port mapping (e.g. <code>"{c.port}:80"</code> → <code>"8{c.port}:80"</code>)</div>
+								{@const alt = c.port < 1000 ? c.port + 8000 : c.port + 1}
+							<div>Port {c.port} is already in use by <span class="font-semibold">{c.used_by}</span> — change the exposed (left) port, e.g. <code>"{alt}:..."</code></div>
 							{/each}
 						</div>
 					{/if}
