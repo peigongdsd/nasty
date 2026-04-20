@@ -821,11 +821,11 @@
 					{#if portConflicts.length > 0}
 						<div class="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
 							{#each portConflicts as c}
-								<div>Port {c.port} is already in use by <span class="font-semibold">{c.used_by}</span></div>
+								<div>Port {c.port} is already in use by <span class="font-semibold">{c.used_by}</span> — change the left side of the port mapping (e.g. <code>"{c.port}:80"</code> → <code>"8{c.port}:80"</code>)</div>
 							{/each}
 						</div>
 					{/if}
-					<span class="mt-1 block text-xs text-muted-foreground">Paste a standard docker-compose.yml file. No modifications needed.</span>
+					<span class="mt-1 block text-xs text-muted-foreground">Port format is <code>exposed:internal</code> — change the left (exposed) port to avoid conflicts.</span>
 				</div>
 				<div class="flex gap-2">
 					<Button onclick={installCompose} disabled={!composeName || !composeContent.trim() || (!editingCompose && !isValidAppName(composeName))}>
