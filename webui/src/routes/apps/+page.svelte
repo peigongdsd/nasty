@@ -702,10 +702,19 @@
 						<Label>Ports</Label>
 						<Button size="xs" variant="outline" onclick={addPort}>+ Add Port</Button>
 					</div>
+					{#if newPorts.length > 0}
+						<div class="grid grid-cols-[1fr_80px_90px_60px_auto] gap-2 mb-1">
+							<span class="text-[0.65rem] text-muted-foreground">Name</span>
+							<span class="text-[0.65rem] text-muted-foreground">Internal</span>
+							<span class="text-[0.65rem] text-muted-foreground">Exposed</span>
+							<span class="text-[0.65rem] text-muted-foreground"></span>
+							<span></span>
+						</div>
+					{/if}
 					{#each newPorts as port, i}
 						<div class="grid grid-cols-[1fr_80px_90px_60px_auto] gap-2 mt-1 items-center">
 							<Input bind:value={port.name} placeholder="e.g. http" class="h-8 text-xs" />
-							<Input type="number" bind:value={port.container_port} placeholder="Port" class="h-8 text-xs" oninput={() => checkPortConflicts(editingApp ?? undefined)} />
+							<Input type="number" bind:value={port.container_port} placeholder="Port" class="h-8 text-xs" disabled />
 							<Input bind:value={port.host_port} placeholder="auto" class="h-8 text-xs" oninput={() => checkPortConflicts(editingApp ?? undefined)} />
 							<select bind:value={port.protocol} class="h-8 rounded-md border border-input bg-transparent px-1 text-xs">
 								<option>TCP</option>
@@ -721,7 +730,7 @@
 							{/each}
 						</div>
 					{/if}
-					<p class="mt-1 text-[0.6rem] text-muted-foreground">Host port is auto-assigned if left empty. App will be accessible at /apps/{'{name}'}/ via reverse proxy.</p>
+					<p class="mt-1 text-[0.6rem] text-muted-foreground">Internal = port inside the container (from image). Exposed = port on the host (leave empty for auto). App is also accessible at /apps/{'{name}'}/ via reverse proxy.</p>
 				</div>
 
 				<!-- Environment Variables -->
