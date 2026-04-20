@@ -1479,21 +1479,26 @@ impl AppsService {
             .ok()
     }
 
-    /// Total memory usage of all managed containers (simple + compose).
+    /// Total memory usage of Docker (daemon + containers), excluding page cache.
+    /// Reads anon + kernel from cgroup memory.stat to avoid counting reclaimable
+    /// filesystem cache that inflates MemoryCurrent.
     async fn total_memory_usage(&self) -> Option<u64> {
-        // Use cgroup memory from systemd (fast, one call).
-        let output = tokio::process::Command::new("systemctl")
-            .args(["show", DOCKER_SERVICE, "--property=MemoryCurrent"])
-            .output()
-            .await
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
-            .trim()
-            .strip_prefix("MemoryCurrent=")?
-            .parse::<u64>()
-            .ok()
-            .filter(|&v| v < u64::MAX) // systemd returns max uint if not tracked
+        let stat_path = "/sys/fs/cgroup/system.slice/docker.service/memory.stat";
+        let content = tokio::fs::read_to_string(stat_path).await.ok()?;
+
+        let mut anon: u64 = 0;
+        let mut kernel: u64 = 0;
+        for line in content.lines() {
+            let mut parts = line.split_whitespace();
+            match (parts.next(), parts.next()) {
+                (Some("anon"), Some(v)) => anon = v.parse().unwrap_or(0),
+                (Some("kernel"), Some(v)) => kernel = v.parse().unwrap_or(0),
+                _ => {}
+            }
+        }
+
+        let total = anon + kernel;
+        if total > 0 { Some(total) } else { None }
     }
 
     /// Total Docker disk usage (images + containers + volumes).
