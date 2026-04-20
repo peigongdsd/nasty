@@ -399,8 +399,8 @@
 <!-- File preview modal -->
 {#if previewFile}
 	{@const cat = fileCategory(previewFile.name)}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onclick={() => previewFile = null}>
-		<div class="relative flex flex-col max-w-[90vw] max-h-[90vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl" onclick={(e) => e.stopPropagation()}>
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" role="button" tabindex="-1" onclick={() => previewFile = null} onkeydown={(e) => { if (e.key === 'Escape') previewFile = null; }}>
+		<div class="relative flex flex-col max-w-[90vw] max-h-[90vh] rounded-lg border border-border bg-[#0f1117] shadow-2xl" role="presentation" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 			<!-- Header -->
 			<div class="flex items-center justify-between px-4 py-2 border-b border-border">
 				<span class="text-sm font-semibold text-white font-mono">{previewFile.name}</span>
