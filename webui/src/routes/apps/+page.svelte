@@ -158,7 +158,7 @@
 		if (portCheckTimer) clearTimeout(portCheckTimer);
 		portCheckTimer = setTimeout(async () => {
 			const ports = newPorts
-				.map(p => p.host_port ? parseInt(p.host_port) : 0)
+				.map(p => p.host_port ? parseInt(p.host_port) : p.container_port)
 				.filter(p => p > 0);
 			if (ports.length === 0) {
 				portConflicts = [];
@@ -705,7 +705,7 @@
 					{#each newPorts as port, i}
 						<div class="grid grid-cols-[1fr_80px_90px_60px_auto] gap-2 mt-1 items-center">
 							<Input bind:value={port.name} placeholder="e.g. http" class="h-8 text-xs" />
-							<Input type="number" bind:value={port.container_port} placeholder="Port" class="h-8 text-xs" />
+							<Input type="number" bind:value={port.container_port} placeholder="Port" class="h-8 text-xs" oninput={() => checkPortConflicts(editingApp ?? undefined)} />
 							<Input bind:value={port.host_port} placeholder="auto" class="h-8 text-xs" oninput={() => checkPortConflicts(editingApp ?? undefined)} />
 							<select bind:value={port.protocol} class="h-8 rounded-md border border-input bg-transparent px-1 text-xs">
 								<option>TCP</option>
