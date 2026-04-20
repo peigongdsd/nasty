@@ -1617,26 +1617,30 @@ impl AppsService {
     /// The WebUI can use this to pre-fill the Terminal page.
     pub async fn exec_command(&self, name: &str) -> Result<String, AppsError> {
         let compose_file = format!("{}/{}/docker-compose.yml", COMPOSE_DIR, name);
-        if Path::new(&compose_file).exists() {
+        let container = if Path::new(&compose_file).exists() {
             // Look up the first running container in the compose project
             let output = Command::new("docker")
                 .args(["compose", "-f", &compose_file, "--project-name", name, "ps", "-q"])
                 .output()
                 .await
                 .map_err(|e| AppsError::CommandFailed(e.to_string()))?;
-            let container_id = String::from_utf8_lossy(&output.stdout)
+            let id = String::from_utf8_lossy(&output.stdout)
                 .lines()
                 .next()
                 .unwrap_or("")
                 .trim()
                 .to_string();
-            if container_id.is_empty() {
+            if id.is_empty() {
                 return Err(AppsError::DockerFailed("no running containers in this app".to_string()));
             }
-            Ok(format!("docker exec -it {} sh", container_id))
+            id
         } else {
-            Ok(format!("docker exec -it {} sh", container_name(name)))
-        }
+            container_name(name)
+        };
+
+        // Probe for an available shell
+        let shell = find_container_shell(&container).await;
+        Ok(format!("docker exec -it {} {}", container, shell))
     }
 
     async fn write_proxy_conf(&self, rules: &[AppIngress]) -> Result<(), AppsError> {
@@ -1680,6 +1684,27 @@ async fn run_cmd(cmd: &str, args: &[&str]) -> Result<(), AppsError> {
         return Err(AppsError::CommandFailed(format!("{cmd}: {stderr}")));
     }
     Ok(())
+}
+
+/// Probe a running container for an available shell.
+/// Returns the first working shell, or "sh" as a last resort.
+async fn find_container_shell(container: &str) -> &'static str {
+    for shell in ["/bin/bash", "/bin/sh", "/bin/ash"] {
+        let result = Command::new("docker")
+            .args(["exec", container, "test", "-x", shell])
+            .output()
+            .await;
+        if let Ok(output) = result {
+            if output.status.success() {
+                return match shell {
+                    "/bin/bash" => "/bin/bash",
+                    "/bin/ash" => "/bin/ash",
+                    _ => "/bin/sh",
+                };
+            }
+        }
+    }
+    "sh"
 }
 
 async fn reload_nginx() {
