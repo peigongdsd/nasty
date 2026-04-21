@@ -21,8 +21,6 @@
       nasty-top = nasty-top.packages.${final.stdenv.hostPlatform.system}.default;
     };
 
-    nixpkgsOverlayModule = { nixpkgs.overlays = [ nastyOverlay ]; };
-
     # Helper to build packages for a given system
     mkPkgs = system: import nixpkgs {
       inherit system;
@@ -155,10 +153,9 @@
     in rec {
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
-          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
 
@@ -168,10 +165,9 @@
       };
 
       nasty-rootfs = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
-          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           ./nixos/modules/nasty.nix
@@ -184,7 +180,7 @@
 
       # ISO image for installation
       nasty-iso = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
@@ -192,7 +188,6 @@
           installerNastySource = self.outPath;
         };
         modules = [
-          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -204,7 +199,7 @@
       # (e.g. ODROID H3 with JSL firmware)
       # Build: nix build .#nixosConfigurations.nasty-iso-sd.config.system.build.isoImage
       nasty-iso-sd = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
@@ -212,7 +207,6 @@
           installerNastySource = self.outPath;
         };
         modules = [
-          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -227,10 +221,9 @@
 
       # QEMU VM for testing
       nasty-vm = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
-          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
 
@@ -242,10 +235,9 @@
 
       # Cloud/CI disk image (Oracle Cloud compatible)
       nasty-cloud = nixpkgs.lib.nixosSystem {
-        inherit system;
+        inherit system pkgs;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
-          nixpkgsOverlayModule
           "${nixpkgs}/nixos/modules/virtualisation/oci-image.nix"
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
