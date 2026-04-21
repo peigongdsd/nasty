@@ -1,4 +1,4 @@
-args@{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, ... }:
+args@{ config, lib, pkgs, nastyTopPackage, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, ... }:
 
 let
   cfg = config.services.nasty;
@@ -488,7 +488,7 @@ in {
       docker-compose    # Docker Compose for multi-container apps
       lego              # ACME client for Let's Encrypt certificates
       croc              # peer-to-peer file transfer for sending debug reports
-      nasty-top
+      nastyTopPackage
 
       (writeShellScriptBin "nasty-report" ''
         set -euo pipefail

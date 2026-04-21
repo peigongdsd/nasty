@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    nasty-top.url = "git+https://github.com/nasty-project/nasty-top?ref=master";
+    nasty-top.inputs.nixpkgs.follows = "nixpkgs";
+
     bcachefs-tools.url = "github:koverstreet/bcachefs-tools/v1.37.5";
     bcachefs-tools.inputs.nixpkgs.follows = "nixpkgs";
 
@@ -11,10 +14,11 @@
     # and local system placeholders when writing /etc/nixos/flake.nix.
     nasty.url = "github:nasty-project/nasty/@NASTY_VERSION@";
     nasty.inputs.nixpkgs.follows = "nixpkgs";
+    nasty.inputs.nasty-top.follows = "nasty-top";
     nasty.inputs.bcachefs-tools.follows = "bcachefs-tools";
   };
 
-  outputs = { self, nixpkgs, nasty, ... }:
+  outputs = { self, nixpkgs, nasty, nasty-top, ... }:
     let
       nasty-version =
         (builtins.fromTOML (builtins.readFile "${nasty}/engine/Cargo.toml")).workspace.package.version;
@@ -22,6 +26,7 @@
       mkSystem = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          nastyTopPackage = nasty-top.packages.${system}.default;
           # Preserve the exact wrapper flake used for this build inside the
           # system closure so it remains readable via /run/current-system/etc.
           nastySystemFlakeSnapshot = pkgs.runCommand "nasty-system-flake-snapshot" {} ''
@@ -32,6 +37,7 @@
         in nixpkgs.lib.nixosSystem {
           inherit system;
           specialArgs = {
+            inherit nastyTopPackage;
             nasty-engine = nasty.packages.${system}.engine;
             nasty-webui = nasty.packages.${system}.webui;
             nasty-version = nasty-version;
