@@ -779,23 +779,27 @@ echo "==> Update complete!"
             .get("nasty")
             .map(|input| input.url.clone())
             .ok_or_else(|| UpdateError::CommandFailed("missing request entry for nasty".into()))?;
-        let rewritten_flake = if let Some(target_tag) =
-            parse_official_nasty_release_tag(&requested_nasty_url)
+        let flake_replacements = url_changes
+            .iter()
+            .map(|(name, url)| (name.clone(), url.clone()))
+            .collect::<HashMap<_, _>>();
+        let rewritten_flake = if let Some(target_source) =
+            parse_github_input_source(&requested_nasty_url)
         {
             let token = read_github_token().await;
             let template = fetch_github_text_file(
                 token.as_deref(),
-                DEFAULT_NASTY_OWNER,
-                DEFAULT_NASTY_REPO,
+                &target_source.owner,
+                &target_source.repo,
                 SYSTEM_FLAKE_TEMPLATE_PATH,
-                &target_tag,
+                &target_source.git_ref,
             )
             .await?;
 
             if should_rebootstrap_wrapper_flake(&current_flake, &template)? {
                 let local_system = detect_local_system().await?;
                 let bootstrapped_flake =
-                    render_system_flake_template(&template, &target_tag, &local_system)?;
+                    render_system_flake_template(&template, &target_source.git_ref, &local_system)?;
                 let preserved_urls = HashMap::from([
                     (
                         String::from("nixpkgs"),
@@ -821,20 +825,13 @@ echo "==> Update complete!"
                             .url
                             .clone(),
                     ),
+                    (String::from("nasty"), requested_nasty_url.clone()),
                 ]);
                 rewrite_flake_input_urls(&bootstrapped_flake, &preserved_urls)?
             } else {
-                let flake_replacements = url_changes
-                    .iter()
-                    .map(|(name, url)| (name.clone(), url.clone()))
-                    .collect::<HashMap<_, _>>();
                 rewrite_flake_input_urls(&current_flake, &flake_replacements)?
             }
         } else {
-            let flake_replacements = url_changes
-                .iter()
-                .map(|(name, url)| (name.clone(), url.clone()))
-                .collect::<HashMap<_, _>>();
             rewrite_flake_input_urls(&current_flake, &flake_replacements)?
         };
         let flake_temp_path = "/tmp/nasty-version-flake.nix";
@@ -1962,7 +1959,13 @@ fn official_nasty_release_url(tag: &str) -> String {
     format!("github:{DEFAULT_NASTY_OWNER}/{DEFAULT_NASTY_REPO}/{tag}")
 }
 
-fn parse_official_nasty_release_tag(url: &str) -> Option<String> {
+struct GithubInputSource {
+    owner: String,
+    repo: String,
+    git_ref: String,
+}
+
+fn parse_github_input_source(url: &str) -> Option<GithubInputSource> {
     let trimmed = url.trim();
     let rest = trimmed.strip_prefix("github:")?;
     let mut parts = rest.split('/');
@@ -1972,10 +1975,22 @@ fn parse_official_nasty_release_tag(url: &str) -> Option<String> {
     if parts.next().is_some() {
         return None;
     }
+    Some(GithubInputSource {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+        git_ref: git_ref.to_string(),
+    })
+}
+
+fn parse_official_nasty_release_tag(url: &str) -> Option<String> {
+    let source = parse_github_input_source(url)?;
+    let owner = source.owner;
+    let repo = source.repo;
+    let git_ref = source.git_ref;
     if owner != DEFAULT_NASTY_OWNER || repo != DEFAULT_NASTY_REPO {
         return None;
     }
-    parse_release_tag_version(git_ref).map(|_| git_ref.to_string())
+    parse_release_tag_version(&git_ref).map(|_| git_ref)
 }
 
 fn parse_release_tag_version(tag: &str) -> Option<(u64, u64, u64)> {
