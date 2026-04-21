@@ -98,6 +98,10 @@ pub struct Subvolume {
     /// Whether O_DIRECT is enabled on the loop device (block subvolumes only).
     #[serde(default)]
     pub direct_io: bool,
+    /// Effective bcachefs options set on this subvolume (from bcachefs_effective.* xattrs).
+    /// Only includes options that differ from the filesystem default.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub bcachefs_options: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -135,19 +139,23 @@ struct SubvolumeMeta {
 struct SubvolumeAttrs {
     meta: SubvolumeMeta,
     properties: HashMap<String, String>,
+    /// Effective bcachefs options (from bcachefs_effective.* xattrs).
+    bcachefs_options: HashMap<String, String>,
 }
 
 /// Read all xattrs from a subvolume in one pass.
 /// Splits results into internal metadata (`user.nasty.*`) and user-visible properties
 /// (`user.nasty-csi:*` etc), avoiding duplicate enumeration.
+const BCACHEFS_EFFECTIVE_NS: &str = "bcachefs_effective.";
+
 fn read_all_xattrs(path: &Path) -> SubvolumeAttrs {
     let mut meta_raw: HashMap<String, String> = HashMap::new();
     let mut properties: HashMap<String, String> = HashMap::new();
+    let mut bcachefs_options: HashMap<String, String> = HashMap::new();
 
     if let Ok(attrs) = xattr::list(path) {
         for name in attrs {
             let name_str = name.to_string_lossy();
-            let Some(key) = name_str.strip_prefix(XATTR_NS) else { continue };
             let value = match xattr::get(path, &*name_str) {
                 Ok(Some(bytes)) => match String::from_utf8(bytes) {
                     Ok(v) => v,
@@ -155,12 +163,15 @@ fn read_all_xattrs(path: &Path) -> SubvolumeAttrs {
                 },
                 _ => continue,
             };
-            if key.starts_with(NASTY_KEY_PREFIX) {
-                // Internal metadata (user.nasty.*)
-                meta_raw.insert(key.to_string(), value);
-            } else {
-                // User-visible property (user.nasty-csi:* etc)
-                properties.insert(key.to_string(), value);
+            if let Some(key) = name_str.strip_prefix(BCACHEFS_EFFECTIVE_NS) {
+                // bcachefs effective options (bcachefs_effective.*)
+                bcachefs_options.insert(key.to_string(), value);
+            } else if let Some(key) = name_str.strip_prefix(XATTR_NS) {
+                if key.starts_with(NASTY_KEY_PREFIX) {
+                    meta_raw.insert(key.to_string(), value);
+                } else {
+                    properties.insert(key.to_string(), value);
+                }
             }
         }
     }
@@ -187,6 +198,7 @@ fn read_all_xattrs(path: &Path) -> SubvolumeAttrs {
             direct_io: meta_raw.get("nasty.direct_io").map(|s| s == "true").unwrap_or(false),
         },
         properties,
+        bcachefs_options,
     }
 }
 
@@ -576,6 +588,7 @@ impl SubvolumeService {
                 properties: attrs.properties,
                 parent,
                 direct_io: attrs.meta.direct_io,
+                bcachefs_options: attrs.bcachefs_options,
             });
         }
 

@@ -155,6 +155,7 @@ export interface Subvolume {
 	properties: Record<string, string>;
 	parent: string | null;
 	direct_io: boolean;
+	bcachefs_options?: Record<string, string>;
 }
 
 export interface Snapshot {

@@ -876,6 +876,14 @@
 											<span class="text-muted-foreground">Parent</span>
 											<button class="font-mono text-xs text-blue-400 hover:text-blue-300 text-left" onclick={() => { const p = subvolumes.find(s => s.name === detailSv!.parent); if (p) openDetail(p); }}>{detailSv.parent}</button>
 										{/if}
+										{#if detailSv.bcachefs_options && Object.keys(detailSv.bcachefs_options).length > 0}
+											<span class="text-muted-foreground">bcachefs Options</span>
+											<div class="flex flex-wrap gap-1.5">
+												{#each Object.entries(detailSv.bcachefs_options) as [key, value]}
+													<span class="rounded border border-border px-1.5 py-0.5 text-[0.65rem] font-mono text-muted-foreground">{key}={value}</span>
+												{/each}
+											</div>
+										{/if}
 										{#if nestedSubvolumes.length > 0}
 											<span class="text-muted-foreground">Nested Subvolumes</span>
 											<div class="flex flex-col gap-0.5">
