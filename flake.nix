@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    nasty-top.url = "git+https://github.com/nasty-project/nasty-top?ref=master";
+    nasty-top.inputs.nixpkgs.follows = "nixpkgs";
+
     # ── bcachefs override (optional) ──────────────────────────────
     # Pinned to v1.37 release tag.
     # To revert to pure nixpkgs: comment out these two lines.
@@ -13,9 +16,18 @@
 
   };
 
-  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
+  outputs = { self, nixpkgs, bcachefs-tools, nasty-top, ... }: let
+    nastyOverlay = final: _prev: {
+      nasty-top = nasty-top.packages.${final.stdenv.hostPlatform.system}.default;
+    };
+
+    nixpkgsOverlayModule = { nixpkgs.overlays = [ nastyOverlay ]; };
+
     # Helper to build packages for a given system
-    mkPkgs = system: nixpkgs.legacyPackages.${system};
+    mkPkgs = system: import nixpkgs {
+      inherit system;
+      overlays = [ nastyOverlay ];
+    };
     nasty-version = (builtins.fromTOML (builtins.readFile ./engine/Cargo.toml)).workspace.package.version;
     rootLock = builtins.fromJSON (builtins.readFile ./flake.lock);
     installerNastyOwner = "nasty-project";
@@ -115,6 +127,7 @@
             };
             inputs = {
               bcachefs-tools = [ "bcachefs-tools" ];
+              nasty-top = [ "nasty-top" ];
               nixpkgs = [ "nixpkgs" ];
             };
           };
@@ -145,6 +158,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
+          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
 
@@ -157,6 +171,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
+          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           ./nixos/modules/nasty.nix
@@ -177,6 +192,7 @@
           installerNastySource = self.outPath;
         };
         modules = [
+          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -196,6 +212,7 @@
           installerNastySource = self.outPath;
         };
         modules = [
+          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
           "${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
@@ -213,6 +230,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
+          nixpkgsOverlayModule
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
 
@@ -227,6 +245,7 @@
         inherit system;
         specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
         modules = [
+          nixpkgsOverlayModule
           "${nixpkgs}/nixos/modules/virtualisation/oci-image.nix"
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
@@ -242,6 +261,7 @@
     packages.x86_64-linux = {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
+      nasty-top = (mkPkgs "x86_64-linux").nasty-top;
       bcachefs-tools = mkBcachefsTools "x86_64-linux";
       nasty-rootfs = (mkNixosConfigs "x86_64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
@@ -251,6 +271,7 @@
     packages.aarch64-linux = {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
+      nasty-top = (mkPkgs "aarch64-linux").nasty-top;
       bcachefs-tools = mkBcachefsTools "aarch64-linux";
       nasty-rootfs = (mkNixosConfigs "aarch64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
