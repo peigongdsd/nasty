@@ -253,7 +253,6 @@
     packages.x86_64-linux = {
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
-      nasty-top = (mkPkgs "x86_64-linux").nasty-top;
       bcachefs-tools = mkBcachefsTools "x86_64-linux";
       nasty-rootfs = (mkNixosConfigs "x86_64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
@@ -263,7 +262,6 @@
     packages.aarch64-linux = {
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
-      nasty-top = (mkPkgs "aarch64-linux").nasty-top;
       bcachefs-tools = mkBcachefsTools "aarch64-linux";
       nasty-rootfs = (mkNixosConfigs "aarch64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
