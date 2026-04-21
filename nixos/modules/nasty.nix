@@ -1,4 +1,4 @@
-args@{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, ... }:
+args@{ config, lib, pkgs, nasty-engine ? null, nasty-webui ? null, nasty-version ? "dev", nasty-bcachefs-tools ? pkgs.bcachefs-tools, nasty-top ? null, ... }:
 
 let
   cfg = config.services.nasty;
@@ -488,20 +488,7 @@ in {
       docker-compose    # Docker Compose for multi-container apps
       lego              # ACME client for Let's Encrypt certificates
       croc              # peer-to-peer file transfer for sending debug reports
-      (pkgs.rustPlatform.buildRustPackage {
-        pname = "nasty-top";
-        version = "0.1.0";
-        src = pkgs.fetchFromGitHub {
-          owner = "nasty-project";
-          repo = "nasty-top";
-          rev = "master";
-          hash = "sha256-W56aPHsHr/0TQaZRNXCQ23MQv7/89ujSvbn0GZ72hYc=";
-        };
-        useFetchCargoVendor = true;
-        cargoHash = "sha256-1HGu29yMYskUr0IEY9Rtw5V6fGlBu+PKyKFvf+TGBu0=";
-        meta.mainProgram = "nasty-top";
-      })
-
+    ] ++ lib.optionals (nasty-top != null) [ nasty-top ] ++ [
       (writeShellScriptBin "nasty-report" ''
         set -euo pipefail
 
