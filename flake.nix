@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    nasty-top.url = "git+https://github.com/nasty-project/nasty-top?ref=master";
+    nasty-top.inputs.nixpkgs.follows = "nixpkgs";
+
     # ── bcachefs override (optional) ──────────────────────────────
     # Pinned to v1.37 release tag.
     # To revert to pure nixpkgs: comment out these two lines.
@@ -13,7 +16,7 @@
 
   };
 
-  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
+  outputs = { self, nixpkgs, bcachefs-tools, nasty-top, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
     nasty-version = (builtins.fromTOML (builtins.readFile ./engine/Cargo.toml)).workspace.package.version;
@@ -143,7 +146,7 @@
       # Full NASty appliance configuration
       nasty = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; nasty = self; };
         modules = [
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
@@ -155,7 +158,7 @@
 
       nasty-rootfs = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; nasty = self; };
         modules = [
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
@@ -172,6 +175,7 @@
         inherit system;
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
+          nasty = self;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
           installerSystemFlake = installerSystemFlake;
           installerNastySource = self.outPath;
@@ -191,6 +195,7 @@
         inherit system;
         specialArgs = {
           inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nixpkgs;
+          nasty = self;
           nasty-rootfs-toplevel = nasty-rootfs.config.system.build.toplevel;
           installerSystemFlake = installerSystemFlake;
           installerNastySource = self.outPath;
@@ -211,7 +216,7 @@
       # QEMU VM for testing
       nasty-vm = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; nasty = self; };
         modules = [
           ./nixos/modules/bcachefs.nix
           ./nixos/modules/linuxquota.nix
@@ -225,7 +230,7 @@
       # Cloud/CI disk image (Oracle Cloud compatible)
       nasty-cloud = nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; };
+        specialArgs = { inherit nasty-engine nasty-webui nasty-version nasty-bcachefs-tools nastySystemFlakeSnapshot; nasty = self; };
         modules = [
           "${nixpkgs}/nixos/modules/virtualisation/oci-image.nix"
           ./nixos/modules/bcachefs.nix

@@ -32,6 +32,7 @@
         in nixpkgs.lib.nixosSystem {
           inherit system;
           specialArgs = {
+            inherit nasty;
             nasty-engine = nasty.packages.${system}.engine;
             nasty-webui = nasty.packages.${system}.webui;
             nasty-version = nasty-version;
@@ -50,7 +51,7 @@
           ];
         };
     in {
-      wrapperFlakeVersion = "v0.1";
+      wrapperFlakeVersion = "v0.2";
       nixosConfigurations = {
         nasty = mkSystem "@LOCAL_SYSTEM@";
       };
