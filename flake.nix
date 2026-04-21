@@ -3,8 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nasty-top.url = "https://github.com/nasty-project/nasty-top";
-    nasty-top.inputs.nixpkgs.follows = "nixpkgs";
 
     # ── bcachefs override (optional) ──────────────────────────────
     # Pinned to v1.37 release tag.
@@ -15,10 +13,9 @@
 
   };
 
-  outputs = { self, nixpkgs, bcachefs-tools, nasty-top, ... }: let
+  outputs = { self, nixpkgs, bcachefs-tools, ... }: let
     # Helper to build packages for a given system
     mkPkgs = system: nixpkgs.legacyPackages.${system};
-    mkNastyTop = system: nasty-top.packages.${system}.default;
     nasty-version = (builtins.fromTOML (builtins.readFile ./engine/Cargo.toml)).workspace.package.version;
     rootLock = builtins.fromJSON (builtins.readFile ./flake.lock);
     installerNastyOwner = "nasty-project";
@@ -118,7 +115,6 @@
             };
             inputs = {
               bcachefs-tools = [ "bcachefs-tools" ];
-              nasty-top = [ "nasty-top" ];
               nixpkgs = [ "nixpkgs" ];
             };
           };
@@ -247,7 +243,6 @@
       engine = mkEngine "x86_64-linux";
       webui = mkWebui "x86_64-linux";
       bcachefs-tools = mkBcachefsTools "x86_64-linux";
-      nasty-top = mkNastyTop "x86_64-linux";
       nasty-rootfs = (mkNixosConfigs "x86_64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "x86_64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "x86_64-linux";
@@ -257,7 +252,6 @@
       engine = mkEngine "aarch64-linux";
       webui = mkWebui "aarch64-linux";
       bcachefs-tools = mkBcachefsTools "aarch64-linux";
-      nasty-top = mkNastyTop "aarch64-linux";
       nasty-rootfs = (mkNixosConfigs "aarch64-linux").nasty-rootfs.config.system.build.toplevel;
       nasty-cloud-image = (mkNixosConfigs "aarch64-linux").nasty-cloud.config.system.build.OCIImage;
       default = mkEngine "aarch64-linux";
